@@ -92,11 +92,13 @@ export default function ExcelUploader({ workspaceId, onUploadSuccess }: ExcelUpl
         throw new Error(data.message || 'Dosya yükleme başarısız');
       }
       
-      setSuccess(`Excel dosyası başarıyla yüklendi (${data.sheets.length} sayfa)`);
+      // Check if data.sheets exists before accessing its length
+      const sheetCount = data.sheets?.length || 0;
+      setSuccess(`Excel dosyası başarıyla yüklendi (${sheetCount} sayfa)`);
       setFile(null);
       
-      // Call the success callback with table IDs
-      if (onUploadSuccess) {
+      // Call the success callback with table IDs if they exist
+      if (onUploadSuccess && data.tableIds) {
         onUploadSuccess(data.tableIds);
       }
     } catch (err) {

@@ -4,11 +4,16 @@ import { comparePassword, generateToken } from '@/lib/auth/auth';
 
 export async function POST(request: Request) {
   try {
+    console.log('Login API called');
+    
     const body = await request.json();
+    console.log('Request body parsed:', { email: body.email, hasPassword: !!body.password });
+    
     const { email, password } = body;
 
     // Validate input
     if (!email || !password) {
+      console.log('Validation failed: missing email or password');
       return NextResponse.json(
         { message: 'Email ve şifre gereklidir.' },
         { status: 400 }
@@ -16,25 +21,33 @@ export async function POST(request: Request) {
     }
 
     // Find user by email
+    console.log('Finding user with email:', email);
     const user = await prisma.user.findUnique({
       where: { email },
     });
 
     if (!user) {
+      console.log('User not found with email:', email);
       return NextResponse.json(
         { message: 'Geçersiz kullanıcı bilgileri.' },
         { status: 401 }
       );
     }
+    
+    console.log('User found:', { id: user.id, email: user.email, role: user.role });
 
     // Verify password
+    console.log('Verifying password');
     const isPasswordValid = await comparePassword(password, user.password);
     if (!isPasswordValid) {
+      console.log('Password verification failed');
       return NextResponse.json(
         { message: 'Geçersiz kullanıcı bilgileri.' },
         { status: 401 }
       );
     }
+    
+    console.log('Password verified successfully');
 
     // Generate JWT token
     const token = generateToken({
@@ -43,9 +56,11 @@ export async function POST(request: Request) {
       name: user.name || '',
       role: user.role,
     });
+    
+    console.log('JWT token generated');
 
     // Create response
-    const response = NextResponse.json({
+    const responseData = {
       message: 'Giriş başarılı',
       user: {
         id: user.id,
@@ -53,9 +68,13 @@ export async function POST(request: Request) {
         name: user.name,
         role: user.role,
       },
-    });
+    };
+    
+    console.log('Creating response with user data');
+    const response = NextResponse.json(responseData);
 
     // Set token in cookies using NextResponse
+    console.log('Setting token in cookies');
     response.cookies.set({
       name: 'token',
       value: token,
@@ -65,7 +84,8 @@ export async function POST(request: Request) {
       sameSite: 'strict',
       secure: process.env.NODE_ENV === 'production',
     });
-
+    
+    console.log('Login successful, returning response');
     return response;
   } catch (error) {
     console.error('Login error:', error);

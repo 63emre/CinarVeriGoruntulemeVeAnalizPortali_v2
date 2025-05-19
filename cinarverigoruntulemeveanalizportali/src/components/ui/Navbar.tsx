@@ -66,7 +66,7 @@ export default function Navbar() {
           <div className="flex items-center">
             <Link href="/" className="flex-shrink-0 flex items-center">
               <Image
-                src="/cinar-yaprak.png"
+                src="/cinar.svg"
                 alt="Çınar Logo"
                 width={40}
                 height={40}

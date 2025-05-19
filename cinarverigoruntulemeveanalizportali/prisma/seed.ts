@@ -33,6 +33,30 @@ async function main() {
     console.log('Admin user already exists');
   }
 
+  // Create a test user
+  const testUserExists = await prisma.user.findUnique({
+    where: {
+      email: 'test@cinar.com',
+    },
+  });
+
+  if (!testUserExists) {
+    const hashedPassword = await hash('Test123!', 10);
+    
+    await prisma.user.create({
+      data: {
+        email: 'test@cinar.com',
+        name: 'Test User',
+        password: hashedPassword,
+        role: 'USER',
+      },
+    });
+    
+    console.log('Test user created successfully');
+  } else {
+    console.log('Test user already exists');
+  }
+
   // Create default workspaces if they don't exist
   const workspace1 = await prisma.workspace.findFirst({
     where: {
@@ -41,7 +65,7 @@ async function main() {
   });
 
   if (!workspace1) {
-    const newWorkspace1 = await prisma.workspace.create({
+    await prisma.workspace.create({
       data: {
         name: 'Çalışma alanı 1',
         description: 'Varsayılan çalışma alanı 1',
@@ -65,7 +89,7 @@ async function main() {
   });
 
   if (!workspace2) {
-    const newWorkspace2 = await prisma.workspace.create({
+    await prisma.workspace.create({
       data: {
         name: 'Çalışma alanı 2',
         description: 'Varsayılan çalışma alanı 2',

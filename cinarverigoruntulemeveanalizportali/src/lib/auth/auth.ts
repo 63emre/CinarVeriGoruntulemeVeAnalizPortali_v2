@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { cache } from 'react';
 
 // JWT Secret - should be in environment variables in production
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const JWT_SECRET = process.env.JWT_SECRET || 'cinar-secret-key-123456789';
 
 // User type for JWT token payload
 interface UserPayload {

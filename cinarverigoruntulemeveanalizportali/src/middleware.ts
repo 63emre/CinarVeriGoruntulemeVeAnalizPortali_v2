@@ -26,48 +26,48 @@ export async function middleware(request: NextRequest) {
   
   // If no token, redirect to login
   if (!token) {
+    // If it's an API request, return 401 Unauthorized
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { message: 'Yetkilendirme hatası' },
+        { status: 401 }
+      );
+    }
+    
+    // For non-API routes, redirect to login
     const url = new URL('/auth/login', request.url);
     return NextResponse.redirect(url);
   }
   
   try {
-    // Verify the token
+    // Verify token
     verify(token, JWT_SECRET);
+    return NextResponse.next();
+  } catch {
+    // If token is invalid and it's an API request, return 401
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { message: 'Geçersiz veya süresi dolmuş token' },
+        { status: 401 }
+      );
+    }
     
-    // If the token is valid, allow the request and add security headers
-    const response = NextResponse.next();
-    
-    // Add Content Security Policy headers
-    response.headers.set(
-      'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'"
-    );
-    
-    // Add other security headers
-    response.headers.set('X-Frame-Options', 'DENY');
-    response.headers.set('X-Content-Type-Options', 'nosniff');
-    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-    response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    
-    return response;
-  } catch (e) {
-    // If the token is invalid, redirect to login
-    console.error('Invalid token:', e);
+    // For non-API routes with invalid token, redirect to login
     const url = new URL('/auth/login', request.url);
     return NextResponse.redirect(url);
   }
 }
 
-// Configure the paths that should be checked for authentication
+// Configure middleware to run on specific paths
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
+     * Match all request paths except for:
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public folder
+     * - public files (e.g. /images/*)
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.svg|.*\\.png|.*\\.jpg|.*\\.jpeg).*)',
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$|.*\\.svg$).*)',
   ],
 }; 

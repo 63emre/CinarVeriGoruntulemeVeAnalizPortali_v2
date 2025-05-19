@@ -51,7 +51,7 @@ export default function LoginPage() {
         <div className="text-center">
           <div className="flex justify-center">
             <Image
-              src="/cinar-yaprak.svg"
+              src="/cinar.svg"
               alt="Çınar Logo"
               width={60}
               height={60}

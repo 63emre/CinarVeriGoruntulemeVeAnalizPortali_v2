@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 
 export async function POST() {
   try {
-    // Remove token cookie
-    const cookieStore = await cookies();
-    cookieStore.delete('token');
-
-    // Return success response
-    return NextResponse.json({
+    // Create response
+    const response = NextResponse.json({
       message: 'Çıkış başarılı',
     });
+    
+    // Remove token cookie
+    response.cookies.delete('token');
+    
+    return response;
   } catch (error) {
     console.error('Logout error:', error);
     return NextResponse.json(

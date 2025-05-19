@@ -1,0 +1,9 @@
+# Allow all web crawlers
+User-agent: *
+Allow: /
+
+# Disallow access to API routes
+Disallow: /api/
+
+# Sitemap
+Sitemap: https://portal.cinarcevre.com/sitemap.xml 

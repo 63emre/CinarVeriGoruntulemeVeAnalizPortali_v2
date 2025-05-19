@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://postgres:123@localhost:5432/cinar_portal"
+}
+
+// User model for authentication and authorization
+model User {
+  id         String          @id @default(uuid())
+  email      String          @unique
+  name       String?
+  password   String
+  role       UserRole        @default(USER)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  workspaces WorkspaceUser[]
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+// Workspace model for isolation of data
+model Workspace {
+  id          String          @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  createdBy   String
+  users       WorkspaceUser[]
+  tables      DataTable[]
+  formulas    Formula[]
+}
+
+// Many-to-many relationship between users and workspaces
+model WorkspaceUser {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  addedAt     DateTime  @default(now())
+
+  @@unique([userId, workspaceId])
+}
+
+// Data table model for storing uploaded Excel tables
+model DataTable {
+  id          String    @id @default(uuid())
+  name        String
+  sheetName   String
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedAt  DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  columns     Json // Store column definitions
+  data        Json // Store actual table data
+}
+
+// Formula model for data evaluation
+model Formula {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  formula     String // The actual formula string
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  tableId     String? // Optional reference to specific table
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  color       String? // Color for highlighting cells
+}

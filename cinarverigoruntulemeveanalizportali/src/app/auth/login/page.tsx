@@ -1,22 +1,36 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
+import Link from 'next/link';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    // Check if user was redirected from successful registration
+    const registered = searchParams?.get('registered');
+    if (registered === 'true') {
+      setSuccess('Kayıt işlemi başarılı! Şimdi giriş yapabilirsiniz.');
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setIsLoading(true);
 
     try {
+      console.log('Attempting to login with:', { email });
+      
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
@@ -26,8 +40,10 @@ export default function LoginPage() {
       });
 
       const data = await response.json();
+      console.log('Login response status:', response.status);
 
       if (response.ok) {
+        console.log('Login successful, redirecting...');
         // Redirect based on role
         if (data.user.role === 'ADMIN') {
           router.push('/admin');
@@ -35,11 +51,12 @@ export default function LoginPage() {
           router.push('/dashboard');
         }
       } else {
+        console.log('Login failed:', data.message);
         setError(data.message || 'Giriş başarısız');
       }
     } catch (err) {
-      setError('Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin.');
       console.error('Login error:', err);
+      setError('Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin.');
     } finally {
       setIsLoading(false);
     }
@@ -66,6 +83,18 @@ export default function LoginPage() {
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          {success && (
+            <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">
+              <span className="block sm:inline">{success}</span>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+              <span className="block sm:inline">{error}</span>
+            </div>
+          )}
+
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
               <label htmlFor="email-address" className="sr-only">
@@ -101,10 +130,6 @@ export default function LoginPage() {
             </div>
           </div>
 
-          {error && (
-            <div className="text-red-500 text-sm text-center">{error}</div>
-          )}
-
           <div>
             <button
               type="submit"
@@ -113,6 +138,14 @@ export default function LoginPage() {
             >
               {isLoading ? 'Giriş yapılıyor...' : 'Giriş Yap'}
             </button>
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div className="text-sm">
+              <Link href="/auth/register" className="font-medium text-blue-600 hover:text-blue-500">
+                Hesap oluştur
+              </Link>
+            </div>
           </div>
           
           <div className="text-center text-sm">

@@ -6,8 +6,17 @@ export async function POST(request: Request) {
   try {
     console.log('Login API called');
     
-    const body = await request.json();
-    console.log('Request body parsed:', { email: body.email, hasPassword: !!body.password });
+    let body;
+    try {
+      body = await request.json();
+      console.log('Request body parsed:', { email: body.email, hasPassword: !!body.password });
+    } catch (parseError) {
+      console.error('Error parsing request body:', parseError);
+      return NextResponse.json(
+        { message: 'Geçersiz istek formatı.' },
+        { status: 400 }
+      );
+    }
     
     const { email, password } = body;
 

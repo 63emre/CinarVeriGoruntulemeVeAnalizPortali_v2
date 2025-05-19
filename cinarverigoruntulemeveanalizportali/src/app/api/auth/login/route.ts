@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import prisma from '@/lib/db';
 import { comparePassword, generateToken } from '@/lib/auth/auth';
 
@@ -41,13 +40,23 @@ export async function POST(request: Request) {
     const token = generateToken({
       id: user.id,
       email: user.email,
-      name: user.name,
+      name: user.name || '',
       role: user.role,
     });
 
-    // Set token in cookies
-    const cookieStore = await cookies();
-    cookieStore.set({
+    // Create response
+    const response = NextResponse.json({
+      message: 'Giriş başarılı',
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+    });
+
+    // Set token in cookies using NextResponse
+    response.cookies.set({
       name: 'token',
       value: token,
       httpOnly: true,
@@ -57,16 +66,7 @@ export async function POST(request: Request) {
       secure: process.env.NODE_ENV === 'production',
     });
 
-    // Return success response
-    return NextResponse.json({
-      message: 'Giriş başarılı',
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      },
-    });
+    return response;
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json(

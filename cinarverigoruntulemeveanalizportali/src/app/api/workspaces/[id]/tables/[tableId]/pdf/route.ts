@@ -4,7 +4,7 @@ import { getCurrentUser } from '@/lib/auth/auth';
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string; tableId: string } }
+  context: { params: Promise<{ id: string; tableId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -16,7 +16,7 @@ export async function GET(
       );
     }
 
-    const { id: workspaceId, tableId } = params;
+    const { id: workspaceId, tableId } = await context.params;
 
     // Check if user has access to this workspace
     const workspace = await prisma.workspace.findFirst({

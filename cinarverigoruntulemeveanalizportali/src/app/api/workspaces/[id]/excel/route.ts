@@ -5,7 +5,7 @@ import { parseExcelFile, saveExcelData } from '@/lib/excel/excel-service';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -17,7 +17,7 @@ export async function POST(
       );
     }
 
-    const { id: workspaceId } = params;
+    const { id: workspaceId } = await context.params;
 
     // Check if user has access to this workspace
     const workspace = await prisma.workspace.findFirst({
@@ -74,9 +74,9 @@ export async function POST(
     // Parse Excel file
     const excelData = await parseExcelFile(file);
     
-    if (excelData.length === 0) {
+    if (!excelData || excelData.length === 0) {
       return NextResponse.json(
-        { message: 'Excel dosyasında işlenebilir veri bulunamadı' },
+        { message: 'Excel dosyası okunamadı veya boş' },
         { status: 400 }
       );
     }
@@ -101,13 +101,13 @@ export async function POST(
 
     return NextResponse.json({
       message: 'Excel dosyası başarıyla yüklendi',
-      sheets: excelData.map((sheet) => sheet.sheetName),
+      sheets: excelData.map(sheet => sheet.sheetName),
       tableIds,
     });
   } catch (error) {
-    console.error('Excel upload error:', error);
+    console.error('Error uploading Excel:', error);
     return NextResponse.json(
-      { message: 'Sunucu hatası: ' + (error as Error).message },
+      { message: 'Sunucu hatası' },
       { status: 500 }
     );
   }

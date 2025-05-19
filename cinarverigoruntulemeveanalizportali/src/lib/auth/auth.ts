@@ -1,9 +1,18 @@
 import { compare, hash } from 'bcrypt';
 import { sign, verify } from 'jsonwebtoken';
 import { cookies } from 'next/headers';
+import { cache } from 'react';
 
 // JWT Secret - should be in environment variables in production
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+// User type for JWT token payload
+interface UserPayload {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+}
 
 // Function to hash a password
 export async function hashPassword(password: string): Promise<string> {
@@ -19,42 +28,45 @@ export async function comparePassword(
 }
 
 // Function to generate a JWT token
-export function generateToken(payload: any): string {
+export function generateToken(payload: UserPayload): string {
   return sign(payload, JWT_SECRET, { expiresIn: '7d' });
 }
 
 // Function to verify a JWT token
-export function verifyToken(token: string): any {
+export function verifyToken(token: string): UserPayload | null {
   try {
-    return verify(token, JWT_SECRET);
-  } catch (error) {
+    return verify(token, JWT_SECRET) as UserPayload;
+  } catch {
     return null;
   }
 }
 
-// Get current user from cookies
-export async function getCurrentUser() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get('token')?.value;
-  
-  if (!token) {
-    return null;
+// Get current user from cookies using React's cache to avoid repeated calls
+export const getCurrentUser = cache(
+  async (): Promise<UserPayload | null> => {
+    try {
+      const cookieStore = await cookies();
+      const token = cookieStore.get('token')?.value;
+      
+      if (!token) {
+        return null;
+      }
+      
+      return verifyToken(token);
+    } catch (error) {
+      console.error('Error getting current user:', error);
+      return null;
+    }
   }
-  
-  try {
-    return verifyToken(token);
-  } catch (error) {
-    return null;
-  }
-}
+);
 
 // Check if user is authenticated
-export async function isAuthenticated() {
+export async function isAuthenticated(): Promise<boolean> {
   return (await getCurrentUser()) !== null;
 }
 
 // Check if user is admin
-export async function isAdmin() {
+export async function isAdmin(): Promise<boolean> {
   const user = await getCurrentUser();
-  return user && user.role === 'ADMIN';
+  return user !== null && user.role === 'ADMIN';
 } 

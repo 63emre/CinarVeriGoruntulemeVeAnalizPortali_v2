@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
+import { Prisma } from '@/generated/prisma';
 
 // GET: Get all workspaces
 export async function GET() {
@@ -79,8 +80,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // Define interface for user connection
+    interface UserConnection {
+      userId: string;
+      workspaceId: string;
+    }
+
     // Create the workspace in a transaction to ensure all related data is created
-    const workspace = await prisma.$transaction(async (tx) => {
+    const workspace = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // First create the workspace
       const newWorkspace = await tx.workspace.create({
         data: {
@@ -104,8 +111,8 @@ export async function POST(request: Request) {
 
       // Create unique user connections (to avoid duplicates)
       const uniqueUserConnections = userConnections.filter(
-        (connection, index, self) =>
-          index === self.findIndex(c => c.userId === connection.userId)
+        (connection: UserConnection, index: number, self: UserConnection[]) =>
+          index === self.findIndex((c: UserConnection) => c.userId === connection.userId)
       );
 
       // Create workspace-user relationships

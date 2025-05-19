@@ -6,7 +6,7 @@ import { saveFormula, getFormulas, deleteFormula } from '@/lib/formula/formula-s
 // GET: Get all formulas for a workspace
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -18,7 +18,7 @@ export async function GET(
       );
     }
 
-    const { id: workspaceId } = params;
+    const { id: workspaceId } = await context.params;
 
     // Check if user has access to this workspace
     const workspace = await prisma.workspace.findFirst({
@@ -60,7 +60,7 @@ export async function GET(
 // POST: Create a new formula
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -72,7 +72,7 @@ export async function POST(
       );
     }
 
-    const { id: workspaceId } = params;
+    const { id: workspaceId } = await context.params;
 
     // Check if user has access to this workspace
     const workspace = await prisma.workspace.findFirst({
@@ -134,7 +134,7 @@ export async function POST(
 // DELETE: Delete a formula
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -146,7 +146,7 @@ export async function DELETE(
       );
     }
 
-    const { id: workspaceId } = params;
+    const { id: workspaceId } = await context.params;
     const url = new URL(request.url);
     const formulaId = url.searchParams.get('formulaId');
 

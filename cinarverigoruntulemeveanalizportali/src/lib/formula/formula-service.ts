@@ -46,8 +46,7 @@ export async function deleteFormula(formulaId: string) {
 
 export function evaluateFormula(
   formula: string,
-  variables: Record<string, string | number>,
-  _dateColumn?: string // Unused parameter, prefixed with underscore
+  variables: Record<string, string | number>
 ): FormulaResult | null {
   try {
     // Create a function from the formula

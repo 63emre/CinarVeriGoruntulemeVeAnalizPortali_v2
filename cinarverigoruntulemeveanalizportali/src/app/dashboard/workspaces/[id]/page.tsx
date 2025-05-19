@@ -9,9 +9,9 @@ import FormulaEditor from '@/components/formulas/FormulaEditor';
 import TrendAnalysis from '@/components/analysis/TrendAnalysis';
 
 interface WorkspaceDetailsProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
 interface Workspace {
@@ -28,9 +28,14 @@ interface DataTableData {
   uploadedAt: string;
 }
 
+// Helper function to unwrap the params promise
+async function unwrapParams(params: Promise<{ id: string }>) {
+  return await params;
+}
+
 export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) {
-  const workspaceId = params.id;
   const router = useRouter();
+  const [workspaceId, setWorkspaceId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'tables' | 'formulas' | 'analysis'>('tables');
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [tables, setTables] = useState<DataTableData[]>([]);
@@ -38,7 +43,26 @@ export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Extract the id when the component mounts
   useEffect(() => {
+    async function getWorkspaceId() {
+      try {
+        const { id } = await unwrapParams(params);
+        setWorkspaceId(id);
+      } catch (err) {
+        console.error('Error extracting workspace ID:', err);
+        setError('Failed to load workspace ID');
+        setIsLoading(false);
+      }
+    }
+    
+    getWorkspaceId();
+  }, [params]);
+
+  // Fetch workspace data when workspaceId is available
+  useEffect(() => {
+    if (!workspaceId) return;
+    
     async function fetchWorkspaceData() {
       try {
         // Fetch workspace details

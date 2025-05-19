@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { FcFolder, FcLineChart, FcPlus, FcDatabase } from 'react-icons/fc';
+import { FcFolder, FcLineChart, FcDatabase } from 'react-icons/fc';
 
 interface Workspace {
   id: string;

@@ -6,7 +6,7 @@ import { Prisma } from '@/generated/prisma';
 // GET: Get a specific user
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -18,15 +18,15 @@ export async function GET(
       );
     }
 
+    const { id } = await context.params;
+
     // Check if user is admin or requesting their own profile
-    if (user.role !== 'ADMIN' && user.id !== params.id) {
+    if (user.role !== 'ADMIN' && user.id !== id) {
       return NextResponse.json(
         { message: 'Bu işlem için yetkiniz bulunmamaktadır' },
         { status: 403 }
       );
     }
-
-    const { id } = params;
 
     const targetUser = await prisma.user.findUnique({
       where: { id },
@@ -70,7 +70,7 @@ export async function GET(
 // PUT: Update a user
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const currentUser = await getCurrentUser();
@@ -82,7 +82,7 @@ export async function PUT(
       );
     }
 
-    const { id } = params;
+    const { id } = await context.params;
     
     // Check if current user is admin or updating their own profile
     if (currentUser.role !== 'ADMIN' && currentUser.id !== id) {
@@ -204,7 +204,7 @@ export async function PUT(
 // DELETE: Delete a user
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -224,7 +224,7 @@ export async function DELETE(
       );
     }
 
-    const { id } = params;
+    const { id } = await context.params;
 
     // Prevent deleting the admin user
     const targetUser = await prisma.user.findUnique({

@@ -6,7 +6,7 @@ import { Prisma } from '@/generated/prisma';
 // GET: Get a specific workspace
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -18,7 +18,7 @@ export async function GET(
       );
     }
 
-    const { id } = params;
+    const { id } = await context.params;
 
     // Find the workspace with tables, formulas, and users
     const workspace = await prisma.workspace.findUnique({
@@ -72,7 +72,7 @@ export async function GET(
 // PUT: Update a workspace
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -92,16 +92,9 @@ export async function PUT(
       );
     }
 
-    const { id } = params;
+    const { id } = await context.params;
     const body = await request.json();
-    const { name, description, userIds = [] } = body;
-
-    if (!name) {
-      return NextResponse.json(
-        { message: 'Çalışma alanı adı gereklidir' },
-        { status: 400 }
-      );
-    }
+    const { name, description, userIds } = body;
 
     // Check if workspace exists
     const existingWorkspace = await prisma.workspace.findUnique({
@@ -115,31 +108,32 @@ export async function PUT(
       );
     }
 
-    // Update the workspace in a transaction
+    // Update the workspace in a transaction if users need to be updated
     const updatedWorkspace = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       // Update workspace details
       const workspace = await tx.workspace.update({
         where: { id },
         data: {
-          name,
-          description,
+          name: name || existingWorkspace.name,
+          description: description !== undefined ? description : existingWorkspace.description,
         },
       });
 
-      // Remove existing user connections
-      await tx.workspaceUser.deleteMany({
-        where: { workspaceId: id },
-      });
-
-      // Create new user connections
-      if (userIds.length > 0) {
-        await tx.workspaceUser.createMany({
-          data: userIds.map((userId: string) => ({
-            userId,
-            workspaceId: id,
-          })),
-          skipDuplicates: true,
+      // Update user assignments if needed
+      if (userIds && Array.isArray(userIds)) {
+        await tx.workspaceUser.deleteMany({
+          where: { workspaceId: id },
         });
+
+        if (userIds.length > 0) {
+          await tx.workspaceUser.createMany({
+            data: userIds.map((userId: string) => ({
+              userId,
+              workspaceId: id,
+            })),
+            skipDuplicates: true,
+          });
+        }
       }
 
       return workspace;
@@ -161,7 +155,7 @@ export async function PUT(
 // DELETE: Delete a workspace
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -181,7 +175,7 @@ export async function DELETE(
       );
     }
 
-    const { id } = params;
+    const { id } = await context.params;
 
     // Check if workspace exists
     const existingWorkspace = await prisma.workspace.findUnique({

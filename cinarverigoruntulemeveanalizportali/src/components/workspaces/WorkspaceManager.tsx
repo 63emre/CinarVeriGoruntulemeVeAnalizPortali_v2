@@ -159,7 +159,7 @@ export default function WorkspaceManager({ onWorkspaceAdded }: WorkspaceManagerP
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          userId: selectedUser,
+          email: users.find(u => u.id === selectedUser)?.email
         }),
       });
       

@@ -65,12 +65,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="flex items-center justify-center p-4 border-b">
-            <Image 
-              src="/cinar-yaprak.svg" 
-              alt="Çınar Logo" 
-              width={isSidebarOpen ? 50 : 40} 
-              height={isSidebarOpen ? 50 : 40} 
-            />
+            <div className="relative" style={{ width: isSidebarOpen ? '50px' : '40px', height: isSidebarOpen ? '50px' : '40px' }}>
+              <Image 
+                src="/cinar.svg" 
+                alt="Çınar Logo" 
+                fill
+                style={{ objectFit: 'contain' }}
+                priority
+              />
+            </div>
             {isSidebarOpen && (
               <h1 className="ml-3 text-xl font-bold text-green-700">Çınar Portal</h1>
             )}

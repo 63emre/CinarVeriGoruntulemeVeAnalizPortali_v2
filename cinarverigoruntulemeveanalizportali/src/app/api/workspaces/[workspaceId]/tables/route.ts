@@ -33,20 +33,24 @@ export async function GET(
     }
 
     // Check if user has access to this workspace
-    const workspaceUser = await prisma.workspaceUser.findFirst({
-      where: {
-        workspaceId: workspaceId,
-        userId: currentUser.id,
-      },
-    });
-
+    // Allow access if user is an admin, or the creator of the workspace, or has explicit access
     const isCreator = workspace.createdBy === currentUser.id;
-
-    if (!workspaceUser && !isCreator) {
-      return NextResponse.json(
-        { message: 'You do not have access to this workspace' },
-        { status: 403 }
-      );
+    const isAdmin = currentUser.role === 'ADMIN';
+    
+    if (!isAdmin) {
+      const workspaceUser = await prisma.workspaceUser.findFirst({
+        where: {
+          workspaceId: workspaceId,
+          userId: currentUser.id,
+        },
+      });
+      
+      if (!workspaceUser && !isCreator) {
+        return NextResponse.json(
+          { message: 'You do not have access to this workspace' },
+          { status: 403 }
+        );
+      }
     }
 
     // Get all tables for this workspace

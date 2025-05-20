@@ -1,12 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
-  FcSearch, 
-  FcViewDetails, 
-  FcPrint,
-  FcFullTrash
-} from 'react-icons/fc';
+import { useState, useEffect, useRef } from 'react';
+import { FcDownload, FcPrint, FcFullTrash, FcExpand, FcCollapse } from 'react-icons/fc';
+import { AiOutlineFilter, AiOutlineSearch } from 'react-icons/ai';
 
 type Column = {
   id: string;
@@ -115,6 +111,9 @@ export default function DataTable({
       };
       
       fetchTableData();
+    } else if (!tableId && workspaceId) {
+      setError('Lütfen bir tablo seçin');
+      setLoading(false);
     }
   }, [tableId, workspaceId, initialData]);
   
@@ -182,9 +181,8 @@ export default function DataTable({
   
   if (error) {
     return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
-        <strong className="font-bold">Hata!</strong>
-        <span className="block sm:inline"> {error}</span>
+      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <p className="text-red-800 font-medium">{error}</p>
       </div>
     );
   }
@@ -192,10 +190,7 @@ export default function DataTable({
   return (
     <div className={`bg-white rounded-lg shadow overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
       <div className="p-4 flex justify-between items-center border-b bg-gray-50">
-        <h2 className="text-xl font-bold text-gray-900 flex items-center">
-          <FcViewDetails className="mr-2" />
-          {title}
-        </h2>
+        <h2 className="text-xl font-bold text-black mb-4">{title}</h2>
         
         <div className="flex items-center space-x-2">
           <div className="relative">
@@ -206,7 +201,7 @@ export default function DataTable({
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
-            <FcSearch className="absolute left-3 top-1/2 transform -translate-y-1/2" />
+            <AiOutlineSearch className="absolute left-3 top-1/2 transform -translate-y-1/2" />
           </div>
           
           <button

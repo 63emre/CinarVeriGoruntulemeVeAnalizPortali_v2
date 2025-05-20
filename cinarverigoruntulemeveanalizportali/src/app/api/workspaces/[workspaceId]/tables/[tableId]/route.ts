@@ -78,20 +78,19 @@ export async function GET(
 // Update a table
 export async function PUT(
   request: Request,
-  { params }: { params: { workspaceId: string, tableId: string } }
+  { params }: { params: { workspaceId: string; tableId: string } }
 ) {
   try {
-    console.log(`PUT /api/workspaces/${params.workspaceId}/tables/${params.tableId} called`);
+    const { workspaceId, tableId } = params;
     
+    // Authenticate user
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json(
-        { message: 'Yetkilendirme hatası' },
+        { message: 'Unauthorized' },
         { status: 401 }
       );
     }
-    
-    const { workspaceId, tableId } = params;
     
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
@@ -100,45 +99,64 @@ export async function PUT(
     
     if (!workspace) {
       return NextResponse.json(
-        { message: 'Çalışma alanı bulunamadı' },
+        { message: 'Workspace not found' },
         { status: 404 }
       );
     }
     
-    // Check access if not admin
-    if (currentUser.role !== 'ADMIN') {
-      const hasAccess = await prisma.workspaceUser.findFirst({
+    // Check if the user has access to this workspace (unless they're an admin)
+    const isAdmin = currentUser.role === 'ADMIN';
+    const isCreator = workspace.createdBy === currentUser.id;
+    
+    if (!isAdmin) {
+      const workspaceUser = await prisma.workspaceUser.findFirst({
         where: {
+          workspaceId: workspaceId,
           userId: currentUser.id,
-          workspaceId,
         },
       });
       
-      if (!hasAccess) {
+      if (!workspaceUser && !isCreator) {
         return NextResponse.json(
-          { message: 'Bu çalışma alanına erişim izniniz yok' },
+          { message: 'You do not have access to this workspace' },
           { status: 403 }
         );
       }
     }
-
-    // Check if table exists and belongs to this workspace
+    
+    // Find the requested table
     const existingTable = await prisma.dataTable.findUnique({
       where: {
         id: tableId,
-        workspaceId,
+        workspaceId: workspaceId,
       },
     });
     
     if (!existingTable) {
       return NextResponse.json(
-        { message: 'Tablo bulunamadı' },
+        { message: 'Table not found' },
         { status: 404 }
       );
     }
-
+    
+    // Parse request body
     const body = await request.json();
-    const { name, sheetName, columns, data } = body;
+    const { columns, data, name } = body;
+    
+    if (!Array.isArray(columns) || !Array.isArray(data)) {
+      return NextResponse.json(
+        { message: 'Invalid request format. Columns and data must be arrays.' },
+        { status: 400 }
+      );
+    }
+    
+    // Validate that the updated data structure matches the expected format
+    if (columns.length === 0) {
+      return NextResponse.json(
+        { message: 'Columns array cannot be empty' },
+        { status: 400 }
+      );
+    }
     
     // Update the table
     const updatedTable = await prisma.dataTable.update({
@@ -146,19 +164,18 @@ export async function PUT(
         id: tableId,
       },
       data: {
-        name: name !== undefined ? name : undefined,
-        sheetName: sheetName !== undefined ? sheetName : undefined,
-        columns: columns !== undefined ? columns : undefined,
-        data: data !== undefined ? data : undefined,
+        name: name || existingTable.name,
+        columns: columns,
+        data: data,
+        updatedAt: new Date(),
       },
     });
     
     return NextResponse.json(updatedTable);
-
   } catch (error) {
     console.error('Error updating table:', error);
     return NextResponse.json(
-      { message: 'Tablo güncellenirken bir hata oluştu' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }

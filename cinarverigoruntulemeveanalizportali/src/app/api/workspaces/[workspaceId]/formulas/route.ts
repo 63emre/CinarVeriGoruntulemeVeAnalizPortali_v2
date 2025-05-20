@@ -11,7 +11,7 @@ const FormulaSchema = z.object({
   formula: z.string().min(1, 'Formül ifadesi zorunludur'),
   tableId: z.string().optional(),
   color: z.string().optional(),
-  type: z.enum(['cell-validation', 'relational']),
+  type: z.enum(['CELL_VALIDATION', 'RELATIONAL']),
 });
 
 // GET: Get all formulas for a workspace
@@ -43,20 +43,24 @@ export async function GET(
     }
 
     // Check if user has access to this workspace
-    const hasAccess = await prisma.workspaceUser.findFirst({
-      where: {
-        userId: currentUser.id,
-        workspaceId,
-      },
-    });
-
+    // Admin users can access any workspace
+    const isAdmin = currentUser.role === 'ADMIN';
     const isCreator = workspace.createdBy === currentUser.id;
-
-    if (!hasAccess && !isCreator && currentUser.role !== 'ADMIN') {
-      return NextResponse.json(
-        { message: 'You do not have access to this workspace' },
-        { status: 403 }
-      );
+    
+    if (!isAdmin) {
+      const hasAccess = await prisma.workspaceUser.findFirst({
+        where: {
+          userId: currentUser.id,
+          workspaceId,
+        },
+      });
+      
+      if (!hasAccess && !isCreator) {
+        return NextResponse.json(
+          { message: 'You do not have access to this workspace' },
+          { status: 403 }
+        );
+      }
     }
 
     // Get all formulas for this workspace
@@ -120,28 +124,35 @@ export async function POST(
     // Parse request body
     const data = await request.json();
     
-    if (!data.name || !data.expression || !data.color) {
-      return NextResponse.json(
-        { message: 'Missing required fields: name, expression, color' },
-        { status: 400 }
+    try {
+      // Validate with Zod schema
+      const validatedData = FormulaSchema.parse(data);
+      
+      // Create new formula
+      const formula = await saveFormula(
+        validatedData.name,
+        validatedData.description || '',
+        validatedData.formula,
+        workspaceId,
+        validatedData.color || '#ef4444',
+        validatedData.tableId,
+        validatedData.type === 'RELATIONAL' ? 'RELATIONAL' : 'CELL_VALIDATION'
       );
+
+      return NextResponse.json(formula);
+    } catch (validationError) {
+      if (validationError instanceof z.ZodError) {
+        return NextResponse.json(
+          { message: 'Validation error', errors: validationError.errors },
+          { status: 400 }
+        );
+      }
+      throw validationError;
     }
-
-    // Create new formula
-    const formula = await saveFormula(
-      data.name,
-      data.description || '',
-      data.expression,
-      workspaceId,
-      data.color,
-      data.tableId
-    );
-
-    return NextResponse.json(formula);
   } catch (error) {
     console.error('Error creating formula:', error);
     return NextResponse.json(
-      { message: 'Server error' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }

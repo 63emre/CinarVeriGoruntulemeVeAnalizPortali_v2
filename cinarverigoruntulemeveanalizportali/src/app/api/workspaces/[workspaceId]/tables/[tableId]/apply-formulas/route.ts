@@ -6,8 +6,9 @@ import { applyFormulaToTable } from '@/lib/formula/formula-service';
 
 // Schema for formula application request
 const ApplyFormulasSchema = z.object({
-  formulaType: z.enum(['CELL_VALIDATION', 'RELATIONAL']),
-  formulaIds: z.array(z.string()).optional(),
+  formulaIds: z.array(z.string()).min(1, "En az bir formül seçilmelidir"),
+  selectedVariable: z.string().optional(),
+  formulaType: z.enum(['CELL_VALIDATION', 'RELATIONAL']).optional(),
 });
 
 // POST /api/workspaces/[workspaceId]/tables/[tableId]/apply-formulas
@@ -36,9 +37,6 @@ export async function POST(
       return new NextResponse('Forbidden', { status: 403 });
     }
 
-    const body = await request.json();
-    const { formulaType, formulaIds } = ApplyFormulasSchema.parse(body);
-
     // Get the table data
     const table = await prisma.dataTable.findUnique({
       where: {
@@ -51,11 +49,37 @@ export async function POST(
       return new NextResponse('Table not found', { status: 404 });
     }
 
-    // Get formulas to apply
-    const formulasQuery = {
+    // Parse and validate request
+    let body;
+    try {
+      body = await request.json();
+      ApplyFormulasSchema.parse(body);
+    } catch (parseError) {
+      console.error('Error parsing request body:', parseError);
+      return new NextResponse(
+        `Invalid request: ${parseError instanceof z.ZodError ? JSON.stringify(parseError.errors) : 'Invalid JSON'}`, 
+        { status: 400 }
+      );
+    }
+
+    // Initialize query for finding formulas
+    const formulasQuery: {
+      where: {
+        workspaceId: string;
+        active: boolean;
+        id?: { in: string[] };
+        type?: string;
+      };
+      select: {
+        id: boolean;
+        name: boolean;
+        formula: boolean;
+        type: boolean;
+        color: boolean;
+      };
+    } = {
       where: {
         workspaceId,
-        type: formulaType,
         active: true,
       },
       select: {
@@ -68,29 +92,65 @@ export async function POST(
     };
 
     // If specific formulaIds are provided, filter by them
-    if (formulaIds && formulaIds.length > 0) {
-      formulasQuery.where = {
-        ...formulasQuery.where,
-        id: {
-          in: formulaIds,
-        },
+    if (body.formulaIds && body.formulaIds.length > 0) {
+      formulasQuery.where.id = {
+        in: body.formulaIds,
       };
+    }
+
+    // If formula type is specified, add it to the filter
+    if (body.formulaType) {
+      formulasQuery.where.type = body.formulaType;
     }
 
     const formulas = await prisma.formula.findMany(formulasQuery);
 
     if (formulas.length === 0) {
-      return new NextResponse('No active formulas found', { status: 404 });
+      return new NextResponse('No formulas found matching criteria', { status: 404 });
     }
 
     // Evaluate each formula against the table
-    const evaluationResults = [];
+    const evaluationResults: {
+      formula: any;
+      results?: any[];
+      error?: string;
+    }[] = [];
+
+    const highlightedCells: {
+      rowIndex: number;
+      colIndex: number;
+      color: string;
+      message: string;
+    }[] = [];
+
+    // Parse table data
+    const tableColumns = table.columns as string[];
+    const tableData = table.data as (string | number | null)[][];
 
     for (const formula of formulas) {
       try {
         const results = applyFormulaToTable(formula, {
-          columns: table.columns as string[],
-          data: table.data as (string | number | null)[][],
+          columns: tableColumns,
+          data: tableData,
+        });
+
+        // Process results and collect highlighted cells
+        results.forEach((result, rowIndex) => {
+          if (!result.isValid && formula.color) {
+            // Add highlighted cell information
+            const variableColIndex = tableColumns.findIndex(
+              col => col && typeof col === 'string' && col.toLowerCase() === 'variable'
+            );
+            
+            if (variableColIndex !== -1) {
+              highlightedCells.push({
+                rowIndex,
+                colIndex: variableColIndex,
+                color: formula.color || '#ff0000',
+                message: result.message || `${formula.name} değerlendirme hatası`
+              });
+            }
+          }
         });
 
         evaluationResults.push({
@@ -108,13 +168,11 @@ export async function POST(
 
     return NextResponse.json({
       tableId,
+      tableData,
       evaluationResults,
+      highlightedCells,
     });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return new NextResponse(JSON.stringify(error.errors), { status: 400 });
-    }
-
     console.error('Error applying formulas:', error);
     return new NextResponse(`Internal Error: ${(error as Error).message}`, { status: 500 });
   }

@@ -5,6 +5,13 @@ export type ArithmeticOperator = '+' | '-' | '*' | '/';
 export type ComparisonOperator = '>' | '<' | '>=' | '<=' | '==' | '!=';
 export type LogicalOperator = '&&' | '||';
 
+export interface FormulaResult {
+  result: boolean;
+  message?: string;
+  color?: string;
+  formulaName?: string;
+}
+
 export interface FormulaCondition {
   operand1: string;
   arithmeticOperator?: ArithmeticOperator;
@@ -180,9 +187,18 @@ export function applyFormulaToTable(
     data: (string | number | null)[][];
   }
 ): EvaluationResult[] {
+  // Validate inputs
+  if (!data || !Array.isArray(data.columns) || !Array.isArray(data.data)) {
+    throw new Error('Geçersiz tablo verisi');
+  }
+  
+  if (!formula || !formula.formula) {
+    throw new Error('Geçersiz formül');
+  }
+  
   // Find the variable column index
   const variableColumnIndex = data.columns.findIndex(
-    col => col.toLowerCase() === 'variable'
+    col => col && typeof col === 'string' && col.toLowerCase() === 'variable'
   );
   
   if (variableColumnIndex === -1) {
@@ -190,16 +206,33 @@ export function applyFormulaToTable(
   }
   
   // Process each row
-  const results = data.data.map(row => {
+  const results = data.data.map((row, rowIndex) => {
+    // Skip invalid rows
+    if (!row || !Array.isArray(row)) {
+      return { 
+        isValid: false, 
+        message: `Satır ${rowIndex + 1}: Geçersiz veri` 
+      };
+    }
+    
     // Create context from row data
     const context: EvaluationContext = { variables: {} };
     
     // Add the current row's variable name and value
-    const variableName = row[variableColumnIndex] as string;
-    if (!variableName) return { isValid: false };
+    const variableValue = row[variableColumnIndex];
+    const variableName = typeof variableValue === 'string' ? variableValue : null;
+    
+    if (!variableName) {
+      return { 
+        isValid: false, 
+        message: `Değişken değeri bulunamadı (satır ${rowIndex + 1})` 
+      };
+    }
     
     // Collect all values for this row
     data.columns.forEach((col, index) => {
+      if (!col || typeof col !== 'string') return;
+      
       const value = row[index];
       if (typeof value === 'number') {
         context.variables[col] = value;
@@ -212,7 +245,8 @@ export function applyFormulaToTable(
     if (!context.variables[variableName]) {
       // Find the value from the data (this is a simplification)
       const valueColumnIndex = data.columns.findIndex(
-        col => col !== 'Variable' && col !== 'Data Source' && col !== 'Method' && col !== 'Unit' && col !== 'LOQ'
+        col => col && typeof col === 'string' && 
+        !['Variable', 'Data Source', 'Method', 'Unit', 'LOQ'].includes(col)
       );
       
       if (valueColumnIndex !== -1) {
@@ -225,8 +259,16 @@ export function applyFormulaToTable(
       }
     }
     
-    // Evaluate the formula
-    return evaluateFormula(formula.formula, context);
+    try {
+      // Evaluate the formula
+      return evaluateFormula(formula.formula, context);
+    } catch (error) {
+      return {
+        isValid: false,
+        message: `Formül değerlendirme hatası: ${(error as Error).message}`,
+        debug: `Failed formula: ${formula.formula}`
+      };
+    }
   });
   
   return results;

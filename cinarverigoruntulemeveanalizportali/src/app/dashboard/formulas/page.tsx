@@ -440,7 +440,7 @@ export default function FormulasPage() {
               className={`px-4 py-2 rounded-md transition duration-200 font-medium ${
                 formulaType === 'CELL_VALIDATION' 
                   ? 'bg-blue-500 text-white' 
-                  : 'text-gray-700 hover:bg-gray-200'
+                  : 'text-gray-900 hover:bg-gray-200'
               }`}
               onClick={() => setFormulaType('CELL_VALIDATION')}
             >
@@ -450,7 +450,7 @@ export default function FormulasPage() {
               className={`px-4 py-2 rounded-md transition duration-200 font-medium ${
                 formulaType === 'RELATIONAL' 
                   ? 'bg-purple-500 text-white' 
-                  : 'text-gray-700 hover:bg-gray-200'
+                  : 'text-gray-900 hover:bg-gray-200'
               }`}
               onClick={() => setFormulaType('RELATIONAL')}
             >
@@ -559,7 +559,7 @@ export default function FormulasPage() {
                 ))}
                 
                 {filteredFormulas.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-8 text-gray-800">
                     Henüz formül oluşturulmadı
                   </div>
                 )}
@@ -576,7 +576,7 @@ export default function FormulasPage() {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-800 mb-1">
                     Formül Başlığı *
                   </label>
                   <input
@@ -588,7 +588,7 @@ export default function FormulasPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-800 mb-1">
                     Vurgulama Rengi
                   </label>
                   <div className="flex items-center">
@@ -606,7 +606,7 @@ export default function FormulasPage() {
               </div>
               
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-800 mb-1">
                   Açıklama
                 </label>
                 <textarea
@@ -620,7 +620,7 @@ export default function FormulasPage() {
               
               <div className="mt-6 mb-4">
                 <div className="flex justify-between items-center mb-2">
-                  <h4 className="font-medium">Değişken Listesi</h4>
+                  <h4 className="font-medium text-gray-900">Değişken Listesi</h4>
                   <button 
                     type="button"
                     className="flex items-center px-2 py-1 bg-blue-100 text-blue-600 rounded-md hover:bg-blue-200 transition text-xs"
@@ -656,14 +656,14 @@ export default function FormulasPage() {
                       </div>
                     ))}
                     {variables.length === 0 && (
-                      <div className="text-gray-500 p-2">Değişken bulunamadı</div>
+                      <div className="text-gray-800 p-2">Değişken bulunamadı</div>
                     )}
                   </div>
                 </div>
               </div>
               
               <div className="border-t border-b py-4 mb-4">
-                <h4 className="font-medium mb-3">Formül Oluşturucu</h4>
+                <h4 className="font-medium text-gray-900 mb-3">Formül Oluşturucu</h4>
                 
                 <div className="space-y-4">
                   {conditions.map((condition, index) => (
@@ -815,7 +815,7 @@ export default function FormulasPage() {
               
               {/* Formula Preview */}
               <div className="mb-4 bg-gray-50 p-3 rounded-lg">
-                <h4 className="text-sm font-medium mb-2">Formül Önizleme:</h4>
+                <h4 className="text-sm font-medium text-gray-900 mb-2">Formül Önizleme:</h4>
                 <div className="bg-white p-3 rounded border font-mono text-sm">
                   {formulaPreview || <span className="text-gray-400">Geçerli bir formül oluşturmak için yukarıdaki alanları doldurun</span>}
                 </div>

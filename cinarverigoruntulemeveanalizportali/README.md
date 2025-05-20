@@ -57,22 +57,41 @@
    NEXT_PUBLIC_APP_URL="http://localhost:3000"
    ```
 
-4. Veritabanını oluşturun:
+4. Veritabanını kurma seçenekleri:
+   
+   **A. Otomatik kurulum**:
    ```bash
-   npx prisma db push
+   npm run db:setup
+   ```
+   
+   Bu komut, migrationları uygular, Prisma istemcisini oluşturur ve örnek verileri ekler.
+   
+   **B. Manuel kurulum adımları**:
+   - Migrationları uygulama: `npm run prisma:migrate`
+   - Prisma istemcisini oluşturma: `npm run prisma:generate`
+   - Örnek verileri yükleme (opsiyonel): `npm run prisma:seed`
+   
+   **C. PowerShell script ile kurulum (Windows)**:
+   ```bash
+   ./init-db.ps1
+   ```
+   
+   **Veritabanını sıfırlama (tüm veriler silinir)**:
+   ```bash
+   npm run db:reset
+   ```
+   
+   **Prisma Studio ile veritabanını görüntüleme**:
+   ```bash
+   npm run prisma:studio
    ```
 
-5. (Opsiyonel) Örnek verileri yükleyin:
-   ```bash
-   npm run seed
-   ```
-
-6. Geliştirme modunda çalıştırın:
+5. Geliştirme modunda çalıştırın:
    ```bash
    npm run dev
    ```
 
-7. Uygulamaya `http://localhost:3000` adresinden erişebilirsiniz
+6. Uygulamaya `http://localhost:3000` adresinden erişebilirsiniz
 
 ### Üretim Ortamına Dağıtım
 

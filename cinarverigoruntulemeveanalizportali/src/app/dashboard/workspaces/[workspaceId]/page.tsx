@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { FcFolder, FcDataSheet, FcLineChart, FcRules } from 'react-icons/fc';
 import ExcelUploader from '@/components/tables/ExcelUploader';
-import DataTable from '@/components/tables/DataTable';
+import EditableDataTable from '@/components/tables/EditableDataTable';
 import FormulaEditor from '@/components/formulas/FormulaEditor';
 import TrendAnalysis from '@/components/analysis/TrendAnalysis';
 
@@ -152,9 +152,9 @@ export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) 
         <div className="flex items-start">
           <FcFolder className="h-10 w-10 mr-4" />
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{workspace.name}</h1>
+            <h1 className="text-2xl font-bold text-black">{workspace.name}</h1>
             {workspace.description && (
-              <p className="text-gray-600 mt-1">{workspace.description}</p>
+              <p className="text-gray-800 mt-1">{workspace.description}</p>
             )}
           </div>
         </div>
@@ -166,7 +166,7 @@ export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) 
             className={`flex items-center px-6 py-4 text-sm font-medium ${
               activeTab === 'tables'
                 ? 'bg-blue-50 border-b-2 border-blue-500 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                : 'text-gray-800 hover:text-black hover:bg-gray-50'
             }`}
             onClick={() => setActiveTab('tables')}
           >
@@ -177,7 +177,7 @@ export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) 
             className={`flex items-center px-6 py-4 text-sm font-medium ${
               activeTab === 'formulas'
                 ? 'bg-blue-50 border-b-2 border-blue-500 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                : 'text-gray-800 hover:text-black hover:bg-gray-50'
             }`}
             onClick={() => setActiveTab('formulas')}
           >
@@ -188,7 +188,7 @@ export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) 
             className={`flex items-center px-6 py-4 text-sm font-medium ${
               activeTab === 'analysis'
                 ? 'bg-blue-50 border-b-2 border-blue-500 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                : 'text-gray-800 hover:text-black hover:bg-gray-50'
             }`}
             onClick={() => setActiveTab('analysis')}
           >
@@ -208,14 +208,14 @@ export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) 
               {tables.length > 0 ? (
                 <div>
                   <div className="mb-6">
-                    <label htmlFor="tableSelect" className="block text-sm font-medium text-gray-700 mb-1">
+                    <label htmlFor="tableSelect" className="block text-sm font-medium text-gray-800 mb-1">
                       Tablo Seçin
                     </label>
                     <select
                       id="tableSelect"
                       value={selectedTableId || ''}
                       onChange={(e) => setSelectedTableId(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                     >
                       {tables.map((table) => (
                         <option key={table.id} value={table.id}>
@@ -226,14 +226,14 @@ export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) 
                   </div>
                   
                   {selectedTableId && (
-                    <DataTable tableId={selectedTableId} workspaceId={workspaceId} />
+                    <EditableDataTable tableId={selectedTableId} workspaceId={workspaceId} />
                   )}
                 </div>
               ) : (
                 <div className="text-center py-8 bg-gray-50 rounded-lg">
                   <FcDataSheet className="mx-auto h-12 w-12 text-gray-400" />
                   <h3 className="mt-2 text-sm font-medium text-gray-900">Henüz tablo yok</h3>
-                  <p className="mt-1 text-sm text-gray-500">
+                  <p className="mt-1 text-sm text-gray-800">
                     Yukarıdaki form aracılığıyla Excel dosyası yükleyerek başlayın.
                   </p>
                 </div>
@@ -258,7 +258,7 @@ export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) 
                 <div className="text-center py-8 bg-gray-50 rounded-lg">
                   <FcLineChart className="mx-auto h-12 w-12 text-gray-400" />
                   <h3 className="mt-2 text-sm font-medium text-gray-900">Analiz için veri yok</h3>
-                  <p className="mt-1 text-sm text-gray-500">
+                  <p className="mt-1 text-sm text-gray-800">
                     Önce "Tablolar" sekmesinden veri yüklemeniz gerekiyor.
                   </p>
                 </div>

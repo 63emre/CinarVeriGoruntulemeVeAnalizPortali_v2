@@ -7,6 +7,32 @@ export interface ExcelData {
   data: (string | number | null)[][];
 }
 
+// Convert Excel serial date to DD.MM.YYYY format
+function excelSerialDateToString(serialDate: number): string {
+  // Excel's epoch starts on January 1, 1900
+  // Excel incorrectly treats 1900 as a leap year, so we need to adjust
+  // Excel serial dates before March 1, 1900 are off by 1
+  const excelEpoch = new Date(1899, 11, 30);
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  
+  // Calculate the number of milliseconds from the Excel epoch
+  const milliseconds = serialDate * millisecondsPerDay;
+  const date = new Date(excelEpoch.getTime() + milliseconds);
+  
+  // Format as DD.MM.YYYY
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+  const year = date.getFullYear();
+  
+  return `${day}.${month}.${year}`;
+}
+
+// Check if a string is potentially an Excel serial date
+function isExcelSerialDate(value: string): boolean {
+  // Excel serial dates are typically 5-digit numbers
+  return /^\d{5,6}$/.test(value) && !isNaN(Number(value));
+}
+
 export async function parseExcelFile(file: File): Promise<ExcelData[]> {
   try {
     const buffer = await file.arrayBuffer();
@@ -21,7 +47,17 @@ export async function parseExcelFile(file: File): Promise<ExcelData[]> {
         // Get and clean headers from the first row
         const rawHeaders = jsonData[0] || [];
         const headers = Array.isArray(rawHeaders) 
-          ? rawHeaders.map(h => h === null || h === undefined ? '' : String(h).trim()) 
+          ? rawHeaders.map(h => {
+              if (h === null || h === undefined) return '';
+              
+              // Convert Excel serial dates in headers to readable format
+              const stringValue = String(h).trim();
+              if (isExcelSerialDate(stringValue)) {
+                return excelSerialDateToString(Number(stringValue));
+              }
+              
+              return stringValue;
+            }) 
           : [];
         
         // Filter out empty header columns

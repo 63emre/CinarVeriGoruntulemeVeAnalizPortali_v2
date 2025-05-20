@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 // Define a custom DataTable interface since it's not exported from Prisma client
 export interface DataTable {
@@ -10,11 +11,202 @@ export interface DataTable {
   uploadedAt: Date;
   updatedAt: Date;
   columns: string[];
-  data: (string | number)[][];
+  data: (string | number | null)[][];
   workspace?: {
     name: string;
-    description?: string;
+    description?: string | null;
   };
+}
+
+interface HighlightedCell {
+  row: string;
+  col: string;
+  color: string;
+  message: string;
+}
+
+interface Formula {
+  id: string;
+  name: string;
+  description: string | null;
+  formula: string;
+  color: string | null;
+}
+
+interface PdfExportOptions {
+  includeFormulas?: boolean;
+  includeAnalysis?: boolean;
+  title?: string;
+  subtitle?: string;
+  logo?: string;
+}
+
+/**
+ * Converts HEX color to RGB values
+ */
+function hexToRgb(hex: string): { r: number, g: number, b: number } | null {
+  // Default to black if no color provided
+  if (!hex) return { r: 0, g: 0, b: 0 };
+  
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : null;
+}
+
+/**
+ * Creates a PDF export of a data table with highlighted cells based on formulas
+ */
+export async function exportTableToPdf(
+  table: DataTable,
+  highlightedCells: HighlightedCell[] = [],
+  formulas: Formula[] = [],
+  options: PdfExportOptions = {}
+): Promise<Blob> {
+  const doc = new jsPDF();
+  
+  // Add title
+  const title = options.title || `${table.name} - ${table.sheetName}`;
+  const subtitle = options.subtitle || 'Çınar Çevre Laboratuvarı';
+  const date = new Date().toLocaleDateString('tr-TR');
+  const time = new Date().toLocaleTimeString('tr-TR');
+  
+  // Add header
+  doc.setFontSize(18);
+  doc.text(title, 14, 20);
+  
+  doc.setFontSize(12);
+  doc.text(subtitle, 14, 30);
+  
+  doc.setFontSize(10);
+  doc.text(`Tarih: ${date} Saat: ${time}`, 14, 38);
+  
+  // Create CellHooks object to handle cell highlighting
+  const cellHooks = {
+    didParseCell: function(data: any) {
+      // Skip header cells
+      if (data.section === 'head') return;
+      
+      // Get rowId based on row index (add 1 since data rows start at index 1 in the PDF)
+      const rowId = `row-${data.row.index}`;
+      
+      // Get column name
+      const colName = table.columns[data.column.index];
+      
+      // Check if this cell is highlighted
+      const highlight = highlightedCells.find(cell => 
+        cell.row === rowId && cell.col === colName
+      );
+      
+      if (highlight) {
+        // Get RGB color from HEX
+        const rgb = hexToRgb(highlight.color);
+        
+        // Apply color with reduced opacity for background
+        if (rgb) {
+          // Create a light version of the color for the background
+          data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b, 0.1]; // 10% opacity
+          data.cell.styles.textColor = [rgb.r / 2, rgb.g / 2, rgb.b / 2]; // Darker text
+          data.cell.styles.fontStyle = 'bold';
+        }
+      }
+    }
+  };
+  
+  // Parse data for the table
+  const tableData = table.data.map((row, rowIndex) => {
+    return row.map((cell) => cell === null ? '' : String(cell));
+  });
+  
+  // Generate the table
+  autoTable(doc, {
+    head: [table.columns],
+    body: tableData,
+    startY: 45,
+    margin: { top: 45 },
+    styles: {
+      fontSize: 8,
+      cellPadding: 2,
+    },
+    headStyles: {
+      fillColor: [41, 128, 185],
+      textColor: 255,
+      fontStyle: 'bold',
+    },
+    alternateRowStyles: {
+      fillColor: [240, 240, 240],
+    },
+    // @ts-ignore - type definition issue with jspdf-autotable
+    didParseCell: cellHooks.didParseCell,
+  });
+  
+  // Add formula explanations if requested
+  if (options.includeFormulas && formulas.length > 0) {
+    const lastTableY = (doc as any).lastAutoTable.finalY || 45;
+    
+    doc.setFontSize(12);
+    doc.text('Formül Açıklamaları:', 14, lastTableY + 15);
+    
+    let yPos = lastTableY + 25;
+    
+    formulas.forEach((formula, index) => {
+      // Check if we need a new page
+      if (yPos > 270) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      // Get color for formula
+      const rgb = hexToRgb(formula.color || '#000000');
+      
+      // Draw color indicator
+      if (rgb) {
+        doc.setFillColor(rgb.r, rgb.g, rgb.b);
+        doc.rect(14, yPos - 4, 6, 6, 'F');
+      }
+      
+      // Add formula name and formula text
+      doc.setFontSize(10);
+      doc.text(`${index + 1}. ${formula.name}`, 24, yPos);
+      
+      if (formula.description) {
+        yPos += 6;
+        doc.setFontSize(8);
+        doc.text(`Açıklama: ${formula.description}`, 24, yPos);
+      }
+      
+      yPos += 6;
+      doc.setFontSize(8);
+      doc.text(`Formül: ${formula.formula}`, 24, yPos);
+      
+      yPos += 12;
+    });
+  }
+  
+  // Include company information and footer
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(
+      'Çınar Çevre Laboratuvarı - Veri Görüntüleme ve Analiz Portalı',
+      14,
+      doc.internal.pageSize.height - 10
+    );
+    
+    // Add page numbers
+    doc.text(
+      `Sayfa ${i} / ${pageCount}`,
+      doc.internal.pageSize.width - 30,
+      doc.internal.pageSize.height - 10
+    );
+  }
+  
+  // Return the PDF as a blob
+  return doc.output('blob');
 }
 
 export interface PDFGenerationOptions {

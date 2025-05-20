@@ -1,21 +1,28 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { FcHome, FcDatabase, FcRules, FcFolder } from 'react-icons/fc';
-import { Card } from '@/components/ui/card';
+import { useRouter } from 'next/navigation';
+import { FcDataSheet, FcAddRow, FcDocument, FcAreaChart, FcSettings } from 'react-icons/fc';
 import ExcelUploader from '@/components/tables/ExcelUploader';
-import { formatDistanceToNow } from 'date-fns';
-import { tr } from 'date-fns/locale';
+import WorkspaceInfo from '@/components/workspaces/WorkspaceInfo';
+import TablesView from '@/components/tables/TablesView';
+import Link from 'next/link';
+
+interface WorkspaceDetailPageProps {
+  params: {
+    workspaceId: string;
+  };
+}
 
 interface Workspace {
   id: string;
   name: string;
   description: string | null;
   createdAt: string;
-  updatedAt: string;
-  tables: Table[];
+  _count: {
+    tables: number;
+    formulas: number;
+  };
 }
 
 interface Table {
@@ -23,183 +30,212 @@ interface Table {
   name: string;
   sheetName: string;
   uploadedAt: string;
-  rowCount?: number;
 }
 
-export default function WorkspaceDetailsPage() {
-  const params = useParams();
+export default function WorkspaceDetailPage({ params }: WorkspaceDetailPageProps) {
+  const { workspaceId } = params;
   const router = useRouter();
-  const workspaceId = typeof params.workspaceId === 'string' ? params.workspaceId : '';
   
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [tables, setTables] = useState<Table[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
-
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  
   useEffect(() => {
-    const fetchWorkspace = async () => {
-      if (!workspaceId) return;
-      
+    // Fetch workspace data
+    async function fetchWorkspaceData() {
       try {
-        setLoading(true);
         const response = await fetch(`/api/workspaces/${workspaceId}`);
         
         if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error('Çalışma alanı bulunamadı');
-          }
-          throw new Error('Çalışma alanını yüklerken bir hata oluştu');
+          throw new Error('Çalışma alanı verileri yüklenemedi');
         }
         
         const data = await response.json();
         setWorkspace(data);
       } catch (err) {
+        console.error('Çalışma alanı verileri yükleme hatası:', err);
         setError((err as Error).message);
-        console.error('Çalışma alanı yükleme hatası:', err);
       } finally {
         setLoading(false);
       }
-    };
+    }
     
-    fetchWorkspace();
-  }, [workspaceId, refreshTrigger]);
-
-  const handleFileUploaded = () => {
-    // Tabloları yenilemek için refresh trigger'ı değiştir
-    setRefreshTrigger(prev => prev + 1);
+    // Fetch tables
+    async function fetchTables() {
+      try {
+        const response = await fetch(`/api/workspaces/${workspaceId}/tables`);
+        
+        if (!response.ok) {
+          throw new Error('Tablolar yüklenemedi');
+        }
+        
+        const data = await response.json();
+        setTables(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Tablolar yükleme hatası:', err);
+        setError((err as Error).message);
+      }
+    }
+    
+    fetchWorkspaceData();
+    fetchTables();
+  }, [workspaceId]);
+  
+  const handleTableSelect = (tableId: string) => {
+    setSelectedTable(tableId);
   };
-
+  
+  const handleUploadSuccess = (tableIds: string[]) => {
+    // Refresh table list
+    fetch(`/api/workspaces/${workspaceId}/tables`)
+      .then(response => response.json())
+      .then(data => {
+        setTables(Array.isArray(data) ? data : []);
+        
+        // Select the first new table if available
+        if (tableIds.length > 0) {
+          setSelectedTable(tableIds[0]);
+        }
+      })
+      .catch(err => {
+        console.error('Error refreshing tables:', err);
+      });
+  };
+  
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
+      <div className="flex justify-center items-center h-96">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
       </div>
     );
   }
-
+  
   if (error) {
     return (
-      <div className="p-6">
-        <div className="bg-red-50 p-4 rounded-md border-l-4 border-red-500">
-          <h2 className="text-red-800 font-medium">Hata</h2>
-          <p className="text-red-700">{error}</p>
-          <button 
-            onClick={() => router.push('/dashboard/workspaces')}
-            className="mt-2 text-red-700 hover:text-red-900 underline"
-          >
-            Çalışma Alanları Listesine Dön
-          </button>
-        </div>
+      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <p className="font-medium">{error}</p>
+        <p className="text-sm mt-1">Lütfen daha sonra tekrar deneyin veya yöneticinizle iletişime geçin.</p>
       </div>
     );
   }
-
+  
   if (!workspace) {
     return (
-      <div className="p-6">
-        <div className="bg-yellow-50 p-4 rounded-md border-l-4 border-yellow-500">
-          <h2 className="text-yellow-800 font-medium">Çalışma Alanı Bulunamadı</h2>
-          <p className="text-yellow-700">İstenen çalışma alanı bulunamadı veya erişim izniniz yok.</p>
-          <button 
-            onClick={() => router.push('/dashboard/workspaces')}
-            className="mt-2 text-yellow-700 hover:text-yellow-900 underline"
+      <div className="text-center py-12">
+        <h3 className="text-lg font-medium text-gray-900">Çalışma Alanı Bulunamadı</h3>
+        <div className="mt-2">
+          <p className="text-sm text-gray-500">Bu çalışma alanına erişim izniniz olmayabilir veya silinmiş olabilir.</p>
+        </div>
+        <div className="mt-6">
+          <Link 
+            href="/dashboard/workspaces"
+            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
           >
-            Çalışma Alanları Listesine Dön
-          </button>
+            Çalışma Alanlarına Dön
+          </Link>
         </div>
       </div>
     );
   }
-
+  
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Gezinti Yolu */}
-      <div className="mb-6 flex flex-wrap items-center text-sm text-gray-500">
-        <Link href="/dashboard" className="flex items-center hover:text-blue-600 transition">
-          <FcHome className="mr-1" /> Kontrol Paneli
-        </Link>
-        <span className="mx-2">›</span>
-        <Link href="/dashboard/workspaces" className="flex items-center hover:text-blue-600 transition">
-          <FcFolder className="mr-1" /> Çalışma Alanları
-        </Link>
-        <span className="mx-2">›</span>
-        <span className="text-gray-800 font-medium flex items-center">
-          <FcDatabase className="mr-1" /> {workspace.name}
-        </span>
-      </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <WorkspaceInfo workspace={workspace} />
       
-      {/* Çalışma Alanı Başlığı ve Özeti */}
-      <div className="mb-8">
-        <div className="flex flex-wrap items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold text-gray-800">{workspace.name}</h1>
-          
-          <div className="flex gap-2 mt-2 md:mt-0">
-            <Link 
-              href={`/dashboard/formulas?workspaceId=${workspaceId}`}
-              className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition flex items-center"
+      <div className="mt-8">
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <Link
+              href={`/dashboard/workspaces/${workspaceId}`}
+              className="border-blue-500 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center"
             >
-              <FcRules className="mr-2 bg-white rounded-full p-1" /> 
-              Formülleri Yönet
+              <FcDataSheet className="mr-2 h-5 w-5" />
+              Tablolar
             </Link>
-          </div>
-        </div>
-        
-        {workspace.description && (
-          <p className="text-gray-600 mb-4">{workspace.description}</p>
-        )}
-        
-        <div className="text-sm text-gray-500">
-          <span className="mr-4">Oluşturulma: {formatDistanceToNow(new Date(workspace.createdAt), { addSuffix: true, locale: tr })}</span>
-          <span>Son Güncelleme: {formatDistanceToNow(new Date(workspace.updatedAt), { addSuffix: true, locale: tr })}</span>
+            
+            <Link
+              href={selectedTable ? `/dashboard/workspaces/${workspaceId}/tables/${selectedTable}` : `#`}
+              className={`${
+                selectedTable
+                  ? 'text-gray-600 hover:text-gray-700 hover:border-gray-300'
+                  : 'text-gray-400 cursor-not-allowed'
+              } whitespace-nowrap py-4 px-1 border-b-2 border-transparent font-medium text-sm flex items-center`}
+              onClick={(e) => {
+                if (!selectedTable) {
+                  e.preventDefault();
+                  alert('Lütfen önce bir tablo seçin');
+                }
+              }}
+            >
+              <FcDocument className="mr-2 h-5 w-5" />
+              Tablo Görünümü
+            </Link>
+            
+            <Link
+              href={selectedTable ? `/dashboard/workspaces/${workspaceId}/formulas?tableId=${selectedTable}` : `#`}
+              className={`${
+                selectedTable
+                  ? 'text-gray-600 hover:text-gray-700 hover:border-gray-300'
+                  : 'text-gray-400 cursor-not-allowed'
+              } whitespace-nowrap py-4 px-1 border-b-2 border-transparent font-medium text-sm flex items-center`}
+              onClick={(e) => {
+                if (!selectedTable) {
+                  e.preventDefault();
+                  alert('Formül ekleyebilmek için önce bir tablo seçmelisiniz');
+                }
+              }}
+            >
+              <FcAddRow className="mr-2 h-5 w-5" />
+              Formüller
+            </Link>
+            
+            <Link
+              href={selectedTable ? `/dashboard/workspaces/${workspaceId}/analysis?tableId=${selectedTable}` : `#`}
+              className={`${
+                selectedTable
+                  ? 'text-gray-600 hover:text-gray-700 hover:border-gray-300'
+                  : 'text-gray-400 cursor-not-allowed'
+              } whitespace-nowrap py-4 px-1 border-b-2 border-transparent font-medium text-sm flex items-center`}
+              onClick={(e) => {
+                if (!selectedTable) {
+                  e.preventDefault();
+                  alert('Analiz yapabilmek için önce bir tablo seçmelisiniz');
+                }
+              }}
+            >
+              <FcAreaChart className="mr-2 h-5 w-5" />
+              Analiz
+            </Link>
+          </nav>
         </div>
       </div>
       
-      {/* Excel Yükleme Bölümü */}
-      <Card className="mb-8 p-5">
-        <h2 className="text-xl font-semibold mb-4">Excel Dosyası Yükle</h2>
-        <ExcelUploader 
-          workspaceId={workspaceId} 
-          onFileUploaded={handleFileUploaded}
-        />
-      </Card>
-      
-      {/* Tablolar Listesi */}
-      <div className="mb-8">
-        <h2 className="text-xl font-semibold mb-4 flex items-center">
-          <FcDatabase className="mr-2" /> Tablolar
-        </h2>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+        <div className="lg:col-span-1 bg-white rounded-lg shadow p-6">
+          <h2 className="font-medium text-gray-900 mb-4 flex items-center">
+            <FcAddRow className="mr-2 h-5 w-5" />
+            Excel Yükle
+          </h2>
+          <ExcelUploader workspaceId={workspaceId} onFileUploaded={handleUploadSuccess} />
+        </div>
         
-        {workspace.tables.length === 0 ? (
-          <div className="bg-yellow-50 p-4 rounded-md border border-yellow-200">
-            <p className="text-yellow-700">Bu çalışma alanında henüz hiç tablo yok. Excel dosyaları yükleyerek veri tablolarınızı oluşturun.</p>
+        <div className="lg:col-span-2 bg-white rounded-lg shadow">
+          <div className="p-6">
+            <h2 className="font-medium text-gray-900 mb-4 flex items-center">
+              <FcDataSheet className="mr-2 h-5 w-5" />
+              Tablolar
+            </h2>
+            
+            <TablesView 
+              tables={tables} 
+              workspaceId={workspaceId} 
+              onTableSelect={handleTableSelect}
+              selectedTableId={selectedTable}
+            />
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {workspace.tables.map(table => (
-              <Card key={table.id} className="hover:shadow-md transition-shadow">
-                <Link 
-                  href={`/dashboard/workspaces/${workspaceId}/tables/${table.id}`}
-                  className="block p-5 h-full"
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 className="font-medium text-lg text-gray-800">{table.name}</h3>
-                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                      {table.rowCount || '?'} satır
-                    </span>
-                  </div>
-                  
-                  <div className="text-gray-500 text-sm mb-3">
-                    Sayfa: {table.sheetName}
-                  </div>
-                  
-                  <div className="text-xs text-gray-500 mt-auto">
-                    Yüklenme: {formatDistanceToNow(new Date(table.uploadedAt), { addSuffix: true, locale: tr })}
-                  </div>
-                </Link>
-              </Card>
-            ))}
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

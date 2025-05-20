@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FcInfo, FcRules, FcDatabase, FcCheckmark } from 'react-icons/fc';
+import { FcInfo, FcRules, FcDatabase, FcCheckmark, FcAddRow, FcCancel } from 'react-icons/fc';
+import { MdDelete, MdAdd } from 'react-icons/md';
+import { HiOutlineExclamationCircle } from 'react-icons/hi';
 
 interface FormulaEditorProps {
   workspaceId: string;
-  tableId?: string | null;
+  tableId: string | null;
   onFormulaAdded?: (formula: Formula) => void;
 }
 

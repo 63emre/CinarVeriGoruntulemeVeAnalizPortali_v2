@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser } from '@/lib/auth/auth';
 import * as z from 'zod';
 import prisma from '@/lib/db';
 import { saveFormula, getFormulas, deleteFormula } from '@/lib/formula/formula-service';
@@ -7,10 +7,10 @@ import { saveFormula, getFormulas, deleteFormula } from '@/lib/formula/formula-s
 // Schema for formula creation/update
 const FormulaSchema = z.object({
   name: z.string().min(1, 'Formül adı zorunludur'),
-  description: z.string().optional(),
+  description: z.string().optional().nullable(),
   formula: z.string().min(1, 'Formül ifadesi zorunludur'),
-  tableId: z.string().optional(),
-  color: z.string().optional(),
+  tableId: z.string().optional().nullable(),
+  color: z.string().optional().nullable(),
   type: z.enum(['CELL_VALIDATION', 'RELATIONAL']),
 });
 
@@ -20,7 +20,8 @@ export async function GET(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    const { workspaceId } = params;
+    const safeParams = await params;
+    const { workspaceId } = safeParams;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -47,7 +48,7 @@ export async function GET(
     const isAdmin = currentUser.role === 'ADMIN';
     const isCreator = workspace.createdBy === currentUser.id;
     
-    if (!isAdmin) {
+    if (!isAdmin && !isCreator) {
       const hasAccess = await prisma.workspaceUser.findFirst({
         where: {
           userId: currentUser.id,
@@ -55,7 +56,7 @@ export async function GET(
         },
       });
       
-      if (!hasAccess && !isCreator) {
+      if (!hasAccess) {
         return NextResponse.json(
           { message: 'You do not have access to this workspace' },
           { status: 403 }
@@ -82,7 +83,8 @@ export async function POST(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    const { workspaceId } = params;
+    const safeParams = await params;
+    const { workspaceId } = safeParams;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -113,8 +115,9 @@ export async function POST(
     });
 
     const isCreator = workspace.createdBy === currentUser.id;
+    const isAdmin = currentUser.role === 'ADMIN';
 
-    if (!hasAccess && !isCreator && currentUser.role !== 'ADMIN') {
+    if (!hasAccess && !isCreator && !isAdmin) {
       return NextResponse.json(
         { message: 'You do not have access to this workspace' },
         { status: 403 }
@@ -160,26 +163,27 @@ export async function POST(
 
 // DELETE: Delete a formula
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    const user = await getCurrentUser();
+    const safeParams = await params;
+    const { workspaceId } = safeParams;
     
-    if (!user) {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
       return NextResponse.json(
-        { message: 'Yetkilendirme hatası' },
+        { message: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    const { workspaceId } = params;
     const url = new URL(request.url);
     const formulaId = url.searchParams.get('formulaId');
 
     if (!formulaId) {
       return NextResponse.json(
-        { message: 'Formül ID gereklidir' },
+        { message: 'Formula ID is required' },
         { status: 400 }
       );
     }
@@ -194,11 +198,11 @@ export async function DELETE(
           },
         },
         OR: [
-          { createdBy: user.id },
+          { createdBy: currentUser.id },
           {
             users: {
               some: {
-                userId: user.id,
+                userId: currentUser.id,
               },
             },
           },
@@ -206,9 +210,9 @@ export async function DELETE(
       },
     });
 
-    if (!workspace) {
+    if (!workspace && currentUser.role !== 'ADMIN') {
       return NextResponse.json(
-        { message: 'Çalışma alanı veya formül bulunamadı ya da erişim izniniz yok' },
+        { message: 'Workspace or formula not found or you do not have access' },
         { status: 403 }
       );
     }
@@ -217,12 +221,12 @@ export async function DELETE(
     await deleteFormula(formulaId);
 
     return NextResponse.json({
-      message: 'Formül başarıyla silindi',
+      message: 'Formula deleted successfully',
     });
   } catch (error) {
     console.error('Error deleting formula:', error);
     return NextResponse.json(
-      { message: 'Sunucu hatası' },
+      { message: 'Server error' },
       { status: 500 }
     );
   }

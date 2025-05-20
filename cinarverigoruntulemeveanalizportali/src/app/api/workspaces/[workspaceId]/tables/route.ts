@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
+import prisma from '@/lib/db';
 
-// Get all tables for a specific workspace
+// GET: Get all tables for a workspace
 export async function GET(
   request: NextRequest,
-  context: { params: Promise<{ workspaceId: string }> }
+  { params }: { params: { workspaceId: string } }
 ) {
   try {
-    const { workspaceId } = await context.params;
+    console.log(`GET /api/workspaces/${params.workspaceId}/tables called`);
     
-    console.log(`GET /api/workspaces/${workspaceId}/tables called`);
-
+    const safeParams = await params;
+    const { workspaceId } = safeParams;
+    
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json(
@@ -22,7 +23,14 @@ export async function GET(
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
-      where: { id: workspaceId }
+      where: { id: workspaceId },
+      include: {
+        users: {
+          where: {
+            userId: currentUser.id
+          }
+        }
+      }
     });
 
     if (!workspace) {
@@ -33,121 +41,134 @@ export async function GET(
     }
 
     // Check if user has access to this workspace
-    // Allow access if user is an admin, or the creator of the workspace, or has explicit access
-    const isCreator = workspace.createdBy === currentUser.id;
     const isAdmin = currentUser.role === 'ADMIN';
+    const isCreator = workspace.createdBy === currentUser.id;
+    const hasAccess = workspace.users.length > 0;
     
-    if (!isAdmin) {
-      const workspaceUser = await prisma.workspaceUser.findFirst({
-        where: {
-          workspaceId: workspaceId,
-          userId: currentUser.id,
-        },
-      });
-      
-      if (!workspaceUser && !isCreator) {
-        return NextResponse.json(
-          { message: 'You do not have access to this workspace' },
-          { status: 403 }
-        );
-      }
+    if (!isAdmin && !isCreator && !hasAccess) {
+      return NextResponse.json(
+        { message: 'You do not have access to this workspace' },
+        { status: 403 }
+      );
     }
 
     // Get all tables for this workspace
     const tables = await prisma.dataTable.findMany({
-      where: {
-        workspaceId: workspaceId,
-      },
+      where: { workspaceId },
       select: {
         id: true,
         name: true,
+        workspaceId: true,
         sheetName: true,
         uploadedAt: true,
+        data: true // Include data to calculate actual row count
       },
+      orderBy: {
+        uploadedAt: 'desc'
+      }
     });
 
-    return NextResponse.json(tables);
+    // Transform the data to include rowCount without sending all the data
+    const tablesWithRowCount = tables.map(table => {
+      // Get actual row count by checking data array length
+      const rowCount = Array.isArray(table.data) ? table.data.length : 0;
+      
+      // Return the table without including the full data array
+      return {
+        id: table.id,
+        name: table.name,
+        workspaceId: table.workspaceId,
+        sheetName: table.sheetName,
+        uploadedAt: table.uploadedAt,
+        rowCount
+      };
+    });
+
+    return NextResponse.json(tablesWithRowCount);
   } catch (error) {
-    console.error('Error getting tables:', error);
+    console.error('Error fetching tables:', error);
     return NextResponse.json(
-      { message: 'Server error' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }
 }
 
-// Create a new table in a workspace
+// POST: Create a new table
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    console.log(`POST /api/workspaces/${params.workspaceId}/tables called`);
+    const safeParams = await params;
+    const { workspaceId } = safeParams;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json(
-        { message: 'Yetkilendirme hatası' },
+        { message: 'Unauthorized' },
         { status: 401 }
       );
     }
-    
+
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
-      where: { id: params.workspaceId }
+      where: { id: workspaceId },
+      include: {
+        users: {
+          where: {
+            userId: currentUser.id
+          }
+        }
+      }
     });
-    
+
     if (!workspace) {
       return NextResponse.json(
-        { message: 'Çalışma alanı bulunamadı' },
+        { message: 'Workspace not found' },
         { status: 404 }
       );
     }
+
+    // Check if user has access to this workspace
+    const isAdmin = currentUser.role === 'ADMIN';
+    const isCreator = workspace.createdBy === currentUser.id;
+    const hasAccess = workspace.users.length > 0;
     
-    // Check access if not admin
-    if (currentUser.role !== 'ADMIN') {
-      const hasAccess = await prisma.workspaceUser.findFirst({
-        where: {
-          userId: currentUser.id,
-          workspaceId: params.workspaceId,
-        },
-      });
-      
-      if (!hasAccess) {
-        return NextResponse.json(
-          { message: 'Bu çalışma alanına erişim izniniz yok' },
-          { status: 403 }
-        );
-      }
+    if (!isAdmin && !isCreator && !hasAccess) {
+      return NextResponse.json(
+        { message: 'You do not have access to this workspace' },
+        { status: 403 }
+      );
     }
 
+    // Parse request body
     const body = await request.json();
     const { name, sheetName, columns, data } = body;
-    
+
     if (!name || !sheetName || !columns || !data) {
       return NextResponse.json(
-        { message: 'Tüm gerekli alanları sağlamanız gerekir' },
+        { message: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    // Create a new table
-    const newTable = await prisma.dataTable.create({
+    // Create the table
+    const table = await prisma.dataTable.create({
       data: {
         name,
         sheetName,
         columns,
         data,
-        workspaceId: params.workspaceId,
-      },
+        workspaceId,
+      }
     });
-    
-    return NextResponse.json(newTable);
 
+    return NextResponse.json(table);
   } catch (error) {
     console.error('Error creating table:', error);
     return NextResponse.json(
-      { message: 'Tablo oluşturulurken bir hata oluştu' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }

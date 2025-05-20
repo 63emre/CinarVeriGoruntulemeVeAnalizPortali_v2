@@ -1,110 +1,140 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { Card } from '@/components/ui/card';
 import Link from 'next/link';
-import { FcFolder, FcLineChart, FcDatabase } from 'react-icons/fc';
-
-interface Workspace {
-  id: string;
-  name: string;
-  description: string | null;
-  createdAt: string;
-  _count: {
-    tables: number;
-    formulas: number;
-  };
-}
+import { FcDatabase, FcRules, FcAddDatabase, FcFolder } from 'react-icons/fc';
 
 export default function DashboardPage() {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [user, setUser] = useState<any>(null);
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchWorkspaces() {
+    const fetchData = async () => {
       try {
-        const response = await fetch('/api/workspaces');
-        if (!response.ok) {
-          throw new Error('Çalışma alanları yüklenirken hata oluştu');
+        setLoading(true);
+        // Kullanıcı bilgilerini getir
+        const userRes = await fetch('/api/user');
+        if (userRes.ok) {
+          const userData = await userRes.json();
+          setUser(userData);
         }
-        const data = await response.json();
-        setWorkspaces(data);
-      } catch (err) {
-        setError('Çalışma alanları yüklenirken bir hata oluştu');
-        console.error('Error fetching workspaces:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
 
-    fetchWorkspaces();
+        // Çalışma alanlarını getir
+        const workspacesRes = await fetch('/api/workspaces');
+        if (workspacesRes.ok) {
+          const workspacesData = await workspacesRes.json();
+          setWorkspaces(workspacesData);
+        }
+      } catch (error) {
+        console.error('Veri yükleme hatası:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
   }, []);
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="flex justify-center items-center p-8">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-        <p>{error}</p>
-      </div>
-    );
-  }
-
-  if (workspaces.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <FcFolder className="mx-auto h-16 w-16 text-gray-400" />
-        <h3 className="mt-2 text-sm font-semibold text-gray-900">Çalışma Alanı Bulunamadı</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          Henüz hiçbir çalışma alanına erişim yetkiniz bulunmuyor.
-        </p>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Çalışma Alanları</h1>
-        <p className="text-gray-600">Erişiminiz olan çalışma alanlarını görüntüleyin</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {workspaces.map((workspace) => (
-          <Link 
-            key={workspace.id} 
-            href={`/dashboard/workspaces/${workspace.id}`}
-            className="border rounded-lg p-6 transition hover:shadow-md"
-          >
-            <div className="flex items-start">
-              <div className="flex-shrink-0">
-                <FcFolder className="h-10 w-10" />
-              </div>
-              <div className="ml-4">
-                <h2 className="text-lg font-medium text-gray-900">{workspace.name}</h2>
-                {workspace.description && (
-                  <p className="mt-1 text-sm text-gray-500 line-clamp-2">{workspace.description}</p>
-                )}
-                <div className="mt-3 flex items-center text-sm text-gray-500">
-                  <span className="flex items-center mr-4">
-                    <FcDatabase className="mr-1" />
-                    {workspace._count.tables} Tablo
-                  </span>
-                  <span className="flex items-center">
-                    <FcLineChart className="mr-1" />
-                    {workspace._count.formulas} Formül
-                  </span>
+    <div className="p-6 max-w-7xl mx-auto">
+      <h1 className="text-3xl font-bold mb-8 text-gray-800">Kontrol Paneli</h1>
+      
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold mb-4 flex items-center text-gray-700">
+          <FcFolder className="mr-2 text-2xl" /> Çalışma Alanlarım
+        </h2>
+        
+        {workspaces.length === 0 ? (
+          <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+            <p className="text-yellow-700">Henüz hiç çalışma alanı oluşturmadınız.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {workspaces.map((workspace: any) => (
+              <Card key={workspace.id} className="p-5 hover:shadow-md transition-shadow">
+                <div className="flex flex-col h-full">
+                  <div className="flex items-start justify-between mb-3">
+                    <h3 className="text-lg font-medium text-gray-800">{workspace.name}</h3>
+                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-md">
+                      {workspace.tables?.length || 0} Tablo
+                    </span>
+                  </div>
+                  
+                  <p className="text-gray-600 text-sm mb-4 flex-grow">
+                    {workspace.description || 'Açıklama yok'}
+                  </p>
+                  
+                  <div className="flex gap-2 mt-auto">
+                    <Link
+                      href={`/dashboard/workspaces/${workspace.id}`}
+                      className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition text-center"
+                    >
+                      Tablolar
+                    </Link>
+                    <Link
+                      href={`/dashboard/formulas?workspaceId=${workspace.id}`}
+                      className="flex-1 px-3 py-2 bg-purple-600 text-white text-sm rounded hover:bg-purple-700 transition text-center"
+                    >
+                      Formüller
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            </div>
+              </Card>
+            ))}
+          </div>
+        )}
+        
+        <div className="mt-5">
+          <Link
+            href="/dashboard/workspaces/new"
+            className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition"
+          >
+            <FcAddDatabase className="mr-2 bg-white rounded-full p-1" /> 
+            <span>Yeni Çalışma Alanı Oluştur</span>
           </Link>
-        ))}
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <Card className="p-5">
+          <h2 className="text-xl font-semibold mb-4 flex items-center text-gray-700">
+            <FcDatabase className="mr-2 text-2xl" /> Veri Yönetimi
+          </h2>
+          <p className="text-gray-600 mb-4">
+            Excel dosyalarını yükleyin, düzenleyin ve analiz edin. Verilerinizi tablolar halinde organize edin.
+          </p>
+          <Link
+            href="/dashboard/workspaces"
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition inline-block"
+          >
+            Tablo Yönetimine Git
+          </Link>
+        </Card>
+        
+        <Card className="p-5">
+          <h2 className="text-xl font-semibold mb-4 flex items-center text-gray-700">
+            <FcRules className="mr-2 text-2xl" /> Formül Yönetimi
+          </h2>
+          <p className="text-gray-600 mb-4">
+            Verilerinizi doğrulamak, ilişkileri kontrol etmek ve analiz etmek için özel formüller oluşturun.
+          </p>
+          <Link
+            href="/dashboard/formulas"
+            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition inline-block"
+          >
+            Formül Yönetimine Git
+          </Link>
+        </Card>
       </div>
     </div>
   );

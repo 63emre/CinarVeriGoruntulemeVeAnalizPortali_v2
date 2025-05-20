@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
 
-// GET: Get a specific workspace by ID
+// GET: Get a specific workspace
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { workspaceId: string } }
 ) {
   try {
@@ -15,9 +15,9 @@ export async function GET(
         { status: 401 }
       );
     }
-    
-    const { workspaceId } = params;
-    
+
+    const { workspaceId } = await params;
+
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
@@ -29,7 +29,7 @@ export async function GET(
                 id: true,
                 name: true,
                 email: true,
-                role: true,
+                role: true
               }
             }
           }
@@ -39,50 +39,36 @@ export async function GET(
             id: true,
             name: true,
             sheetName: true,
-            columns: true,
-            uploadedAt: true,
+            uploadedAt: true
           }
         }
       }
     });
-    
+
     if (!workspace) {
       return NextResponse.json(
         { message: 'Workspace not found' },
         { status: 404 }
       );
     }
-    
-    // Check if current user has access to this workspace
-    const hasAccess = currentUser.role === 'ADMIN' || 
-                     workspace.createdBy === currentUser.id || 
-                     workspace.users.some(u => u.user.id === currentUser.id);
-                     
-    if (!hasAccess) {
-      return NextResponse.json(
-        { message: 'You do not have access to this workspace' },
-        { status: 403 }
-      );
+
+    // Check if user has access to this workspace
+    if (currentUser.role !== 'ADMIN' && workspace.createdBy !== currentUser.id) {
+      const userHasAccess = workspace.users.some(wu => wu.userId === currentUser.id);
+      
+      if (!userHasAccess) {
+        return NextResponse.json(
+          { message: 'You do not have access to this workspace' },
+          { status: 403 }
+        );
+      }
     }
-    
-    // Transform the users array to be more user-friendly
-    const users = workspace.users.map(u => ({
-      id: u.user.id,
-      name: u.user.name,
-      email: u.user.email,
-      role: u.user.role,
-      addedAt: u.addedAt
-    }));
-    
-    return NextResponse.json({
-      ...workspace,
-      users
-    });
-    
+
+    return NextResponse.json(workspace);
   } catch (error) {
-    console.error('Error getting workspace:', error);
+    console.error('Error fetching workspace:', error);
     return NextResponse.json(
-      { message: 'Error fetching workspace details' },
+      { message: 'Server error' },
       { status: 500 }
     );
   }

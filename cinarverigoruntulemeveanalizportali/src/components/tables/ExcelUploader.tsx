@@ -1,67 +1,34 @@
 'use client';
 
 import { useState } from 'react';
-import { FcUpload, FcCheckmark, FcHighPriority } from 'react-icons/fc';
+import { FiUpload, FiCheck, FiAlertTriangle } from 'react-icons/fi';
 
 interface ExcelUploaderProps {
   workspaceId: string;
-  onUploadSuccess: (tableIds: string[]) => void;
+  onFileUploaded?: (tableIds: string[]) => void;
 }
 
-export default function ExcelUploader({ workspaceId, onUploadSuccess }: ExcelUploaderProps) {
+export default function ExcelUploader({ workspaceId, onFileUploaded }: ExcelUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [tableIds, setTableIds] = useState<string[]>([]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0] || null;
-    if (selectedFile) {
-      validateFile(selectedFile);
-    }
-  };
+    if (e.target.files && e.target.files.length > 0) {
+      const selectedFile = e.target.files[0];
+      
+      // Dosya türünü kontrol et
+      if (!selectedFile.name.endsWith('.xlsx') && !selectedFile.name.endsWith('.xls')) {
+        setErrorMessage('Lütfen geçerli bir Excel dosyası (.xlsx veya .xls) seçin.');
+        setUploadStatus('error');
+        return;
+      }
 
-  const validateFile = (selectedFile: File) => {
-    setError('');
-    
-    // Check file type
-    if (!selectedFile.name.endsWith('.xlsx') && !selectedFile.name.endsWith('.xls')) {
-      setError('Yalnızca Excel dosyaları (.xlsx, .xls) yüklenebilir');
-      setFile(null);
-      return;
-    }
-    
-    // Check file size (max 10MB)
-    if (selectedFile.size > 10 * 1024 * 1024) {
-      setError('Dosya boyutu 10MB\'tan büyük olamaz');
-      setFile(null);
-      return;
-    }
-    
-    setFile(selectedFile);
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    
-    const droppedFile = e.dataTransfer.files?.[0] || null;
-    if (droppedFile) {
-      validateFile(droppedFile);
+      setFile(selectedFile);
+      setUploadStatus('idle');
+      setErrorMessage('');
     }
   };
 
@@ -69,107 +36,153 @@ export default function ExcelUploader({ workspaceId, onUploadSuccess }: ExcelUpl
     e.preventDefault();
     
     if (!file) {
-      setError('Lütfen bir Excel dosyası seçin');
+      setErrorMessage('Lütfen bir Excel dosyası seçin.');
+      setUploadStatus('error');
       return;
     }
-    
-    setIsLoading(true);
-    setError('');
-    setSuccess('');
-    
-    const formData = new FormData();
-    formData.append('file', file);
-    
+
     try {
-      const response = await fetch(`/api/workspaces/${workspaceId}/excel`, {
-        method: 'POST',
-        body: formData,
+      setUploadStatus('uploading');
+      setUploadProgress(0);
+      
+      // Form verisini oluştur
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // İlerleme hesabı için XMLHttpRequest kullan
+      const xhr = new XMLHttpRequest();
+      
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          setUploadProgress(progress);
+        }
       });
       
-      const data = await response.json();
+      xhr.addEventListener('load', async () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const response = JSON.parse(xhr.responseText);
+          setTableIds(response.tableIds || []);
+          setUploadStatus('success');
+          if (onFileUploaded) {
+            onFileUploaded(response.tableIds || []);
+          }
+        } else {
+          let errorMsg = 'Dosya yüklenirken bir hata oluştu.';
+          try {
+            const errorResponse = JSON.parse(xhr.responseText);
+            errorMsg = errorResponse.message || errorMsg;
+          } catch (e) {
+            // JSON ayrıştırma hatası
+          }
+          setErrorMessage(errorMsg);
+          setUploadStatus('error');
+        }
+      });
       
-      if (!response.ok) {
-        throw new Error(data.message || 'Dosya yükleme başarısız');
-      }
+      xhr.addEventListener('error', () => {
+        setErrorMessage('Ağ hatası, lütfen bağlantınızı kontrol edin.');
+        setUploadStatus('error');
+      });
       
-      // Check if data.sheets exists before accessing its length
-      const sheetCount = data.sheets?.length || 0;
-      setSuccess(`Excel dosyası başarıyla yüklendi (${sheetCount} sayfa)`);
-      setFile(null);
+      xhr.open('POST', `/api/workspaces/${workspaceId}/excel`);
+      xhr.send(formData);
       
-      // Call the success callback with table IDs if they exist
-      if (onUploadSuccess && data.tableIds) {
-        onUploadSuccess(data.tableIds);
-      }
     } catch (err) {
-      setError((err as Error).message || 'Dosya yüklenirken bir hata oluştu');
-      console.error('Excel upload error:', err);
-    } finally {
-      setIsLoading(false);
+      console.error('Excel yükleme hatası:', err);
+      setErrorMessage('Dosya yüklenirken bir hata oluştu.');
+      setUploadStatus('error');
     }
   };
 
   return (
-    <div className="mb-6">
-      <form onSubmit={handleSubmit}>
-        <div 
-          className={`border-2 border-dashed rounded-lg p-6 flex flex-col items-center ${
-            isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
-          }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          <FcUpload className="h-12 w-12 mb-3" />
-          
-          <p className="text-center text-gray-600 mb-4">
-            Excel dosyasını sürükleyip bırakın veya <span className="text-blue-600 font-medium">dosya seçin</span>
-          </p>
+    <div className="max-w-2xl">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 flex flex-col items-center justify-center bg-gray-50">
+          <div className="mb-3 text-center">
+            <FiUpload className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">Excel Dosyası Seçin</h3>
+            <p className="mt-1 text-xs text-gray-600">
+              XLSX veya XLS formatlarını destekler. Maksimum dosya boyutu: 10MB.
+            </p>
+          </div>
           
           <input
             type="file"
             id="excel-file"
             accept=".xlsx,.xls"
-            className="hidden"
             onChange={handleFileChange}
+            className="hidden"
           />
           
-          <label 
+          <label
             htmlFor="excel-file"
-            className="px-4 py-2 bg-blue-600 text-white rounded-md cursor-pointer hover:bg-blue-700 transition"
+            className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 cursor-pointer"
           >
             Dosya Seç
           </label>
           
           {file && (
-            <div className="mt-4 flex items-center p-2 bg-gray-100 rounded-md w-full">
-              <FcCheckmark className="h-5 w-5 mr-2" />
-              <span className="text-sm text-gray-800 truncate">{file.name}</span>
+            <div className="mt-3 text-sm text-green-600">
+              Seçilen dosya: {file.name}
             </div>
           )}
         </div>
         
-        {error && (
-          <div className="mt-3 flex items-center text-red-600">
-            <FcHighPriority className="h-5 w-5 mr-1" />
-            <span className="text-sm">{error}</span>
+        {uploadStatus === 'uploading' && (
+          <div className="space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-700">Yükleniyor...</span>
+              <span className="text-gray-700">{uploadProgress}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div
+                className="bg-blue-600 h-2.5 rounded-full"
+                style={{ width: `${uploadProgress}%` }}
+              ></div>
+            </div>
           </div>
         )}
         
-        {success && (
-          <div className="mt-3 flex items-center text-green-600">
-            <FcCheckmark className="h-5 w-5 mr-1" />
-            <span className="text-sm">{success}</span>
+        {uploadStatus === 'success' && (
+          <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded-md">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <FiCheck className="h-5 w-5 text-green-600" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-green-800">
+                  Dosya başarıyla yüklendi! {tableIds.length} tablo oluşturuldu.
+                </p>
+              </div>
+            </div>
           </div>
         )}
         
-        <div className="mt-4">
+        {uploadStatus === 'error' && (
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <FiAlertTriangle className="h-5 w-5 text-red-600" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-800">{errorMessage}</p>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        <div className="flex justify-end">
           <button
             type="submit"
-            disabled={!file || isLoading}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!file || uploadStatus === 'uploading'}
+            className={`px-4 py-2 rounded-md text-white ${
+              !file || uploadStatus === 'uploading'
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700'
+            }`}
           >
-            {isLoading ? 'Yükleniyor...' : 'Dosyayı Yükle'}
+            {uploadStatus === 'uploading' ? 'Yükleniyor...' : 'Yükle'}
           </button>
         </div>
       </form>

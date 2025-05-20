@@ -166,7 +166,9 @@ exports.Prisma.FormulaScalarFieldEnum = {
   tableId: 'tableId',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
-  color: 'color'
+  color: 'color',
+  type: 'type',
+  active: 'active'
 };
 
 exports.Prisma.SortOrder = {
@@ -196,6 +198,11 @@ exports.Prisma.JsonNullValueFilter = {
 exports.UserRole = exports.$Enums.UserRole = {
   USER: 'USER',
   ADMIN: 'ADMIN'
+};
+
+exports.FormulaType = exports.$Enums.FormulaType = {
+  CELL_VALIDATION: 'CELL_VALIDATION',
+  RELATIONAL: 'RELATIONAL'
 };
 
 exports.Prisma.ModelName = {

@@ -50,11 +50,23 @@ export namespace $Enums {
 
 export type UserRole = (typeof UserRole)[keyof typeof UserRole]
 
+
+export const FormulaType: {
+  CELL_VALIDATION: 'CELL_VALIDATION',
+  RELATIONAL: 'RELATIONAL'
+};
+
+export type FormulaType = (typeof FormulaType)[keyof typeof FormulaType]
+
 }
 
 export type UserRole = $Enums.UserRole
 
 export const UserRole: typeof $Enums.UserRole
+
+export type FormulaType = $Enums.FormulaType
+
+export const FormulaType: typeof $Enums.FormulaType
 
 /**
  * ##  Prisma Client ʲˢ
@@ -5726,6 +5738,8 @@ export namespace Prisma {
     createdAt: Date | null
     updatedAt: Date | null
     color: string | null
+    type: $Enums.FormulaType | null
+    active: boolean | null
   }
 
   export type FormulaMaxAggregateOutputType = {
@@ -5738,6 +5752,8 @@ export namespace Prisma {
     createdAt: Date | null
     updatedAt: Date | null
     color: string | null
+    type: $Enums.FormulaType | null
+    active: boolean | null
   }
 
   export type FormulaCountAggregateOutputType = {
@@ -5750,6 +5766,8 @@ export namespace Prisma {
     createdAt: number
     updatedAt: number
     color: number
+    type: number
+    active: number
     _all: number
   }
 
@@ -5764,6 +5782,8 @@ export namespace Prisma {
     createdAt?: true
     updatedAt?: true
     color?: true
+    type?: true
+    active?: true
   }
 
   export type FormulaMaxAggregateInputType = {
@@ -5776,6 +5796,8 @@ export namespace Prisma {
     createdAt?: true
     updatedAt?: true
     color?: true
+    type?: true
+    active?: true
   }
 
   export type FormulaCountAggregateInputType = {
@@ -5788,6 +5810,8 @@ export namespace Prisma {
     createdAt?: true
     updatedAt?: true
     color?: true
+    type?: true
+    active?: true
     _all?: true
   }
 
@@ -5873,6 +5897,8 @@ export namespace Prisma {
     createdAt: Date
     updatedAt: Date
     color: string | null
+    type: $Enums.FormulaType
+    active: boolean
     _count: FormulaCountAggregateOutputType | null
     _min: FormulaMinAggregateOutputType | null
     _max: FormulaMaxAggregateOutputType | null
@@ -5902,6 +5928,8 @@ export namespace Prisma {
     createdAt?: boolean
     updatedAt?: boolean
     color?: boolean
+    type?: boolean
+    active?: boolean
     workspace?: boolean | WorkspaceDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["formula"]>
 
@@ -5915,6 +5943,8 @@ export namespace Prisma {
     createdAt?: boolean
     updatedAt?: boolean
     color?: boolean
+    type?: boolean
+    active?: boolean
     workspace?: boolean | WorkspaceDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["formula"]>
 
@@ -5928,6 +5958,8 @@ export namespace Prisma {
     createdAt?: boolean
     updatedAt?: boolean
     color?: boolean
+    type?: boolean
+    active?: boolean
     workspace?: boolean | WorkspaceDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["formula"]>
 
@@ -5941,9 +5973,11 @@ export namespace Prisma {
     createdAt?: boolean
     updatedAt?: boolean
     color?: boolean
+    type?: boolean
+    active?: boolean
   }
 
-  export type FormulaOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "description" | "formula" | "workspaceId" | "tableId" | "createdAt" | "updatedAt" | "color", ExtArgs["result"]["formula"]>
+  export type FormulaOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "description" | "formula" | "workspaceId" | "tableId" | "createdAt" | "updatedAt" | "color" | "type" | "active", ExtArgs["result"]["formula"]>
   export type FormulaInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     workspace?: boolean | WorkspaceDefaultArgs<ExtArgs>
   }
@@ -5969,6 +6003,8 @@ export namespace Prisma {
       createdAt: Date
       updatedAt: Date
       color: string | null
+      type: $Enums.FormulaType
+      active: boolean
     }, ExtArgs["result"]["formula"]>
     composites: {}
   }
@@ -6402,6 +6438,8 @@ export namespace Prisma {
     readonly createdAt: FieldRef<"Formula", 'DateTime'>
     readonly updatedAt: FieldRef<"Formula", 'DateTime'>
     readonly color: FieldRef<"Formula", 'String'>
+    readonly type: FieldRef<"Formula", 'FormulaType'>
+    readonly active: FieldRef<"Formula", 'Boolean'>
   }
     
 
@@ -6888,7 +6926,9 @@ export namespace Prisma {
     tableId: 'tableId',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt',
-    color: 'color'
+    color: 'color',
+    type: 'type',
+    active: 'active'
   };
 
   export type FormulaScalarFieldEnum = (typeof FormulaScalarFieldEnum)[keyof typeof FormulaScalarFieldEnum]
@@ -6992,6 +7032,27 @@ export namespace Prisma {
    * Reference to a field of type 'QueryMode'
    */
   export type EnumQueryModeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'QueryMode'>
+    
+
+
+  /**
+   * Reference to a field of type 'FormulaType'
+   */
+  export type EnumFormulaTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'FormulaType'>
+    
+
+
+  /**
+   * Reference to a field of type 'FormulaType[]'
+   */
+  export type ListEnumFormulaTypeFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'FormulaType[]'>
+    
+
+
+  /**
+   * Reference to a field of type 'Boolean'
+   */
+  export type BooleanFieldRefInput<$PrismaModel> = FieldRefInputType<$PrismaModel, 'Boolean'>
     
 
 
@@ -7280,6 +7341,8 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"Formula"> | Date | string
     updatedAt?: DateTimeFilter<"Formula"> | Date | string
     color?: StringNullableFilter<"Formula"> | string | null
+    type?: EnumFormulaTypeFilter<"Formula"> | $Enums.FormulaType
+    active?: BoolFilter<"Formula"> | boolean
     workspace?: XOR<WorkspaceScalarRelationFilter, WorkspaceWhereInput>
   }
 
@@ -7293,6 +7356,8 @@ export namespace Prisma {
     createdAt?: SortOrder
     updatedAt?: SortOrder
     color?: SortOrderInput | SortOrder
+    type?: SortOrder
+    active?: SortOrder
     workspace?: WorkspaceOrderByWithRelationInput
   }
 
@@ -7309,6 +7374,8 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"Formula"> | Date | string
     updatedAt?: DateTimeFilter<"Formula"> | Date | string
     color?: StringNullableFilter<"Formula"> | string | null
+    type?: EnumFormulaTypeFilter<"Formula"> | $Enums.FormulaType
+    active?: BoolFilter<"Formula"> | boolean
     workspace?: XOR<WorkspaceScalarRelationFilter, WorkspaceWhereInput>
   }, "id">
 
@@ -7322,6 +7389,8 @@ export namespace Prisma {
     createdAt?: SortOrder
     updatedAt?: SortOrder
     color?: SortOrderInput | SortOrder
+    type?: SortOrder
+    active?: SortOrder
     _count?: FormulaCountOrderByAggregateInput
     _max?: FormulaMaxOrderByAggregateInput
     _min?: FormulaMinOrderByAggregateInput
@@ -7340,6 +7409,8 @@ export namespace Prisma {
     createdAt?: DateTimeWithAggregatesFilter<"Formula"> | Date | string
     updatedAt?: DateTimeWithAggregatesFilter<"Formula"> | Date | string
     color?: StringNullableWithAggregatesFilter<"Formula"> | string | null
+    type?: EnumFormulaTypeWithAggregatesFilter<"Formula"> | $Enums.FormulaType
+    active?: BoolWithAggregatesFilter<"Formula"> | boolean
   }
 
   export type UserCreateInput = {
@@ -7623,6 +7694,8 @@ export namespace Prisma {
     createdAt?: Date | string
     updatedAt?: Date | string
     color?: string | null
+    type?: $Enums.FormulaType
+    active?: boolean
     workspace: WorkspaceCreateNestedOneWithoutFormulasInput
   }
 
@@ -7636,6 +7709,8 @@ export namespace Prisma {
     createdAt?: Date | string
     updatedAt?: Date | string
     color?: string | null
+    type?: $Enums.FormulaType
+    active?: boolean
   }
 
   export type FormulaUpdateInput = {
@@ -7647,6 +7722,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     color?: NullableStringFieldUpdateOperationsInput | string | null
+    type?: EnumFormulaTypeFieldUpdateOperationsInput | $Enums.FormulaType
+    active?: BoolFieldUpdateOperationsInput | boolean
     workspace?: WorkspaceUpdateOneRequiredWithoutFormulasNestedInput
   }
 
@@ -7660,6 +7737,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     color?: NullableStringFieldUpdateOperationsInput | string | null
+    type?: EnumFormulaTypeFieldUpdateOperationsInput | $Enums.FormulaType
+    active?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type FormulaCreateManyInput = {
@@ -7672,6 +7751,8 @@ export namespace Prisma {
     createdAt?: Date | string
     updatedAt?: Date | string
     color?: string | null
+    type?: $Enums.FormulaType
+    active?: boolean
   }
 
   export type FormulaUpdateManyMutationInput = {
@@ -7683,6 +7764,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     color?: NullableStringFieldUpdateOperationsInput | string | null
+    type?: EnumFormulaTypeFieldUpdateOperationsInput | $Enums.FormulaType
+    active?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type FormulaUncheckedUpdateManyInput = {
@@ -7695,6 +7778,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     color?: NullableStringFieldUpdateOperationsInput | string | null
+    type?: EnumFormulaTypeFieldUpdateOperationsInput | $Enums.FormulaType
+    active?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type StringFilter<$PrismaModel = never> = {
@@ -8011,6 +8096,18 @@ export namespace Prisma {
     _max?: NestedJsonFilter<$PrismaModel>
   }
 
+  export type EnumFormulaTypeFilter<$PrismaModel = never> = {
+    equals?: $Enums.FormulaType | EnumFormulaTypeFieldRefInput<$PrismaModel>
+    in?: $Enums.FormulaType[] | ListEnumFormulaTypeFieldRefInput<$PrismaModel>
+    notIn?: $Enums.FormulaType[] | ListEnumFormulaTypeFieldRefInput<$PrismaModel>
+    not?: NestedEnumFormulaTypeFilter<$PrismaModel> | $Enums.FormulaType
+  }
+
+  export type BoolFilter<$PrismaModel = never> = {
+    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
+    not?: NestedBoolFilter<$PrismaModel> | boolean
+  }
+
   export type FormulaCountOrderByAggregateInput = {
     id?: SortOrder
     name?: SortOrder
@@ -8021,6 +8118,8 @@ export namespace Prisma {
     createdAt?: SortOrder
     updatedAt?: SortOrder
     color?: SortOrder
+    type?: SortOrder
+    active?: SortOrder
   }
 
   export type FormulaMaxOrderByAggregateInput = {
@@ -8033,6 +8132,8 @@ export namespace Prisma {
     createdAt?: SortOrder
     updatedAt?: SortOrder
     color?: SortOrder
+    type?: SortOrder
+    active?: SortOrder
   }
 
   export type FormulaMinOrderByAggregateInput = {
@@ -8045,6 +8146,26 @@ export namespace Prisma {
     createdAt?: SortOrder
     updatedAt?: SortOrder
     color?: SortOrder
+    type?: SortOrder
+    active?: SortOrder
+  }
+
+  export type EnumFormulaTypeWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: $Enums.FormulaType | EnumFormulaTypeFieldRefInput<$PrismaModel>
+    in?: $Enums.FormulaType[] | ListEnumFormulaTypeFieldRefInput<$PrismaModel>
+    notIn?: $Enums.FormulaType[] | ListEnumFormulaTypeFieldRefInput<$PrismaModel>
+    not?: NestedEnumFormulaTypeWithAggregatesFilter<$PrismaModel> | $Enums.FormulaType
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedEnumFormulaTypeFilter<$PrismaModel>
+    _max?: NestedEnumFormulaTypeFilter<$PrismaModel>
+  }
+
+  export type BoolWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
+    not?: NestedBoolWithAggregatesFilter<$PrismaModel> | boolean
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedBoolFilter<$PrismaModel>
+    _max?: NestedBoolFilter<$PrismaModel>
   }
 
   export type WorkspaceUserCreateNestedManyWithoutUserInput = {
@@ -8279,6 +8400,14 @@ export namespace Prisma {
     connect?: WorkspaceWhereUniqueInput
   }
 
+  export type EnumFormulaTypeFieldUpdateOperationsInput = {
+    set?: $Enums.FormulaType
+  }
+
+  export type BoolFieldUpdateOperationsInput = {
+    set?: boolean
+  }
+
   export type WorkspaceUpdateOneRequiredWithoutFormulasNestedInput = {
     create?: XOR<WorkspaceCreateWithoutFormulasInput, WorkspaceUncheckedCreateWithoutFormulasInput>
     connectOrCreate?: WorkspaceCreateOrConnectWithoutFormulasInput
@@ -8436,6 +8565,36 @@ export namespace Prisma {
     not?: InputJsonValue | JsonFieldRefInput<$PrismaModel> | JsonNullValueFilter
   }
 
+  export type NestedEnumFormulaTypeFilter<$PrismaModel = never> = {
+    equals?: $Enums.FormulaType | EnumFormulaTypeFieldRefInput<$PrismaModel>
+    in?: $Enums.FormulaType[] | ListEnumFormulaTypeFieldRefInput<$PrismaModel>
+    notIn?: $Enums.FormulaType[] | ListEnumFormulaTypeFieldRefInput<$PrismaModel>
+    not?: NestedEnumFormulaTypeFilter<$PrismaModel> | $Enums.FormulaType
+  }
+
+  export type NestedBoolFilter<$PrismaModel = never> = {
+    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
+    not?: NestedBoolFilter<$PrismaModel> | boolean
+  }
+
+  export type NestedEnumFormulaTypeWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: $Enums.FormulaType | EnumFormulaTypeFieldRefInput<$PrismaModel>
+    in?: $Enums.FormulaType[] | ListEnumFormulaTypeFieldRefInput<$PrismaModel>
+    notIn?: $Enums.FormulaType[] | ListEnumFormulaTypeFieldRefInput<$PrismaModel>
+    not?: NestedEnumFormulaTypeWithAggregatesFilter<$PrismaModel> | $Enums.FormulaType
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedEnumFormulaTypeFilter<$PrismaModel>
+    _max?: NestedEnumFormulaTypeFilter<$PrismaModel>
+  }
+
+  export type NestedBoolWithAggregatesFilter<$PrismaModel = never> = {
+    equals?: boolean | BooleanFieldRefInput<$PrismaModel>
+    not?: NestedBoolWithAggregatesFilter<$PrismaModel> | boolean
+    _count?: NestedIntFilter<$PrismaModel>
+    _min?: NestedBoolFilter<$PrismaModel>
+    _max?: NestedBoolFilter<$PrismaModel>
+  }
+
   export type WorkspaceUserCreateWithoutUserInput = {
     id?: string
     addedAt?: Date | string
@@ -8545,6 +8704,8 @@ export namespace Prisma {
     createdAt?: Date | string
     updatedAt?: Date | string
     color?: string | null
+    type?: $Enums.FormulaType
+    active?: boolean
   }
 
   export type FormulaUncheckedCreateWithoutWorkspaceInput = {
@@ -8556,6 +8717,8 @@ export namespace Prisma {
     createdAt?: Date | string
     updatedAt?: Date | string
     color?: string | null
+    type?: $Enums.FormulaType
+    active?: boolean
   }
 
   export type FormulaCreateOrConnectWithoutWorkspaceInput = {
@@ -8643,6 +8806,8 @@ export namespace Prisma {
     createdAt?: DateTimeFilter<"Formula"> | Date | string
     updatedAt?: DateTimeFilter<"Formula"> | Date | string
     color?: StringNullableFilter<"Formula"> | string | null
+    type?: EnumFormulaTypeFilter<"Formula"> | $Enums.FormulaType
+    active?: BoolFilter<"Formula"> | boolean
   }
 
   export type UserCreateWithoutWorkspacesInput = {
@@ -8930,6 +9095,8 @@ export namespace Prisma {
     createdAt?: Date | string
     updatedAt?: Date | string
     color?: string | null
+    type?: $Enums.FormulaType
+    active?: boolean
   }
 
   export type WorkspaceUserUpdateWithoutWorkspaceInput = {
@@ -8989,6 +9156,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     color?: NullableStringFieldUpdateOperationsInput | string | null
+    type?: EnumFormulaTypeFieldUpdateOperationsInput | $Enums.FormulaType
+    active?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type FormulaUncheckedUpdateWithoutWorkspaceInput = {
@@ -9000,6 +9169,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     color?: NullableStringFieldUpdateOperationsInput | string | null
+    type?: EnumFormulaTypeFieldUpdateOperationsInput | $Enums.FormulaType
+    active?: BoolFieldUpdateOperationsInput | boolean
   }
 
   export type FormulaUncheckedUpdateManyWithoutWorkspaceInput = {
@@ -9011,6 +9182,8 @@ export namespace Prisma {
     createdAt?: DateTimeFieldUpdateOperationsInput | Date | string
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     color?: NullableStringFieldUpdateOperationsInput | string | null
+    type?: EnumFormulaTypeFieldUpdateOperationsInput | $Enums.FormulaType
+    active?: BoolFieldUpdateOperationsInput | boolean
   }
 
 

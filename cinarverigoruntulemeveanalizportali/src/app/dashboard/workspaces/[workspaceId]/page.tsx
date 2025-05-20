@@ -10,7 +10,7 @@ import TrendAnalysis from '@/components/analysis/TrendAnalysis';
 
 interface WorkspaceDetailsProps {
   params: Promise<{
-    id: string;
+    workspaceId: string;
   }>;
 }
 
@@ -29,7 +29,7 @@ interface DataTableData {
 }
 
 // Helper function to unwrap the params promise
-async function unwrapParams(params: Promise<{ id: string }>) {
+async function unwrapParams(params: Promise<{ workspaceId: string }>) {
   return await params;
 }
 
@@ -47,8 +47,8 @@ export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) 
   useEffect(() => {
     async function getWorkspaceId() {
       try {
-        const { id } = await unwrapParams(params);
-        setWorkspaceId(id);
+        const { workspaceId } = await unwrapParams(params);
+        setWorkspaceId(workspaceId);
       } catch (err) {
         console.error('Error extracting workspace ID:', err);
         setError('Failed to load workspace ID');
@@ -248,35 +248,18 @@ export default function WorkspaceDetailsPage({ params }: WorkspaceDetailsProps) 
           {activeTab === 'analysis' && (
             <div>
               {tables.length > 0 ? (
-                <div>
-                  <div className="mb-6">
-                    <label htmlFor="analysisTableSelect" className="block text-sm font-medium text-gray-700 mb-1">
-                      Analiz Edilecek Tabloyu Seçin
-                    </label>
-                    <select
-                      id="analysisTableSelect"
-                      value={selectedTableId || ''}
-                      onChange={(e) => setSelectedTableId(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      {tables.map((table) => (
-                        <option key={table.id} value={table.id}>
-                          {table.name} - {table.sheetName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  {selectedTableId && (
-                    <TrendAnalysis tableId={selectedTableId} workspaceId={workspaceId} />
-                  )}
-                </div>
+                <TrendAnalysis
+                  workspaceId={workspaceId}
+                  tables={tables}
+                  selectedTableId={selectedTableId || tables[0].id}
+                  onTableSelect={setSelectedTableId}
+                />
               ) : (
                 <div className="text-center py-8 bg-gray-50 rounded-lg">
                   <FcLineChart className="mx-auto h-12 w-12 text-gray-400" />
                   <h3 className="mt-2 text-sm font-medium text-gray-900">Analiz için veri yok</h3>
                   <p className="mt-1 text-sm text-gray-500">
-                    Trend analizi yapmak için önce bir Excel dosyası yükleyin.
+                    Önce "Tablolar" sekmesinden veri yüklemeniz gerekiyor.
                   </p>
                 </div>
               )}

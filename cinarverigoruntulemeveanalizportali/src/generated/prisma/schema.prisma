@@ -69,16 +69,23 @@ model DataTable {
   data        Json // Store actual table data
 }
 
+enum FormulaType {
+  CELL_VALIDATION
+  RELATIONAL
+}
+
 // Formula model for data evaluation
 model Formula {
-  id          String    @id @default(uuid())
+  id          String      @id @default(uuid())
   name        String
   description String?
   formula     String // The actual formula string
   workspaceId String
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   tableId     String? // Optional reference to specific table
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   color       String? // Color for highlighting cells
+  type        FormulaType @default(CELL_VALIDATION)
+  active      Boolean     @default(true)
 }

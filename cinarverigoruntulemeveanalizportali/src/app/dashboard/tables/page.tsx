@@ -7,7 +7,10 @@ import Link from 'next/link';
 interface TableData {
   id: string;
   name: string;
-  workspace: string;
+  workspace: {
+    id: string;
+    name: string;
+  };
   rowCount: number;
   createdAt: string;
 }
@@ -20,13 +23,15 @@ export default function TablesPage() {
   useEffect(() => {
     const fetchTables = async () => {
       try {
-        // This would normally fetch from your API
-        // For now, we'll mock some data
-        setTables([
-          { id: '1', name: 'S59708 - E1TW1', workspace: 'Çalışma Alanı 1', rowCount: 75, createdAt: '2023-06-15' },
-          { id: '2', name: 'S59709 - E1TWS', workspace: 'Çalışma Alanı 1', rowCount: 68, createdAt: '2023-07-22' },
-          { id: '3', name: 'S60125 - E1TW2', workspace: 'Çalışma Alanı 2', rowCount: 82, createdAt: '2023-08-05' },
-        ]);
+        // Fetch tables from API
+        const response = await fetch('/api/tables');
+        
+        if (!response.ok) {
+          throw new Error('Tablo verileri yüklenemedi');
+        }
+        
+        const data = await response.json();
+        setTables(data);
         setLoading(false);
       } catch (error) {
         console.error('Error fetching tables:', error);
@@ -40,7 +45,7 @@ export default function TablesPage() {
   // Filter tables based on search query
   const filteredTables = tables.filter((table: TableData) => 
     table.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    table.workspace.toLowerCase().includes(searchQuery.toLowerCase())
+    table.workspace.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
   
   return (
@@ -65,7 +70,7 @@ export default function TablesPage() {
             </div>
             
             <Link 
-              href="/dashboard/tables/upload"
+              href="/dashboard"
               className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition flex items-center"
             >
               <span className="mr-1">+</span> Yeni Tablo Yükle
@@ -93,17 +98,43 @@ export default function TablesPage() {
                 {filteredTables.map((table: TableData) => (
                   <tr key={table.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">
-                      <Link href={`/dashboard/workspaces/${table.workspace}/tables/${table.id}`}>
+                      <Link href={`/dashboard/workspaces/${table.workspace.id}/tables/${table.id}`}>
                         {table.name}
                       </Link>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{table.workspace}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{table.workspace.name}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{table.rowCount}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{table.createdAt}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(table.createdAt).toLocaleDateString('tr-TR')}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <div className="flex space-x-2">
-                        <button className="text-blue-600 hover:text-blue-800">Görüntüle</button>
-                        <button className="text-red-600 hover:text-red-800">Sil</button>
+                        <Link href={`/dashboard/workspaces/${table.workspace.id}/tables/${table.id}`} className="text-blue-600 hover:text-blue-800">
+                          Görüntüle
+                        </Link>
+                        <button 
+                          className="text-red-600 hover:text-red-800"
+                          onClick={async () => {
+                            if (confirm('Bu tabloyu silmek istediğinize emin misiniz?')) {
+                              try {
+                                const response = await fetch(`/api/tables/${table.id}`, {
+                                  method: 'DELETE',
+                                });
+                                
+                                if (response.ok) {
+                                  setTables(tables.filter(t => t.id !== table.id));
+                                } else {
+                                  alert('Tablo silinirken bir hata oluştu');
+                                }
+                              } catch (error) {
+                                console.error('Error deleting table:', error);
+                                alert('Tablo silinirken bir hata oluştu');
+                              }
+                            }
+                          }}
+                        >
+                          Sil
+                        </button>
                       </div>
                     </td>
                   </tr>

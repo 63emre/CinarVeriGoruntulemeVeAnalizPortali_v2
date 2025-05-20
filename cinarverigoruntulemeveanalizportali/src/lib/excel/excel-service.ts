@@ -8,27 +8,59 @@ export interface ExcelData {
 }
 
 export async function parseExcelFile(file: File): Promise<ExcelData[]> {
-  const buffer = await file.arrayBuffer();
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
-  const result: ExcelData[] = [];
+  try {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const result: ExcelData[] = [];
 
-  for (const sheetName of workbook.SheetNames) {
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    for (const sheetName of workbook.SheetNames) {
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
 
-    if (jsonData.length > 0) {
-      const headers = jsonData[0] as string[];
-      const data = jsonData.slice(1) as (string | number | null)[][];
+      if (jsonData.length > 0) {
+        // Get and clean headers from the first row
+        const rawHeaders = jsonData[0] || [];
+        const headers = Array.isArray(rawHeaders) 
+          ? rawHeaders.map(h => h === null || h === undefined ? '' : String(h).trim()) 
+          : [];
+        
+        // Filter out empty header columns
+        const cleanHeaders = headers.filter(h => h !== '');
+        
+        // Process data rows - ensure all values are properly typed and null-safe
+        const data = jsonData.slice(1).map(row => {
+          // Skip rows that aren't arrays or are empty
+          if (!Array.isArray(row)) return Array(cleanHeaders.length).fill(null);
+          
+          // Ensure each cell is properly processed
+          return Array(cleanHeaders.length).fill(null).map((_, i) => {
+            const cellValue = i < row.length ? row[i] : null;
+            
+            // Handle different data types
+            if (cellValue === null || cellValue === undefined) return null;
+            
+            // Return appropriate data type based on cell content
+            if (typeof cellValue === 'number') return cellValue;
+            if (typeof cellValue === 'string') return cellValue.trim() === '' ? null : cellValue;
+            
+            // For any other type, convert to string
+            return String(cellValue);
+          });
+        });
 
-      result.push({
-        sheetName,
-        columns: headers,
-        data: data,
-      });
+        result.push({
+          sheetName,
+          columns: cleanHeaders,
+          data: data as (string | number | null)[][],
+        });
+      }
     }
-  }
 
-  return result;
+    return result;
+  } catch (error) {
+    console.error('Error parsing Excel file:', error);
+    throw new Error(`Excel dosyası işlenirken hata oluştu: ${(error as Error).message}`);
+  }
 }
 
 export async function saveExcelData(
@@ -39,17 +71,40 @@ export async function saveExcelData(
   const tableIds: string[] = [];
 
   for (const sheet of excelData) {
-    const table = await prisma.dataTable.create({
-      data: {
-        name: fileName,
-        sheetName: sheet.sheetName,
-        workspaceId,
-        columns: sheet.columns,
-        data: sheet.data,
-      },
+    // Improved sanitization to ensure no undefined values
+    // Deep check and convert any potential undefined values to null
+    const sanitizedData = sheet.data.map(row => {
+      // Ensure row is an array
+      if (!Array.isArray(row)) return [];
+      
+      // Process each cell in the row
+      return row.map(cell => {
+        // Explicitly handle all possible undefined cases
+        if (cell === undefined || cell === null) return null;
+        
+        // Handle empty strings and other special cases
+        if (typeof cell === 'string' && cell.trim() === '') return null;
+        
+        return cell;
+      });
     });
+    
+    try {
+      const table = await prisma.dataTable.create({
+        data: {
+          name: fileName,
+          sheetName: sheet.sheetName,
+          workspaceId,
+          columns: sheet.columns,
+          data: sanitizedData,
+        },
+      });
 
-    tableIds.push(table.id);
+      tableIds.push(table.id);
+    } catch (error) {
+      console.error(`Error saving sheet ${sheet.sheetName}:`, error);
+      throw new Error(`Excel verisini kaydederken hata oluştu: ${(error as Error).message}`);
+    }
   }
 
   return tableIds;

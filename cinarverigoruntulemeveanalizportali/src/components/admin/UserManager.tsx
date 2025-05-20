@@ -32,7 +32,7 @@ export default function UserManager() {
         const data = await response.json();
         setUsers(data);
       } catch (err) {
-        console.error('Error fetching users:', err);
+        console.error('Kullanıcılar yüklenirken hata:', err);
       } finally {
         setIsLoadingUsers(false);
       }
@@ -96,7 +96,7 @@ export default function UserManager() {
       setSuccess('Kullanıcı başarıyla oluşturuldu');
     } catch (err) {
       setError((err as Error).message || 'Bir hata oluştu');
-      console.error('User creation error:', err);
+      console.error('Kullanıcı oluşturma hatası:', err);
     } finally {
       setIsLoading(false);
     }
@@ -122,7 +122,7 @@ export default function UserManager() {
       setSuccess('Kullanıcı başarıyla silindi');
     } catch (err) {
       setError((err as Error).message || 'Kullanıcı silinirken bir hata oluştu');
-      console.error('User deletion error:', err);
+      console.error('Kullanıcı silme hatası:', err);
     }
   };
 
@@ -151,7 +151,7 @@ export default function UserManager() {
       setSuccess('Kullanıcı rolü başarıyla güncellendi');
     } catch (err) {
       setError((err as Error).message || 'Rol güncellenirken bir hata oluştu');
-      console.error('Role update error:', err);
+      console.error('Rol güncelleme hatası:', err);
     }
   };
 

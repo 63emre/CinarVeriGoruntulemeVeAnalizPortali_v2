@@ -1,76 +1,72 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
 
 // Get all tables for a specific workspace
 export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  context: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    console.log(`GET /api/workspaces/${params.id}/tables called`);
+    const { workspaceId } = await context.params;
     
+    console.log(`GET /api/workspaces/${workspaceId}/tables called`);
+
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json(
-        { message: 'Yetkilendirme hatası' },
+        { message: 'Unauthorized' },
         { status: 401 }
       );
     }
-    
+
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
-      where: { id: params.id }
+      where: { id: workspaceId }
     });
-    
+
     if (!workspace) {
       return NextResponse.json(
-        { message: 'Çalışma alanı bulunamadı' },
+        { message: 'Workspace not found' },
         { status: 404 }
       );
     }
-    
-    // Check access if not admin
-    if (currentUser.role !== 'ADMIN') {
-      const hasAccess = await prisma.workspaceUser.findFirst({
-        where: {
-          userId: currentUser.id,
-          workspaceId: params.id,
-        },
-      });
-      
-      if (!hasAccess) {
-        return NextResponse.json(
-          { message: 'Bu çalışma alanına erişim izniniz yok' },
-          { status: 403 }
-        );
-      }
+
+    // Check if user has access to this workspace
+    const workspaceUser = await prisma.workspaceUser.findFirst({
+      where: {
+        workspaceId: workspaceId,
+        userId: currentUser.id,
+      },
+    });
+
+    const isCreator = workspace.createdBy === currentUser.id;
+
+    if (!workspaceUser && !isCreator) {
+      return NextResponse.json(
+        { message: 'You do not have access to this workspace' },
+        { status: 403 }
+      );
     }
 
     // Get all tables for this workspace
     const tables = await prisma.dataTable.findMany({
       where: {
-        workspaceId: params.id,
+        workspaceId: workspaceId,
       },
       select: {
         id: true,
         name: true,
         sheetName: true,
         uploadedAt: true,
-        updatedAt: true,
-        // We don't select columns and data here to keep the response size smaller
-      },
-      orderBy: {
-        updatedAt: 'desc',
       },
     });
-    
-    return NextResponse.json(tables);
 
+    return NextResponse.json(tables);
   } catch (error) {
-    console.error('Error getting workspace tables:', error);
+    console.error('Error getting tables:', error);
     return NextResponse.json(
-      { message: 'Tablolar yüklenemedi' },
+      { message: 'Server error' },
       { status: 500 }
     );
   }
@@ -79,10 +75,10 @@ export async function GET(
 // Create a new table in a workspace
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: { workspaceId: string } }
 ) {
   try {
-    console.log(`POST /api/workspaces/${params.id}/tables called`);
+    console.log(`POST /api/workspaces/${params.workspaceId}/tables called`);
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -94,7 +90,7 @@ export async function POST(
     
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
-      where: { id: params.id }
+      where: { id: params.workspaceId }
     });
     
     if (!workspace) {
@@ -109,7 +105,7 @@ export async function POST(
       const hasAccess = await prisma.workspaceUser.findFirst({
         where: {
           userId: currentUser.id,
-          workspaceId: params.id,
+          workspaceId: params.workspaceId,
         },
       });
       
@@ -138,7 +134,7 @@ export async function POST(
         sheetName,
         columns,
         data,
-        workspaceId: params.id,
+        workspaceId: params.workspaceId,
       },
     });
     

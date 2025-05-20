@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, ReactNode } from 'react';
+import { useState, ReactNode, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { 
@@ -12,7 +12,9 @@ import {
   FcBarChart, 
   FcSettings, 
   FcExport,
-  FcManager 
+  FcManager,
+  FcClock,
+  FcCalendar
 } from 'react-icons/fc';
 
 interface DashboardLayoutProps {
@@ -22,6 +24,8 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const router = useRouter();
+  const [currentTime, setCurrentTime] = useState<string>('');
+  const [currentDate, setCurrentDate] = useState<string>('');
 
   const handleLogout = async () => {
     try {
@@ -40,6 +44,19 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       console.error('Logout error:', error);
     }
   };
+
+  useEffect(() => {
+    // Update time and date
+    const updateDateTime = () => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString('tr-TR'));
+      setCurrentDate(now.toLocaleDateString('tr-TR'));
+    };
+
+    updateDateTime();
+    const interval = setInterval(updateDateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="flex h-screen bg-gray-100">
@@ -162,7 +179,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="px-6 py-4 flex items-center justify-between">
             <h2 className="text-xl font-semibold text-gray-800">Çınar Çevre Laboratuvarı</h2>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Veri Görüntüleme ve Analiz Portali</span>
+              <div className="flex items-center mr-4">
+                <FcCalendar className="h-5 w-5 mr-1" />
+                <span className="text-gray-800">{currentDate}</span>
+              </div>
+              <div className="flex items-center">
+                <FcClock className="h-5 w-5 mr-1" />
+                <span className="text-gray-800">{currentTime}</span>
+              </div>
+              <span className="text-sm text-gray-800">Veri Görüntüleme ve Analiz Portali</span>
             </div>
           </div>
         </header>

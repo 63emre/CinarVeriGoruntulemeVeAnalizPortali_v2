@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { FcAddRow, FcCancel, FcCheckmark, FcFolder } from 'react-icons/fc';
 
 interface WorkspaceManagerProps {
-  onWorkspaceAdded?: (workspace: any) => void;
+  onWorkspaceAdded?: (workspace: Workspace) => void;
 }
 
 interface User {
@@ -13,72 +13,85 @@ interface User {
   email: string;
 }
 
+interface Workspace {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  createdBy: string;
+  users: {
+    id: string;
+    userId: string;
+    workspaceId: string;
+    user: {
+      id: string;
+      name: string;
+      email: string;
+    };
+  }[];
+}
+
 export default function WorkspaceManager({ onWorkspaceAdded }: WorkspaceManagerProps) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [workspaces, setWorkspaces] = useState<any[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null);
-  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
-  const [workspaceUsers, setWorkspaceUsers] = useState<Record<string, User[]>>({});
+  const [selectedUser, setSelectedUser] = useState<string>('');
+  const [isAddingUser, setIsAddingUser] = useState(false);
   const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(true);
-
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  
   useEffect(() => {
-    async function fetchData() {
+    // Fetch workspaces
+    async function fetchWorkspaces() {
       try {
-        // Fetch workspaces
-        const workspacesResponse = await fetch('/api/workspaces');
-        if (!workspacesResponse.ok) {
+        const response = await fetch('/api/workspaces');
+        if (!response.ok) {
           throw new Error('Çalışma alanları yüklenemedi');
         }
-        const workspacesData = await workspacesResponse.json();
-        setWorkspaces(workspacesData);
-
-        // Fetch users (admin only)
-        const usersResponse = await fetch('/api/users');
-        if (!usersResponse.ok) {
-          throw new Error('Kullanıcılar yüklenemedi');
-        }
-        const usersData = await usersResponse.json();
-        setUsers(usersData);
-
-        // Fetch workspace users for each workspace
-        for (const workspace of workspacesData) {
-          const workspaceUsersResponse = await fetch(`/api/workspaces/${workspace.id}/users`);
-          if (workspaceUsersResponse.ok) {
-            const workspaceUsersData = await workspaceUsersResponse.json();
-            setWorkspaceUsers(prev => ({
-              ...prev,
-              [workspace.id]: workspaceUsersData
-            }));
-          }
-        }
+        const data = await response.json();
+        setWorkspaces(data);
       } catch (err) {
-        console.error('Error fetching data:', err);
         setError((err as Error).message);
       } finally {
         setIsLoadingWorkspaces(false);
       }
     }
-
-    fetchData();
+    
+    // Fetch users
+    async function fetchUsers() {
+      try {
+        const response = await fetch('/api/users');
+        if (!response.ok) {
+          throw new Error('Kullanıcılar yüklenemedi');
+        }
+        const data = await response.json();
+        setUsers(data);
+      } catch (err) {
+        setError((err as Error).message);
+      } finally {
+        setIsLoadingUsers(false);
+      }
+    }
+    
+    fetchWorkspaces();
+    fetchUsers();
   }, []);
-
-  const handleCreateWorkspace = async (e: React.FormEvent) => {
+  
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validation
     if (!name.trim()) {
       setError('Çalışma alanı adı gereklidir');
       return;
     }
     
-    setIsLoading(true);
+    setLoading(true);
     setError('');
-    setSuccess('');
     
     try {
       const response = await fetch('/api/workspaces', {
@@ -92,64 +105,51 @@ export default function WorkspaceManager({ onWorkspaceAdded }: WorkspaceManagerP
         }),
       });
       
-      const data = await response.json();
-      
       if (!response.ok) {
-        throw new Error(data.message || 'Çalışma alanı oluşturma başarısız');
+        const data = await response.json();
+        throw new Error(data.message || 'Çalışma alanı oluşturulamadı');
       }
       
-      // Add the new workspace to our list
-      setWorkspaces([...workspaces, data.workspace]);
+      const workspace = await response.json();
       
-      // Clear form
+      // Reset form
       setName('');
       setDescription('');
-      
       setSuccess('Çalışma alanı başarıyla oluşturuldu');
+      
+      // Add to workspaces list
+      setWorkspaces([...workspaces, workspace]);
       
       // Call callback if provided
       if (onWorkspaceAdded) {
-        onWorkspaceAdded(data.workspace);
+        onWorkspaceAdded(workspace);
       }
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess('');
+      }, 3000);
     } catch (err) {
-      setError((err as Error).message || 'Bir hata oluştu');
-      console.error('Workspace creation error:', err);
+      setError((err as Error).message);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
-
-  const handleDelete = async (workspaceId: string) => {
-    if (!confirm('Bu çalışma alanını silmek istediğinizden emin misiniz?')) {
+  
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedWorkspace) {
+      setError('Lütfen bir çalışma alanı seçin');
       return;
     }
     
-    try {
-      const response = await fetch(`/api/workspaces/${workspaceId}`, {
-        method: 'DELETE',
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Çalışma alanı silme başarısız');
-      }
-      
-      // Remove the workspace from our list
-      setWorkspaces(workspaces.filter(w => w.id !== workspaceId));
-      setSuccess('Çalışma alanı başarıyla silindi');
-    } catch (err) {
-      setError((err as Error).message || 'Çalışma alanı silinirken bir hata oluştu');
-      console.error('Workspace deletion error:', err);
-    }
-  };
-
-  const handleUserAssignment = async () => {
-    if (!selectedWorkspace || selectedUsers.length === 0) {
-      setError('Lütfen bir çalışma alanı ve en az bir kullanıcı seçin');
+    if (!selectedUser) {
+      setError('Lütfen bir kullanıcı seçin');
       return;
     }
     
-    setIsLoading(true);
+    setIsAddingUser(true);
     setError('');
     
     try {
@@ -159,34 +159,60 @@ export default function WorkspaceManager({ onWorkspaceAdded }: WorkspaceManagerP
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          userIds: selectedUsers,
+          userId: selectedUser,
         }),
       });
       
-      const data = await response.json();
-      
       if (!response.ok) {
-        throw new Error(data.message || 'Kullanıcı atama başarısız');
+        const data = await response.json();
+        throw new Error(data.message || 'Kullanıcı çalışma alanına eklenemedi');
       }
       
-      // Update workspace users
-      setWorkspaceUsers(prev => ({
-        ...prev,
-        [selectedWorkspace]: data.users
-      }));
+      // Update the workspaces list to reflect the change
+      const updatedWorkspaces = workspaces.map(ws => {
+        if (ws.id === selectedWorkspace) {
+          // Find the user that was added
+          const user = users.find(u => u.id === selectedUser);
+          if (user) {
+            // Add the user to the workspace's users list
+            return {
+              ...ws,
+              users: [
+                ...ws.users,
+                {
+                  id: `temp-${Date.now()}`, // This will be replaced when we refresh
+                  userId: user.id,
+                  workspaceId: ws.id,
+                  user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                  },
+                },
+              ],
+            };
+          }
+        }
+        return ws;
+      });
       
-      setSuccess('Kullanıcılar başarıyla atandı');
-      setSelectedUsers([]);
+      setWorkspaces(updatedWorkspaces);
+      setSelectedUser('');
+      setSuccess('Kullanıcı çalışma alanına başarıyla eklendi');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess('');
+      }, 3000);
     } catch (err) {
-      setError((err as Error).message || 'Kullanıcı atanırken bir hata oluştu');
-      console.error('User assignment error:', err);
+      setError((err as Error).message);
     } finally {
-      setIsLoading(false);
+      setIsAddingUser(false);
     }
   };
-
+  
   const handleRemoveUser = async (workspaceId: string, userId: string) => {
-    if (!confirm('Bu kullanıcıyı çalışma alanından çıkarmak istediğinizden emin misiniz?')) {
+    if (!confirm('Bu kullanıcıyı çalışma alanından kaldırmak istediğinizden emin misiniz?')) {
       return;
     }
     
@@ -197,198 +223,249 @@ export default function WorkspaceManager({ onWorkspaceAdded }: WorkspaceManagerP
       
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.message || 'Kullanıcı çıkarma başarısız');
+        throw new Error(data.message || 'Kullanıcı çalışma alanından kaldırılamadı');
       }
       
-      // Update workspace users
-      const updatedUsers = workspaceUsers[workspaceId].filter(u => u.id !== userId);
-      setWorkspaceUsers(prev => ({
-        ...prev,
-        [workspaceId]: updatedUsers
-      }));
+      // Update the workspaces list to reflect the change
+      const updatedWorkspaces = workspaces.map(ws => {
+        if (ws.id === workspaceId) {
+          return {
+            ...ws,
+            users: ws.users.filter(u => u.userId !== userId),
+          };
+        }
+        return ws;
+      });
       
-      setSuccess('Kullanıcı başarıyla çıkarıldı');
+      setWorkspaces(updatedWorkspaces);
+      setSuccess('Kullanıcı çalışma alanından başarıyla kaldırıldı');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess('');
+      }, 3000);
     } catch (err) {
-      setError((err as Error).message || 'Kullanıcı çıkarılırken bir hata oluştu');
-      console.error('User removal error:', err);
+      setError((err as Error).message);
     }
   };
-
+  
   return (
     <div className="space-y-8">
-      {/* Create Workspace Form */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-xl font-bold mb-4">Yeni Çalışma Alanı Oluştur</h2>
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-xl font-semibold mb-4 flex items-center">
+          <FcAddRow className="mr-2 h-6 w-6" />
+          Yeni Çalışma Alanı Oluştur
+        </h2>
         
-        <form onSubmit={handleCreateWorkspace} className="space-y-4">
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-              Çalışma Alanı Adı
-            </label>
-            <input
-              id="name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Örnek: Arıtma Tesisi Projesi"
-            />
+        {success && (
+          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
+            <span className="block sm:inline">{success}</span>
+          </div>
+        )}
+        
+        {error && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
+            <span className="block sm:inline">{error}</span>
+          </div>
+        )}
+        
+        <form onSubmit={handleSubmit}>
+          <div className="grid grid-cols-1 gap-4 mb-4">
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                Çalışma Alanı Adı
+              </label>
+              <input
+                type="text"
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Çalışma alanı adını girin"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+                Açıklama (isteğe bağlı)
+              </label>
+              <textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Açıklama girin"
+                rows={3}
+              />
+            </div>
           </div>
           
-          <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-              Açıklama
-            </label>
-            <textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Bu çalışma alanının amacını açıklayın"
-              rows={2}
-            />
-          </div>
-          
-          {error && (
-            <div className="text-red-600 flex items-center">
-              <FcCancel className="h-5 w-5 mr-1" />
-              {error}
-            </div>
-          )}
-          
-          {success && (
-            <div className="text-green-600 flex items-center">
-              <FcCheckmark className="h-5 w-5 mr-1" />
-              {success}
-            </div>
-          )}
-          
-          <div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => {
+                setName('');
+                setDescription('');
+              }}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 mr-2"
+              disabled={loading}
+            >
+              <FcCancel className="mr-2 h-5 w-5" />
+              İptal
+            </button>
+            
             <button
               type="submit"
-              disabled={isLoading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              disabled={loading}
             >
-              <FcAddRow className="mr-2 bg-white rounded" />
-              {isLoading ? 'Oluşturuluyor...' : 'Çalışma Alanı Oluştur'}
+              {loading ? (
+                <span className="flex items-center">
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Oluşturuluyor...
+                </span>
+              ) : (
+                <>
+                  <FcCheckmark className="mr-2 h-5 w-5" />
+                  Oluştur
+                </>
+              )}
             </button>
           </div>
         </form>
       </div>
       
-      {/* User Assignment */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-xl font-bold mb-4">Kullanıcı Atama</h2>
-        
-        <div className="space-y-4">
-          <div>
-            <label htmlFor="workspace" className="block text-sm font-medium text-gray-700 mb-1">
-              Çalışma Alanı
-            </label>
-            <select
-              id="workspace"
-              value={selectedWorkspace || ''}
-              onChange={(e) => setSelectedWorkspace(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="">-- Çalışma Alanı Seçin --</option>
-              {workspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.id}>
-                  {workspace.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <div>
-            <label htmlFor="users" className="block text-sm font-medium text-gray-700 mb-1">
-              Kullanıcılar
-            </label>
-            <select
-              id="users"
-              multiple
-              value={selectedUsers}
-              onChange={(e) => setSelectedUsers(Array.from(e.target.selectedOptions, option => option.value))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              size={5}
-            >
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name} ({user.email})
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-sm text-gray-500">
-              Birden fazla kullanıcı seçmek için Ctrl (veya Cmd) tuşunu basılı tutun
-            </p>
-          </div>
-          
-          <div>
-            <button
-              type="button"
-              onClick={handleUserAssignment}
-              disabled={isLoading || !selectedWorkspace || selectedUsers.length === 0}
-              className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Kullanıcıları Ata
-            </button>
-          </div>
-        </div>
-      </div>
-      
-      {/* Workspace List with Users */}
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-xl font-bold mb-4">Çalışma Alanları ve Kullanıcıları</h2>
+      {/* Workspace List */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h2 className="text-xl font-semibold mb-4 flex items-center">
+          <FcFolder className="mr-2 h-6 w-6" />
+          Çalışma Alanlarını Yönet
+        </h2>
         
         {isLoadingWorkspaces ? (
-          <div className="flex justify-center py-4">
+          <div className="flex justify-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
           </div>
-        ) : workspaces.length > 0 ? (
-          <div className="space-y-6">
-            {workspaces.map((workspace) => (
-              <div key={workspace.id} className="border rounded-md p-4">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-start">
-                    <FcFolder className="h-6 w-6 mr-2 mt-1" />
-                    <div>
-                      <h3 className="font-medium">{workspace.name}</h3>
-                      {workspace.description && <p className="text-sm text-gray-600">{workspace.description}</p>}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDelete(workspace.id)}
-                    className="text-red-600 hover:text-red-800 text-sm"
-                  >
-                    Sil
-                  </button>
-                </div>
-                
-                <div className="mt-4">
-                  <h4 className="text-sm font-medium text-gray-700">Atanmış Kullanıcılar:</h4>
-                  {workspaceUsers[workspace.id]?.length > 0 ? (
-                    <ul className="mt-2 space-y-2">
-                      {workspaceUsers[workspace.id]?.map((user) => (
-                        <li key={user.id} className="flex justify-between items-center bg-gray-50 p-2 rounded">
-                          <span>{user.name} ({user.email})</span>
-                          <button
-                            onClick={() => handleRemoveUser(workspace.id, user.id)}
-                            className="text-red-500 hover:text-red-700 text-xs"
-                          >
-                            Çıkar
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-gray-500 mt-1">Henüz kullanıcı atanmamış</p>
-                  )}
-                </div>
-              </div>
-            ))}
+        ) : workspaces.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            Çalışma alanı bulunamadı. Yukarıdan ilk çalışma alanınızı oluşturun.
           </div>
         ) : (
-          <p className="text-gray-600 py-2">Henüz çalışma alanı oluşturulmamış</p>
+          <div className="space-y-8">
+            {/* User Assignment Form */}
+            <div className="border p-4 rounded-md">
+              <h3 className="text-lg font-medium mb-4">Çalışma Alanına Kullanıcı Ekle</h3>
+              
+              <form onSubmit={handleAddUser} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="workspace" className="block text-sm font-medium text-gray-700 mb-1">
+                      Çalışma Alanı Seç
+                    </label>
+                    <select
+                      id="workspace"
+                      value={selectedWorkspace || ''}
+                      onChange={(e) => setSelectedWorkspace(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Bir çalışma alanı seçin</option>
+                      {workspaces.map((workspace) => (
+                        <option key={workspace.id} value={workspace.id}>
+                          {workspace.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="user" className="block text-sm font-medium text-gray-700 mb-1">
+                      Kullanıcı Seç
+                    </label>
+                    <select
+                      id="user"
+                      value={selectedUser}
+                      onChange={(e) => setSelectedUser(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                      disabled={isLoadingUsers}
+                    >
+                      <option value="">Bir kullanıcı seçin</option>
+                      {users.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name} ({user.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    disabled={isAddingUser || !selectedWorkspace || !selectedUser}
+                  >
+                    {isAddingUser ? (
+                      <span className="flex items-center">
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Ekleniyor...
+                      </span>
+                    ) : (
+                      <span>Kullanıcı Ekle</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+            
+            {/* Workspace Accordion */}
+            <div className="space-y-4">
+              {workspaces.map((workspace) => (
+                <div key={workspace.id} className="border rounded-md overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-3 flex justify-between items-center">
+                    <h3 className="text-lg font-medium">{workspace.name}</h3>
+                    <span className="text-sm text-gray-500">
+                      {workspace.users?.length || 0} kullanıcı
+                    </span>
+                  </div>
+                  
+                  <div className="p-4">
+                    {workspace.description && (
+                      <p className="text-gray-600 mb-4">{workspace.description}</p>
+                    )}
+                    
+                    <h4 className="font-medium mb-2">Kullanıcılar:</h4>
+                    
+                    {!workspace.users || workspace.users.length === 0 ? (
+                      <p className="text-gray-500">Bu çalışma alanına henüz kullanıcı atanmamış.</p>
+                    ) : (
+                      <ul className="divide-y divide-gray-200">
+                        {workspace.users.map((userWorkspace) => (
+                          <li key={userWorkspace.id} className="py-3 flex justify-between items-center">
+                            <div>
+                              <p className="font-medium">{userWorkspace.user?.name || 'Bilinmeyen Kullanıcı'}</p>
+                              <p className="text-sm text-gray-500">{userWorkspace.user?.email || 'E-posta yok'}</p>
+                            </div>
+                            <button
+                              onClick={() => handleRemoveUser(workspace.id, userWorkspace.userId)}
+                              className="text-red-600 hover:text-red-800 text-sm"
+                            >
+                              Kaldır
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>

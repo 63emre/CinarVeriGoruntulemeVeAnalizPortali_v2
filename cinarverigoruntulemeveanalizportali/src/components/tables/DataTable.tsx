@@ -1,331 +1,284 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FcSearch, FcPrint, FcExport, FcCellPhone } from 'react-icons/fc';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
+import { 
+  FcSearch, 
+  FcViewDetails, 
+  FcPrint
+} from 'react-icons/fc';
 
-interface DataTableProps {
-  tableId: string;
-  workspaceId: string;
-}
-
-interface TableData {
+type Column = {
   id: string;
   name: string;
-  sheetName: string;
-  columns: string[];
-  data: (string | number | null)[][];
+  type: string;
+};
+
+type DataRow = {
+  [key: string]: string | number | null;
+  id: string;
+};
+
+interface DataTableProps {
+  data?: DataRow[];
+  columns?: Column[];
+  title?: string;
+  loading?: boolean;
+  downloadUrl?: string;
+  printable?: boolean;
+  tableId?: string;
+  workspaceId?: string;
 }
 
-interface FormulaResult {
-  result: boolean;
-  error?: string;
-  message?: string;
-  color: string;
-  formulaName: string;
-}
-
-export default function DataTable({ tableId, workspaceId }: DataTableProps) {
-  const [tableData, setTableData] = useState<TableData | null>(null);
-  const [formulas, setFormulas] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [evaluationResults, setEvaluationResults] = useState<Record<string, Record<string, FormulaResult[]>>>({}); // row,col -> results
+export default function DataTable({ 
+  data: initialData, 
+  columns: initialColumns, 
+  title: initialTitle, 
+  loading: initialLoading = false,
+  downloadUrl,
+  printable = false,
+  tableId,
+  workspaceId
+}: DataTableProps) {
+  const [data, setData] = useState<DataRow[]>(initialData || []);
+  const [columns, setColumns] = useState<Column[]>(initialColumns || []);
+  const [title, setTitle] = useState(initialTitle || 'Tablo');
+  const [loading, setLoading] = useState(initialLoading || false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [tooltipCell, setTooltipCell] = useState<{ row: number, col: number } | null>(null);
+  const [sortColumn, setSortColumn] = useState('');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [selectedCell, setSelectedCell] = useState<{row: string, col: string} | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
+  // Fetch table data if tableId and workspaceId are provided
   useEffect(() => {
-    async function fetchData() {
-      try {
-        // Fetch table data
-        const tableResponse = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}`);
-        if (!tableResponse.ok) {
-          throw new Error('Tablo verisi yüklenemedi');
-        }
-        const tableDataResult = await tableResponse.json();
-        setTableData(tableDataResult);
-
-        // Fetch formulas
-        const formulasResponse = await fetch(`/api/workspaces/${workspaceId}/formulas`);
-        if (!formulasResponse.ok) {
-          throw new Error('Formüller yüklenemedi');
-        }
-        const formulasData = await formulasResponse.json();
-        setFormulas(formulasData);
-
-        // Evaluate formulas on data if available
-        if (tableDataResult && formulasData.length > 0) {
-          const results = evaluateFormulas(tableDataResult, formulasData);
-          setEvaluationResults(results);
-        }
-      } catch (err) {
-        setError((err as Error).message);
-        console.error('Error fetching data:', err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchData();
-  }, [tableId, workspaceId]);
-
-  const evaluateFormulas = (table: TableData, formulas: any[]) => {
-    const results: Record<string, Record<string, FormulaResult[]>> = {};
-    
-    // This is a simplified evaluation - in a real application, you would implement proper formula evaluation
-    // For this example, we'll just generate some dummy evaluation results
-    
-    // Get fixed columns (Data Source, Variable, Method, Unit, LOQ)
-    const fixedColumns = ['Data Source', 'Variable', 'Method', 'Unit', 'LOQ'];
-    const fixedColumnIndices = fixedColumns.map(col => table.columns.indexOf(col));
-    
-    // Get date columns (all columns except fixed ones)
-    const dateColumnIndices = table.columns.reduce((indices, col, index) => {
-      if (!fixedColumns.includes(col)) {
-        indices.push(index);
-      }
-      return indices;
-    }, [] as number[]);
-    
-    // Evaluate formulas for each cell that has a value
-    table.data.forEach((row, rowIndex) => {
-      dateColumnIndices.forEach(colIndex => {
-        if (row[colIndex] !== null && row[colIndex] !== undefined && row[colIndex] !== '') {
-          const cellResults: FormulaResult[] = [];
-          const variableIndex = fixedColumnIndices[1]; // Variable column
-          const loqIndex = fixedColumnIndices[4]; // LOQ column
-          
-          // Get variable name and value
-          const variable = row[variableIndex] as string;
-          const value = row[colIndex];
-          const loq = row[loqIndex];
-          
-          // Apply some basic formula evaluations (simplified for this example)
-          formulas.forEach(formula => {
-            // Check for LOQ comparison
-            if (formula.name.includes('LOQ') && loq && value) {
-              const valueNum = typeof value === 'number' ? value : parseFloat(value as string);
-              const loqNum = typeof loq === 'number' ? loq : parseFloat((loq as string).replace('<', ''));
-              
-              if (!isNaN(valueNum) && !isNaN(loqNum) && valueNum < loqNum) {
-                cellResults.push({
-                  result: true,
-                  message: `Değer (${valueNum}) LOQ değerinden (${loqNum}) düşük`,
-                  color: formula.color || '#ffcccc',
-                  formulaName: formula.name
-                });
-              }
-            }
-            
-            // Check for specific variable formulas (e.g., WAD Siyanür vs Toplam Siyanür)
-            if (variable === 'WAD Siyanür' && formula.name.includes('WAD')) {
-              // Find the Total Cyanide row for the same date
-              const totalCyanideRow = table.data.find(r => r[variableIndex] === 'Toplam Siyanür');
-              if (totalCyanideRow) {
-                const totalValue = totalCyanideRow[colIndex];
-                const totalValueNum = typeof totalValue === 'number' ? totalValue : parseFloat(totalValue as string);
-                const wadValueNum = typeof value === 'number' ? value : parseFloat(value as string);
-                
-                if (!isNaN(wadValueNum) && !isNaN(totalValueNum) && wadValueNum > totalValueNum) {
-                  cellResults.push({
-                    result: true,
-                    message: `WAD Siyanür (${wadValueNum}) > Toplam Siyanür (${totalValueNum})`,
-                    color: formula.color || '#ffaaff',
-                    formulaName: formula.name
-                  });
-                }
-              }
-            }
-          });
-          
-          // Store results if any
-          if (cellResults.length > 0) {
-            if (!results[rowIndex]) {
-              results[rowIndex] = {};
-            }
-            results[rowIndex][colIndex] = cellResults;
+    if (tableId && workspaceId && !initialData) {
+      const fetchTableData = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}`);
+          if (!response.ok) {
+            throw new Error('Tablo verileri yüklenemedi');
           }
+          const tableData = await response.json();
+          
+          if (tableData && tableData.columns && tableData.data) {
+            // Convert data structure to match component's expectations
+            const columnDefs: Column[] = tableData.columns.map((col: string, index: number) => ({
+              id: col,
+              name: col,
+              type: 'string'
+            }));
+            
+            // Add ID column if not present
+            columnDefs.unshift({
+              id: 'id',
+              name: '#',
+              type: 'number'
+            });
+            
+            // Add row IDs to data
+            const rowsWithIds: DataRow[] = tableData.data.map((row: any[], index: number) => {
+              const rowData: DataRow = { id: String(index + 1) };
+              tableData.columns.forEach((col: string, colIndex: number) => {
+                rowData[col] = row[colIndex];
+              });
+              return rowData;
+            });
+            
+            setColumns(columnDefs);
+            setData(rowsWithIds);
+            setTitle(tableData.name || 'Tablo');
+          } else {
+            throw new Error('Tablo yapısı geçersiz');
+          }
+        } catch (err) {
+          console.error('Error fetching table data:', err);
+          setError((err as Error).message);
+        } finally {
+          setLoading(false);
         }
-      });
-    });
-    
-    return results;
-  };
-
-  const getCellBackground = (rowIndex: number, colIndex: number) => {
-    const results = evaluationResults[rowIndex]?.[colIndex];
-    if (results && results.length > 0) {
-      if (results.length === 1) {
-        return results[0].color;
-      } else {
-        // Multiple rules - create gradient
-        const colors = results.map(r => r.color).join(', ');
-        return `linear-gradient(45deg, ${colors})`;
-      }
+      };
+      
+      fetchTableData();
     }
-    return undefined;
-  };
-
-  const getTooltipContent = (rowIndex: number, colIndex: number) => {
-    const results = evaluationResults[rowIndex]?.[colIndex];
-    if (results && results.length > 0) {
-      return (
-        <div className="bg-white shadow-lg rounded-md p-3 text-sm z-50 max-w-xs">
-          <h4 className="font-bold mb-2">Formül Sonuçları:</h4>
-          <ul className="space-y-2">
-            {results.map((result, index) => (
-              <li key={index}>
-                <span className="font-medium">{result.formulaName}:</span>
-                <span className="ml-1">{result.message}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const filteredData = tableData?.data.filter(row => {
-    if (!searchTerm) return true;
-    
-    return row.some(cell => {
-      if (cell === null) return false;
-      return String(cell).toLowerCase().includes(searchTerm.toLowerCase());
-    });
-  });
-
-  const exportAsPDF = async () => {
-    if (!tableData) return;
-    
-    const table = document.getElementById('excel-table');
-    if (!table) return;
-    
-    try {
-      const canvas = await html2canvas(table, { scale: 1 });
-      const imgData = canvas.toDataURL('image/png');
-      
-      const pdf = new jsPDF({
-        orientation: 'landscape',
-        unit: 'mm',
-        format: 'a4'
-      });
-      
-      const imgWidth = 280;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      pdf.setFontSize(16);
-      pdf.text(`${tableData.name} - ${tableData.sheetName}`, 15, 15);
-      pdf.setFontSize(10);
-      pdf.text(`Tarih: ${new Date().toLocaleString('tr-TR')}`, 15, 22);
-      
-      pdf.addImage(imgData, 'PNG', 15, 30, imgWidth, imgHeight);
-      pdf.save(`${tableData.name}_${tableData.sheetName}.pdf`);
-    } catch (err) {
-      console.error('PDF oluşturma hatası:', err);
-      alert('PDF oluşturulurken bir hata oluştu.');
+  }, [tableId, workspaceId, initialData]);
+  
+  const handleSort = (columnId: string) => {
+    if (sortColumn === columnId) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(columnId);
+      setSortDirection('asc');
     }
   };
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
+  
+  const sortedData = Array.isArray(data) 
+    ? [...data].sort((a, b) => {
+        if (!sortColumn) return 0;
+        
+        const aValue = a[sortColumn];
+        const bValue = b[sortColumn];
+        
+        if (aValue === null && bValue === null) return 0;
+        if (aValue === null) return 1;
+        if (bValue === null) return -1;
+        
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+        }
+        
+        const aString = String(aValue).toLowerCase();
+        const bString = String(bValue).toLowerCase();
+        
+        return sortDirection === 'asc' 
+          ? aString.localeCompare(bString)
+          : bString.localeCompare(aString);
+      })
+    : [];
+  
+  const filteredData = searchTerm && Array.isArray(sortedData)
+    ? sortedData.filter(row => 
+        Object.entries(row).some(([key, value]) => {
+          if (key === 'id') return false;
+          return value !== null && String(value).toLowerCase().includes(searchTerm.toLowerCase());
+        })
+      )
+    : sortedData;
+    
+  const handleCellClick = (rowId: string, colId: string) => {
+    setSelectedCell({ row: rowId, col: colId });
+  };
+  
+  const handlePrint = () => {
+    window.print();
+  };
+  
   if (error) {
     return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-        <p>{error}</p>
+      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+        <strong className="font-bold">Hata!</strong>
+        <span className="block sm:inline"> {error}</span>
       </div>
     );
   }
-
-  if (!tableData) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-gray-600">Tablo verisi bulunamadı</p>
-      </div>
-    );
-  }
-
+  
   return (
-    <div>
-      <div className="mb-6">
-        <h2 className="text-xl font-bold">{tableData.name} - {tableData.sheetName}</h2>
-      </div>
-      
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <FcSearch className="h-5 w-5" />
-          </div>
-          <input
-            type="text"
-            placeholder="Ara..."
-            className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
+    <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="p-4 flex justify-between items-center border-b">
+        <h2 className="text-xl font-bold text-gray-800 flex items-center">
+          <FcViewDetails className="mr-2" />
+          {title}
+        </h2>
         
-        <div className="flex gap-2">
-          <button
-            onClick={exportAsPDF}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition flex items-center"
-          >
-            <FcPrint className="mr-2 bg-white rounded" /> PDF İndir
-          </button>
+        <div className="flex items-center space-x-2">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Ara..."
+              className="pl-9 pr-4 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <FcSearch className="absolute left-3 top-1/2 transform -translate-y-1/2" />
+          </div>
+          
+          {downloadUrl && (
+            <a
+              href={downloadUrl}
+              download
+              className="bg-green-100 text-green-800 hover:bg-green-200 px-4 py-2 rounded-md flex items-center transition"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Excel
+            </a>
+          )}
+          
+          {printable && (
+            <button
+              onClick={handlePrint}
+              className="bg-blue-100 text-blue-800 hover:bg-blue-200 px-4 py-2 rounded-md flex items-center transition"
+            >
+              <FcPrint className="mr-1" />
+              Yazdır
+            </button>
+          )}
         </div>
       </div>
       
       <div className="overflow-x-auto">
-        <table id="excel-table" className="min-w-full bg-white border border-gray-200">
-          <thead>
-            <tr className="bg-gray-100">
-              {tableData.columns.map((column, index) => (
-                <th 
-                  key={index}
-                  className="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b border-r"
-                >
-                  {column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredData?.map((row, rowIndex) => (
-              <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                {row.map((cell, cellIndex) => (
-                  <td 
-                    key={cellIndex}
-                    className="px-4 py-2 text-sm border-b border-r relative"
-                    style={{ 
-                      background: getCellBackground(rowIndex, cellIndex)
-                    }}
-                    onMouseEnter={() => {
-                      if (evaluationResults[rowIndex]?.[cellIndex]) {
-                        setTooltipCell({ row: rowIndex, col: cellIndex });
-                      }
-                    }}
-                    onMouseLeave={() => setTooltipCell(null)}
+        {loading ? (
+          <div className="flex justify-center items-center py-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+          </div>
+        ) : !Array.isArray(filteredData) || filteredData.length === 0 ? (
+          <div className="text-center py-20 text-gray-500">
+            {searchTerm 
+              ? 'Arama kriterlerine uygun sonuç bulunamadı.' 
+              : 'Gösterilecek veri bulunmuyor.'}
+          </div>
+        ) : (
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                {columns.map((column) => (
+                  <th
+                    key={column.id}
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-800 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    onClick={() => handleSort(column.id)}
                   >
-                    {cell !== null ? String(cell) : ''}
-                    
-                    {tooltipCell && tooltipCell.row === rowIndex && tooltipCell.col === cellIndex && (
-                      <div className="absolute left-0 -mt-1 transform -translate-y-full z-10">
-                        {getTooltipContent(rowIndex, cellIndex)}
-                      </div>
-                    )}
-                  </td>
+                    <div className="flex items-center">
+                      {column.name}
+                      {sortColumn === column.id && (
+                        <span className="ml-1">
+                          {sortDirection === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </div>
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredData.map((row) => (
+                <tr key={row.id} className="hover:bg-gray-50">
+                  {columns.map((column) => {
+                    const cellValue = row[column.id];
+                    const isSelected = selectedCell?.row === row.id && selectedCell?.col === column.id;
+                    
+                    return (
+                      <td
+                        key={`${row.id}-${column.id}`}
+                        className={`px-6 py-4 whitespace-nowrap text-sm ${isSelected ? 'bg-blue-100' : ''}`}
+                        onClick={() => handleCellClick(row.id, column.id)}
+                      >
+                        {cellValue === null ? (
+                          <span className="text-gray-400">-</span>
+                        ) : (
+                          <span className="text-gray-800">{String(cellValue)}</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      
+      <div className="px-4 py-3 bg-gray-50 text-gray-800 text-sm">
+        {Array.isArray(filteredData) ? (
+          <>
+            {filteredData.length} satır gösteriliyor
+            {searchTerm && Array.isArray(data) && ` (toplam ${data.length} satırdan)`}
+          </>
+        ) : (
+          'Veri yok'
+        )}
       </div>
     </div>
   );

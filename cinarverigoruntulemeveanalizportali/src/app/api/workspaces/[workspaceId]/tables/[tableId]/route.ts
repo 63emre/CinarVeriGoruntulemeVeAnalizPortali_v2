@@ -5,10 +5,10 @@ import { getCurrentUser } from '@/lib/auth/auth';
 // Get a specific table
 export async function GET(
   request: Request,
-  { params }: { params: { id: string, tableId: string } }
+  { params }: { params: { workspaceId: string, tableId: string } }
 ) {
   try {
-    console.log(`GET /api/workspaces/${params.id}/tables/${params.tableId} called`);
+    console.log(`GET /api/workspaces/${params.workspaceId}/tables/${params.tableId} called`);
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -18,7 +18,7 @@ export async function GET(
       );
     }
     
-    const { id: workspaceId, tableId } = params;
+    const { workspaceId, tableId } = params;
     
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
@@ -78,10 +78,10 @@ export async function GET(
 // Update a table
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string, tableId: string } }
+  { params }: { params: { workspaceId: string, tableId: string } }
 ) {
   try {
-    console.log(`PUT /api/workspaces/${params.id}/tables/${params.tableId} called`);
+    console.log(`PUT /api/workspaces/${params.workspaceId}/tables/${params.tableId} called`);
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -91,7 +91,7 @@ export async function PUT(
       );
     }
     
-    const { id: workspaceId, tableId } = params;
+    const { workspaceId, tableId } = params;
     
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
@@ -167,10 +167,10 @@ export async function PUT(
 // Delete a table
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string, tableId: string } }
+  { params }: { params: { workspaceId: string, tableId: string } }
 ) {
   try {
-    console.log(`DELETE /api/workspaces/${params.id}/tables/${params.tableId} called`);
+    console.log(`DELETE /api/workspaces/${params.workspaceId}/tables/${params.tableId} called`);
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -180,7 +180,7 @@ export async function DELETE(
       );
     }
     
-    const { id: workspaceId, tableId } = params;
+    const { workspaceId, tableId } = params;
     
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({

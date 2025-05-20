@@ -64,32 +64,34 @@ export async function parseExcelFile(file: File): Promise<ExcelData[]> {
 }
 
 export async function saveExcelData(
-  workspaceId: string,
-  fileName: string,
-  excelData: ExcelData[]
-): Promise<string[]> {
+  excelData: ExcelData[],
+  workspaceId: string
+): Promise<{ sheets: ExcelData[], tableIds: string[] }> {
   const tableIds: string[] = [];
 
-  for (const sheet of excelData) {
-    // Improved sanitization to ensure no undefined values
-    // Deep check and convert any potential undefined values to null
-    const sanitizedData = sheet.data.map(row => {
-      // Ensure row is an array
-      if (!Array.isArray(row)) return [];
-      
-      // Process each cell in the row
-      return row.map(cell => {
-        // Explicitly handle all possible undefined cases
-        if (cell === undefined || cell === null) return null;
+  try {
+    // Extract filename from the first sheet or use a default
+    const fileName = excelData.length > 0 ? excelData[0].sheetName : 'Imported Data';
+
+    for (const sheet of excelData) {
+      // Improved sanitization to ensure no undefined values
+      // Deep check and convert any potential undefined values to null
+      const sanitizedData = sheet.data.map(row => {
+        // Ensure row is an array
+        if (!Array.isArray(row)) return [];
         
-        // Handle empty strings and other special cases
-        if (typeof cell === 'string' && cell.trim() === '') return null;
-        
-        return cell;
+        // Process each cell in the row
+        return row.map(cell => {
+          // Explicitly handle all possible undefined cases
+          if (cell === undefined || cell === null) return null;
+          
+          // Handle empty strings and other special cases
+          if (typeof cell === 'string' && cell.trim() === '') return null;
+          
+          return cell;
+        });
       });
-    });
-    
-    try {
+      
       const table = await prisma.dataTable.create({
         data: {
           name: fileName,
@@ -101,13 +103,16 @@ export async function saveExcelData(
       });
 
       tableIds.push(table.id);
-    } catch (error) {
-      console.error(`Error saving sheet ${sheet.sheetName}:`, error);
-      throw new Error(`Excel verisini kaydederken hata oluştu: ${(error as Error).message}`);
     }
-  }
 
-  return tableIds;
+    return {
+      sheets: excelData,
+      tableIds
+    };
+  } catch (error) {
+    console.error(`Error saving Excel data:`, error);
+    throw new Error(`Excel verisini kaydederken hata oluştu: ${(error as Error).message}`);
+  }
 }
 
 export async function getTableData(tableId: string) {

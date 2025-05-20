@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { 
   FcSearch, 
   FcViewDetails, 
-  FcPrint
+  FcPrint,
+  FcFullTrash
 } from 'react-icons/fc';
 
 type Column = {
@@ -18,6 +19,14 @@ type DataRow = {
   id: string;
 };
 
+// Interface for formula-highlighted cells
+interface HighlightedCell {
+  row: string;
+  col: string;
+  color: string;
+  message?: string;
+}
+
 interface DataTableProps {
   data?: DataRow[];
   columns?: Column[];
@@ -27,6 +36,8 @@ interface DataTableProps {
   printable?: boolean;
   tableId?: string;
   workspaceId?: string;
+  highlightedCells?: HighlightedCell[];
+  onCellSelect?: (rowId: string, colId: string, value: string | number | null) => void;
 }
 
 export default function DataTable({ 
@@ -37,7 +48,9 @@ export default function DataTable({
   downloadUrl,
   printable = false,
   tableId,
-  workspaceId
+  workspaceId,
+  highlightedCells = [],
+  onCellSelect
 }: DataTableProps) {
   const [data, setData] = useState<DataRow[]>(initialData || []);
   const [columns, setColumns] = useState<Column[]>(initialColumns || []);
@@ -48,6 +61,7 @@ export default function DataTable({
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedCell, setSelectedCell] = useState<{row: string, col: string} | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Fetch table data if tableId and workspaceId are provided
   useEffect(() => {
@@ -64,7 +78,7 @@ export default function DataTable({
           
           if (tableData && tableData.columns && tableData.data) {
             // Convert data structure to match component's expectations
-            const columnDefs: Column[] = tableData.columns.map((col: string, index: number) => ({
+            const columnDefs: Column[] = tableData.columns.map((col: string) => ({
               id: col,
               name: col,
               type: 'string'
@@ -78,7 +92,7 @@ export default function DataTable({
             });
             
             // Add row IDs to data
-            const rowsWithIds: DataRow[] = tableData.data.map((row: any[], index: number) => {
+            const rowsWithIds: DataRow[] = tableData.data.map((row: (string | number | null)[], index: number) => {
               const rowData: DataRow = { id: String(index + 1) };
               tableData.columns.forEach((col: string, colIndex: number) => {
                 rowData[col] = row[colIndex];
@@ -146,12 +160,24 @@ export default function DataTable({
       )
     : sortedData;
     
-  const handleCellClick = (rowId: string, colId: string) => {
+  const handleCellClick = (rowId: string, colId: string, value: string | number | null) => {
     setSelectedCell({ row: rowId, col: colId });
+    if (onCellSelect) {
+      onCellSelect(rowId, colId, value);
+    }
   };
   
   const handlePrint = () => {
     window.print();
+  };
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+  };
+
+  // Check if a cell has a highlight
+  const getCellHighlight = (rowId: string, colId: string) => {
+    return highlightedCells.find(cell => cell.row === rowId && cell.col === colId);
   };
   
   if (error) {
@@ -164,9 +190,9 @@ export default function DataTable({
   }
   
   return (
-    <div className="bg-white rounded-lg shadow overflow-hidden">
-      <div className="p-4 flex justify-between items-center border-b">
-        <h2 className="text-xl font-bold text-gray-800 flex items-center">
+    <div className={`bg-white rounded-lg shadow overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
+      <div className="p-4 flex justify-between items-center border-b bg-gray-50">
+        <h2 className="text-xl font-bold text-gray-900 flex items-center">
           <FcViewDetails className="mr-2" />
           {title}
         </h2>
@@ -176,12 +202,22 @@ export default function DataTable({
             <input
               type="text"
               placeholder="Ara..."
-              className="pl-9 pr-4 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500"
+              className="pl-9 pr-4 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
             <FcSearch className="absolute left-3 top-1/2 transform -translate-y-1/2" />
           </div>
+          
+          <button
+            onClick={toggleFullscreen}
+            className="bg-purple-100 text-purple-800 hover:bg-purple-200 px-4 py-2 rounded-md flex items-center transition"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isFullscreen ? "M9 9V4H4v5M20 4v5h-5V4M4 15h5v5H4v-5M15 15h5v5h-5v-5" : "M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"} />
+            </svg>
+            {isFullscreen ? 'Küçült' : 'Tam Ekran'}
+          </button>
           
           {downloadUrl && (
             <a
@@ -208,26 +244,26 @@ export default function DataTable({
         </div>
       </div>
       
-      <div className="overflow-x-auto">
+      <div className={`overflow-x-auto ${isFullscreen ? 'h-[calc(100vh-140px)]' : 'max-h-[80vh]'}`}>
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
           </div>
         ) : !Array.isArray(filteredData) || filteredData.length === 0 ? (
-          <div className="text-center py-20 text-gray-500">
+          <div className="text-center py-20 text-gray-600 font-medium">
             {searchTerm 
               ? 'Arama kriterlerine uygun sonuç bulunamadı.' 
               : 'Gösterilecek veri bulunmuyor.'}
           </div>
         ) : (
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-gray-200 border-collapse">
+            <thead className="bg-gray-100 sticky top-0 z-10">
               <tr>
                 {columns.map((column) => (
                   <th
                     key={column.id}
                     scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-800 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    className="px-6 py-3 text-left text-sm font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-200 border-b border-gray-300 sticky"
                     onClick={() => handleSort(column.id)}
                   >
                     <div className="flex items-center">
@@ -248,17 +284,41 @@ export default function DataTable({
                   {columns.map((column) => {
                     const cellValue = row[column.id];
                     const isSelected = selectedCell?.row === row.id && selectedCell?.col === column.id;
+                    const highlight = getCellHighlight(row.id, column.id);
+                    
+                    // Dynamic styles based on highlight, selection, and column type
+                    let cellStyles = "px-6 py-3 whitespace-nowrap font-medium border ";
+                    
+                    // Base text color - darker for better readability
+                    cellStyles += column.id === 'Variable' ? "text-blue-900 font-semibold " : "text-gray-900 ";
+                    
+                    // Highlight or selection backgrounds
+                    if (highlight) {
+                      cellStyles += `bg-${highlight.color}-100 border-${highlight.color}-300 `;
+                    } else if (isSelected) {
+                      cellStyles += "bg-blue-100 border-blue-300 ";
+                    } else {
+                      cellStyles += "border-gray-200 ";
+                    }
+                    
+                    // Special column styling
+                    if (column.id === 'id') {
+                      cellStyles += "bg-gray-50 text-gray-600 ";
+                    } else if (['Data Source', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
+                      cellStyles += "bg-gray-50 ";
+                    }
                     
                     return (
                       <td
                         key={`${row.id}-${column.id}`}
-                        className={`px-6 py-4 whitespace-nowrap text-sm ${isSelected ? 'bg-blue-100' : ''}`}
-                        onClick={() => handleCellClick(row.id, column.id)}
+                        className={cellStyles}
+                        onClick={() => handleCellClick(row.id, column.id, cellValue)}
+                        title={highlight?.message}
                       >
                         {cellValue === null ? (
                           <span className="text-gray-400">-</span>
                         ) : (
-                          <span className="text-gray-800">{String(cellValue)}</span>
+                          <span>{String(cellValue)}</span>
                         )}
                       </td>
                     );
@@ -270,14 +330,25 @@ export default function DataTable({
         )}
       </div>
       
-      <div className="px-4 py-3 bg-gray-50 text-gray-800 text-sm">
-        {Array.isArray(filteredData) ? (
-          <>
-            {filteredData.length} satır gösteriliyor
-            {searchTerm && Array.isArray(data) && ` (toplam ${data.length} satırdan)`}
-          </>
-        ) : (
-          'Veri yok'
+      <div className="px-4 py-3 bg-gray-50 text-gray-900 text-sm border-t border-gray-200 flex justify-between">
+        <div>
+          {Array.isArray(filteredData) ? (
+            <>
+              <span className="font-medium">{filteredData.length}</span> satır gösteriliyor
+              {searchTerm && Array.isArray(data) && ` (toplam ${data.length} satırdan)`}
+            </>
+          ) : (
+            'Veri yok'
+          )}
+        </div>
+        {isFullscreen && (
+          <button 
+            onClick={toggleFullscreen}
+            className="text-red-600 hover:text-red-800 flex items-center"
+          >
+            <FcFullTrash className="mr-1" />
+            Tam Ekrandan Çık
+          </button>
         )}
       </div>
     </div>

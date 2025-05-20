@@ -3,12 +3,7 @@
 # dependencies
 /node_modules
 /.pnp
-.pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+.pnp.js
 
 # testing
 /coverage
@@ -16,13 +11,18 @@
 # next.js
 /.next/
 /out/
+.next
+next-env.d.ts
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
 *.pem
+Thumbs.db
+desktop.ini
 
 # debug
 npm-debug.log*
@@ -30,12 +30,62 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# local env files
+.env*.local
+.env
+.env.development
+.env.test
+.env.production
 
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
+
+# IDE and editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# Caches
+.npm
+.eslintcache
+.stylelintcache
+
+# Temporary files
+.temp
+.cache
+.tmp
+
+# Generated Prisma files
+/prisma/migrations/
+/prisma/*.db
+/prisma/*.db-journal
+
+# Backup files
+*.bak
+*.backup

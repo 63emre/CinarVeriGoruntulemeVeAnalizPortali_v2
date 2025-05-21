@@ -1,17 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
-import * as z from 'zod';
+import { getCurrentUser } from '@/lib/auth/auth';
 import prisma from '@/lib/db';
-
-// Schema for formula update
-const FormulaUpdateSchema = z.object({
-  name: z.string().min(1, 'Formül adı zorunludur').optional(),
-  description: z.string().optional(),
-  formula: z.string().min(1, 'Formül ifadesi zorunludur').optional(),
-  tableId: z.string().optional().nullable(),
-  color: z.string().optional(),
-  active: z.boolean().optional(),
-});
 
 // GET /api/workspaces/[workspaceId]/formulas/[formulaId]
 export async function GET(
@@ -20,103 +9,126 @@ export async function GET(
 ) {
   try {
     const user = await getCurrentUser();
-
+    
     if (!user) {
-      return new NextResponse('Unauthorized', { status: 401 });
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
-
+    
     const { workspaceId, formulaId } = params;
-
-    // Check if user has access to this workspace
-    const workspaceUser = await prisma.workspaceUser.findFirst({
+    
+    // Check if user has access to the workspace
+    const workspace = await prisma.workspace.findFirst({
       where: {
-        workspaceId,
-        userId: user.id,
-      },
+        id: workspaceId,
+        OR: [
+          { createdBy: user.id },
+          {
+            users: {
+              some: {
+                userId: user.id
+              }
+            }
+          }
+        ]
+      }
     });
-
-    if (!workspaceUser) {
-      return new NextResponse('Forbidden', { status: 403 });
+    
+    if (!workspace) {
+      return NextResponse.json({ message: 'Workspace not found or access denied' }, { status: 404 });
     }
-
-    // Get the specific formula
+    
+    // Get the formula
     const formula = await prisma.formula.findUnique({
       where: {
         id: formulaId,
-        workspaceId,
-      },
+        workspaceId: workspaceId
+      }
     });
-
+    
     if (!formula) {
-      return new NextResponse('Formula not found', { status: 404 });
+      return NextResponse.json({ message: 'Formula not found' }, { status: 404 });
     }
-
+    
     return NextResponse.json(formula);
   } catch (error) {
-    console.error('Error getting formula:', error);
-    return new NextResponse('Internal Error', { status: 500 });
+    console.error('Error fetching formula:', error);
+    return NextResponse.json(
+      { message: 'Server error', error: (error as Error).message },
+      { status: 500 }
+    );
   }
 }
 
-// PATCH /api/workspaces/[workspaceId]/formulas/[formulaId]
-export async function PATCH(
+// PUT /api/workspaces/[workspaceId]/formulas/[formulaId]
+export async function PUT(
   request: NextRequest,
   { params }: { params: { workspaceId: string; formulaId: string } }
 ) {
   try {
     const user = await getCurrentUser();
-
+    
     if (!user) {
-      return new NextResponse('Unauthorized', { status: 401 });
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
-
+    
     const { workspaceId, formulaId } = params;
-
-    // Check if user has access to this workspace
-    const workspaceUser = await prisma.workspaceUser.findFirst({
+    
+    // Check if user has access to the workspace
+    const workspace = await prisma.workspace.findFirst({
       where: {
-        workspaceId,
-        userId: user.id,
-      },
+        id: workspaceId,
+        OR: [
+          { createdBy: user.id },
+          {
+            users: {
+              some: {
+                userId: user.id
+              }
+            }
+          }
+        ]
+      }
     });
-
-    if (!workspaceUser) {
-      return new NextResponse('Forbidden', { status: 403 });
+    
+    if (!workspace) {
+      return NextResponse.json({ message: 'Workspace not found or access denied' }, { status: 404 });
     }
-
-    // Check if formula exists and belongs to the workspace
+    
+    // Get request body
+    const body = await request.json();
+    
+    // Make sure the formula exists
     const existingFormula = await prisma.formula.findUnique({
       where: {
         id: formulaId,
-        workspaceId,
-      },
+        workspaceId: workspaceId
+      }
     });
-
+    
     if (!existingFormula) {
-      return new NextResponse('Formula not found', { status: 404 });
+      return NextResponse.json({ message: 'Formula not found' }, { status: 404 });
     }
-
-    const body = await request.json();
-    const validatedData = FormulaUpdateSchema.parse(body);
-
+    
     // Update the formula
     const updatedFormula = await prisma.formula.update({
       where: {
-        id: formulaId,
+        id: formulaId
       },
       data: {
-        ...validatedData,
-      },
+        name: body.name ?? existingFormula.name,
+        description: body.description ?? existingFormula.description,
+        color: body.color ?? existingFormula.color,
+        active: body.active !== undefined ? body.active : existingFormula.active,
+      }
     });
-
+    
     return NextResponse.json(updatedFormula);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return new NextResponse(JSON.stringify(error.errors), { status: 400 });
-    }
-
     console.error('Error updating formula:', error);
-    return new NextResponse('Internal Error', { status: 500 });
+    return NextResponse.json(
+      { message: 'Server error', error: (error as Error).message },
+      { status: 500 }
+    );
   }
 }
 
@@ -127,47 +139,59 @@ export async function DELETE(
 ) {
   try {
     const user = await getCurrentUser();
-
+    
     if (!user) {
-      return new NextResponse('Unauthorized', { status: 401 });
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
-
+    
     const { workspaceId, formulaId } = params;
-
-    // Check if user has access to this workspace
-    const workspaceUser = await prisma.workspaceUser.findFirst({
+    
+    // Check if user has access to the workspace
+    const workspace = await prisma.workspace.findFirst({
       where: {
-        workspaceId,
-        userId: user.id,
-      },
+        id: workspaceId,
+        OR: [
+          { createdBy: user.id },
+          {
+            users: {
+              some: {
+                userId: user.id
+              }
+            }
+          }
+        ]
+      }
     });
-
-    if (!workspaceUser) {
-      return new NextResponse('Forbidden', { status: 403 });
+    
+    if (!workspace) {
+      return NextResponse.json({ message: 'Workspace not found or access denied' }, { status: 404 });
     }
-
-    // Check if formula exists and belongs to the workspace
+    
+    // Make sure the formula exists and belongs to this workspace
     const existingFormula = await prisma.formula.findUnique({
       where: {
         id: formulaId,
-        workspaceId,
-      },
+        workspaceId: workspaceId
+      }
     });
-
+    
     if (!existingFormula) {
-      return new NextResponse('Formula not found', { status: 404 });
+      return NextResponse.json({ message: 'Formula not found' }, { status: 404 });
     }
-
+    
     // Delete the formula
     await prisma.formula.delete({
       where: {
-        id: formulaId,
-      },
+        id: formulaId
+      }
     });
-
-    return new NextResponse(null, { status: 204 });
+    
+    return NextResponse.json({ message: 'Formula deleted successfully' });
   } catch (error) {
     console.error('Error deleting formula:', error);
-    return new NextResponse('Internal Error', { status: 500 });
+    return NextResponse.json(
+      { message: 'Server error', error: (error as Error).message },
+      { status: 500 }
+    );
   }
 } 

@@ -1,34 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/auth';
-import * as z from 'zod';
 import prisma from '@/lib/db';
-import { evaluateFormula, EvaluationContext, applyFormulaToTable } from '@/lib/formula/formula-service';
-
-// Schema for formula application request
-const ApplyFormulasSchema = z.object({
-  formulaIds: z.array(z.string()).min(1, "En az bir formül seçilmelidir"),
-  selectedVariable: z.string().optional(),
-  formulaType: z.enum(['CELL_VALIDATION', 'RELATIONAL']).optional(),
-});
-
-// Define interfaces for type safety
-interface FormulaResult {
-  formula: any;
-  results: Array<{
-    rowIndex: number;
-    isValid: boolean;
-  }>;
-}
+import { evaluateFormula, EvaluationContext } from '@/lib/formula/formula-service';
 
 interface HighlightedCell {
   row: string;
   col: string;
   color: string;
-  message: string;
+  message?: string;
 }
 
 interface FormulaRequest {
   formulaIds: string[];
+  selectedVariable?: string;
 }
 
 // POST /api/workspaces/[workspaceId]/tables/[tableId]/apply-formulas
@@ -99,7 +83,7 @@ export async function POST(
 
     // Get the formulas to apply
     const body = await request.json() as FormulaRequest;
-    const { formulaIds } = body;
+    const { formulaIds, selectedVariable } = body;
 
     if (!formulaIds || !Array.isArray(formulaIds) || formulaIds.length === 0) {
       return NextResponse.json(
@@ -127,37 +111,97 @@ export async function POST(
     const formulaResults = [];
     const highlightedCells: HighlightedCell[] = [];
 
+    // Extract columns and data for processing
+    const columns = table.columns as string[];
+    const data = table.data as (string | number | null)[][];
+    
+    // Find the variable column
+    const variableColumnIndex = columns.findIndex(
+      col => col && typeof col === 'string' && col.toLowerCase() === 'variable'
+    );
+    
+    if (variableColumnIndex === -1) {
+      return NextResponse.json(
+        { message: 'Variable column not found in table' },
+        { status: 400 }
+      );
+    }
+
     // Apply each formula to the table
     for (const formula of formulas) {
       try {
-        const evaluationResults = applyFormulaToTable(formula, {
-          columns: table.columns as string[],
-          data: table.data as (string | number | null)[][],
-        });
+        // Parse the formula to extract variable references
+        const variableRegex = /\[([^\]]+)\]/g;
+        const formulaVariables: Set<string> = new Set();
+        let match;
         
-        // Process evaluation results to generate highlighted cells
-        evaluationResults.forEach((result, rowIndex) => {
-          if (!result.isValid && formula.color) {
-            // Find the appropriate column to highlight (first one that matches the formula)
-            const columnIndex = 0; // Default to first column if can't determine
-            const variableColumnIndex = (table.columns as string[]).findIndex(
-              col => col.toLowerCase() === 'variable'
-            );
+        // Find all variables referenced in the formula
+        while ((match = variableRegex.exec(formula.formula)) !== null) {
+          formulaVariables.add(match[1]);
+        }
+        
+        // Filter rows if selectedVariable is specified
+        const rowsToProcess = selectedVariable 
+          ? data.filter(row => row[variableColumnIndex] === selectedVariable)
+          : data;
+          
+        // Process each row to evaluate the formula
+        rowsToProcess.forEach((row, rowIndex) => {
+          // Get the actual row index in the full data array for proper highlighting
+          const actualRowIndex = selectedVariable 
+            ? data.findIndex(r => r[variableColumnIndex] === selectedVariable && 
+                JSON.stringify(r) === JSON.stringify(row))
+            : rowIndex;
             
-            // Create a highlighted cell entry for this result
-            highlightedCells.push({
-              row: `row-${rowIndex + 1}`,
-              col: (table.columns as string[])[variableColumnIndex >= 0 ? variableColumnIndex : columnIndex],
-              color: formula.color || '#ff0000',
-              message: result.message || `${formula.name} formülü doğrulanmadı`
-            });
+          if (actualRowIndex === -1) return; // Skip if row not found
+          
+          // Create context from row data for this specific row
+          const context: EvaluationContext = { variables: {} };
+          
+          // Add all column values for this row to the variables context
+          columns.forEach((col, colIndex) => {
+            if (!col || typeof col !== 'string') return;
+            
+            const value = row[colIndex];
+            if (typeof value === 'number') {
+              context.variables[col] = value;
+            } else if (typeof value === 'string' && !isNaN(parseFloat(value))) {
+              context.variables[col] = parseFloat(value);
+            }
+          });
+          
+          try {
+            // Evaluate the formula for this specific row
+            const result = evaluateFormula(formula.formula, context);
+            
+            // If formula evaluates to false, highlight only the cells referenced in the formula
+            if (!result.isValid && formula.color) {
+              // If we have specific failing columns from the formula evaluation, use those
+              const columnsToHighlight = result.failingColumns || Array.from(formulaVariables);
+              
+              // Add only the cells that are actually used in the formula condition
+              for (const varName of columnsToHighlight) {
+                const colIndex = columns.findIndex(c => c === varName);
+                if (colIndex !== -1) {
+                  // Add the specific cell to highlight
+                  highlightedCells.push({
+                    row: `row-${actualRowIndex + 1}`,
+                    col: varName, // Use the variable name as column identifier
+                    color: formula.color || '#ff0000',
+                    message: `${formula.name}: ${result.message || 'Koşul sağlanmadı'}`
+                  });
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`Error evaluating formula for row ${rowIndex}:`, err);
           }
         });
         
         formulaResults.push({
           formulaId: formula.id,
           formulaName: formula.name,
-          result: evaluationResults
+          appliedRows: rowsToProcess.length
         });
       } catch (error) {
         formulaResults.push({

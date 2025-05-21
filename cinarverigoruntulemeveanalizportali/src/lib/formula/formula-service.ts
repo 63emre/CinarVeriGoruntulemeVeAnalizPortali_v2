@@ -127,71 +127,159 @@ export interface EvaluationContext {
 
 export interface EvaluationResult {
   isValid: boolean;
-  message?: string;
-  debug?: string;
+  message: string;
+  failingColumns?: string[];
 }
 
-// Update the evaluateFormula function to better handle complex expressions
-/**
- * Evaluates a formula expression against the provided context.
- * 
- * Replace bracketed variables with values, enforce strict comparison,
- * then evaluate the boolean expression.
- * 
- * @param formula The formula string to evaluate (e.g., "[COD] > [LOQ]")
- * @param context The variables and their values available for evaluation
- * @returns Result of the evaluation, including validity and debug info
- */
+// Added function to parse the formula and extract useful information
+export function parseFormula(formula: string): {
+  variables: string[];
+  conditions: { 
+    leftVariables: string[]; 
+    rightVariables: string[];
+    operator: string;
+    raw: string;
+  }[] 
+} {
+  const variables: string[] = [];
+  const variableRegex = /\[([^\]]+)\]/g;
+  let match;
+
+  // Find all variables in the formula
+  while ((match = variableRegex.exec(formula)) !== null) {
+    if (!variables.includes(match[1])) {
+      variables.push(match[1]);
+    }
+  }
+
+  // Parse the conditions
+  const conditions: { 
+    leftVariables: string[]; 
+    rightVariables: string[];
+    operator: string;
+    raw: string;
+  }[] = [];
+
+  // First, split by logical operators (AND, OR)
+  const conditionsArr = formula.split(/\s+(?:AND|OR)\s+/);
+  
+  for (const condition of conditionsArr) {
+    // Find the comparison operator
+    const operatorMatch = condition.match(/\s*(<=|>=|==|<|>|!=)\s*/);
+    if (operatorMatch) {
+      const operator = operatorMatch[1];
+      const [leftSide, rightSide] = condition.split(operatorMatch[0]);
+      
+      // Find variables in left side
+      const leftVariables: string[] = [];
+      let leftMatch;
+      const leftRegex = /\[([^\]]+)\]/g;
+      while ((leftMatch = leftRegex.exec(leftSide)) !== null) {
+        leftVariables.push(leftMatch[1]);
+      }
+      
+      // Find variables in right side
+      const rightVariables: string[] = [];
+      let rightMatch;
+      const rightRegex = /\[([^\]]+)\]/g;
+      while ((rightMatch = rightRegex.exec(rightSide)) !== null) {
+        rightVariables.push(rightMatch[1]);
+      }
+      
+      conditions.push({
+        leftVariables,
+        rightVariables,
+        operator,
+        raw: condition.trim()
+      });
+    }
+  }
+  
+  return { variables, conditions };
+}
+
+// Format formula helper function
+function formatFormula(formula: string, context: EvaluationContext): string {
+  // Basic security check - only allow specific characters
+  if (!/^[a-zA-Z0-9\s\[\]().,+\-*/><=!&|]+$/.test(formula)) {
+    return 'false';
+  }
+
+  // Replace variable names with their values from context
+  let evaluableFormula = formula;
+  
+  // Replace bracketed variable names [Variable Name]
+  const bracketedVarRegex = /\[([^\]]+)\]/g;
+  evaluableFormula = evaluableFormula.replace(bracketedVarRegex, (match, varName) => {
+    const value = context.variables[varName];
+    if (value === undefined) {
+      return 'undefined';
+    }
+    return value.toString();
+  });
+  
+  // Convert logical operators to JavaScript syntax
+  evaluableFormula = evaluableFormula.replace(/\bAND\b/g, '&&');
+  evaluableFormula = evaluableFormula.replace(/\bOR\b/g, '||');
+  
+  // Handle equality operators
+  evaluableFormula = evaluableFormula.replace(/==/g, '===');
+  evaluableFormula = evaluableFormula.replace(/!=/g, '!==');
+  
+  return evaluableFormula;
+}
+
+// Enhanced function to evaluate formula with detailed information about failing conditions
 export function evaluateFormula(formula: string, context: EvaluationContext): EvaluationResult {
   try {
-    // Basic security check - only allow specific characters
-    if (!/^[a-zA-Z0-9\s\[\]().,+\-*/><=!&|]+$/.test(formula)) {
+    const formattedFormula = formatFormula(formula, context);
+    
+    // Parse the formula to get detailed information
+    const parsedFormula = parseFormula(formula);
+    
+    // Log the parse results for debugging
+    console.log('Formula conditions:', parsedFormula.conditions);
+    console.log('Formula string:', formattedFormula);
+    
+    // If any condition, log detailed information about it
+    if (parsedFormula.conditions.length > 0) {
+      const firstCondition = parsedFormula.conditions[0];
+      console.log('Condition 1:', firstCondition.raw);
+      
+      // Track which specific columns caused the failure
+      const failingColumns: string[] = [];
+      
+      // Log variables for debugging
+      console.log('Left side variables:', firstCondition.leftVariables);
+      console.log('Right side variables:', firstCondition.rightVariables);
+      
+      // Check if this condition is failing
+      if (formattedFormula.includes('false')) {
+        // Add failing columns to the list
+        failingColumns.push(...firstCondition.leftVariables, ...firstCondition.rightVariables);
+      }
+      
+      // Evaluate the formula
+      const result = new Function('return ' + formattedFormula)();
+      
       return {
-        isValid: false,
-        message: 'Formül geçersiz karakterler içeriyor'
+        isValid: result === true,
+        message: result ? 'Formula is valid' : 'Formula is not valid',
+        failingColumns: failingColumns.length > 0 ? failingColumns : undefined
       };
     }
-
-    // Replace variable names with their values from context
-    let evaluableFormula = formula;
     
-    // Replace bracketed variable names [Variable Name]
-    const bracketedVarRegex = /\[([^\]]+)\]/g;
-    evaluableFormula = evaluableFormula.replace(bracketedVarRegex, (match, varName) => {
-      const value = context.variables[varName];
-      if (value === undefined) {
-        // Log the context for debugging
-        console.log('Context variables:', Object.keys(context.variables));
-        throw new Error(`Değişken bulunamadı: ${varName}`);
-      }
-      return value.toString();
-    });
-    
-    // Convert logical operators to JavaScript syntax
-    evaluableFormula = evaluableFormula.replace(/\bAND\b/g, '&&');
-    evaluableFormula = evaluableFormula.replace(/\bOR\b/g, '||');
-    
-    // Handle equality operators
-    evaluableFormula = evaluableFormula.replace(/==/g, '===');
-    evaluableFormula = evaluableFormula.replace(/!=/g, '!==');
-    
-    // Log the formula for debugging
-    console.log('Evaluating formula:', evaluableFormula);
-    
-    // Evaluate the formula safely
-    // eslint-disable-next-line no-new-func
-    const result = Function(`'use strict'; return (${evaluableFormula});`)();
+    // Evaluate the formula
+    const result = new Function('return ' + formattedFormula)();
     
     return {
-      isValid: Boolean(result),
-      debug: `Evaluated: ${evaluableFormula} = ${result}`
+      isValid: result === true,
+      message: result ? 'Formula is valid' : 'Formula is not valid'
     };
   } catch (error) {
-    console.error('Formula evaluation error:', error);
     return {
       isValid: false,
-      message: `Formül değerlendirme hatası: ${(error as Error).message}`,
-      debug: `Failed formula: ${formula}`
+      message: `Error evaluating formula: ${(error as Error).message}`
     };
   }
 }

@@ -182,11 +182,27 @@ export default function DataTable({
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
-  };
-
-  // Check if a cell has a highlight
+  };  // Check if a cell has a highlight - with improved matching logic
   const getCellHighlight = (rowId: string, colId: string) => {
-    return highlightedCells.find(cell => cell.row === rowId && cell.col === colId);
+    // Try multiple row ID formats to find a match
+    // The row ID might be in the format "row-X" or just a stringified number
+    const possibleRowIds = [
+      rowId,
+      `row-${rowId}`,
+      `row-${rowId.replace('row-', '')}`,
+      rowId.replace('row-', '')
+    ];
+    
+    // Try to match with any of the possible row IDs
+    const highlight = highlightedCells.find(cell => 
+      possibleRowIds.includes(cell.row) && cell.col === colId
+    );
+    
+    if (highlight) {
+      console.log(`Found highlight for cell ${rowId}-${colId}:`, highlight);
+    }
+    
+    return highlight;
   };
   
   if (error) {
@@ -270,14 +286,13 @@ export default function DataTable({
           </div>
         ) : (
           <div className="overflow-x-auto w-full">
-            <table className="min-w-full divide-y divide-gray-200 border-collapse table-auto">
-              <thead className="bg-gray-100 sticky top-0 z-10">
+            <table className="min-w-full divide-y divide-gray-200 border-collapse table-auto">              <thead className="bg-gray-200 sticky top-0 z-10">
                 <tr>
                   {columns.map((column) => (
                     <th
                       key={column.id}
                       scope="col"
-                      className="px-4 py-3 text-left text-sm font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-200 border-b border-gray-300 sticky whitespace-nowrap"
+                      className="px-4 py-3 text-left text-sm font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-300 border-b border-gray-300 sticky whitespace-nowrap"
                       onClick={() => handleSort(column.id)}
                     >
                       <div className="flex items-center">
@@ -298,9 +313,7 @@ export default function DataTable({
                     {columns.map((column) => {
                       const cellValue = row[column.id];
                       const isSelected = selectedCell?.row === row.id && selectedCell?.col === column.id;
-                      const highlight = getCellHighlight(row.id, column.id);
-                      
-                      // Dynamic styles based on highlight, selection, and column type
+                      const highlight = getCellHighlight(row.id, column.id);                      // Dynamic styles based on highlight, selection, and column type
                       let cellStyles = "px-4 py-2 whitespace-nowrap font-medium border ";
                       
                       // Base text color - darker for better readability
@@ -312,28 +325,38 @@ export default function DataTable({
                         cellStyles += "border-gray-200 ";
                       }
                       
-                      // Special column styling
+                      // Special column styling with improved contrast
                       if (column.id === 'id') {
-                        cellStyles += "bg-gray-50 text-gray-600 ";
+                        cellStyles += "bg-gray-100 text-gray-800 ";
                       } else if (['Data Source', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
-                        cellStyles += "bg-gray-50 ";
+                        cellStyles += "bg-gray-100 text-gray-800 ";
                       }
-                        return (
-                          <td
+                        return (                          <td
                             key={`${row.id}-${column.id}`}
                             className={cellStyles}
                             style={highlight ? {
-                              backgroundColor: highlight.color,
+                              backgroundColor: `${highlight.color}30`, // 30 is hex for ~20% opacity
                               borderColor: highlight.color,
-                              borderWidth: '1px'
+                              borderWidth: '2px',
+                              position: 'relative'
                             } : {}}
                             onClick={() => handleCellClick(row.id, column.id, cellValue)}
                             title={highlight?.message}
+                            data-is-highlighted={!!highlight}
                           >
                             {cellValue === null ? (
                               <span className="text-gray-400">-</span>
-                            ) : (
+                            ) : (                            
                               <span>{String(cellValue)}</span>
+                            )}
+                            {highlight && (
+                              <div 
+                                className="absolute top-0 right-0 w-0 h-0"
+                                style={{ 
+                                  borderTop: `10px solid ${highlight.color}`, 
+                                  borderLeft: '10px solid transparent',
+                                }}
+                              />
                             )}
                           </td>
                         );

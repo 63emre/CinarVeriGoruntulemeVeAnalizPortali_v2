@@ -182,10 +182,9 @@ export async function POST(
               // Add only the cells that are actually used in the formula condition
               for (const varName of columnsToHighlight) {
                 const colIndex = columns.findIndex(c => c === varName);
-                if (colIndex !== -1) {
-                  // Add the specific cell to highlight
+                if (colIndex !== -1) {                  // Add the specific cell to highlight
                   highlightedCells.push({
-                    row: `row-${actualRowIndex + 1}`,
+                    row: `row-${actualRowIndex}`, // Ensure consistent row ID format
                     col: varName, // Use the variable name as column identifier
                     color: formula.color || '#ff0000',
                     message: `${formula.name}: ${result.message || 'Koşul sağlanmadı'}`

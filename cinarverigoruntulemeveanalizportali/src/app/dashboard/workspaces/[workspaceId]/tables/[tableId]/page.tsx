@@ -175,12 +175,21 @@ export default function TablePage() {
       }
       
       const result = await response.json();
-      console.log("Formula application result:", result);
-      
-      // Process highlighted cells
+      console.log("Formula application result:", result);      // Process highlighted cells
       if (result.highlightedCells && result.highlightedCells.length > 0) {
-        console.log(`Received ${result.highlightedCells.length} highlighted cells`);
+        console.log(`Received ${result.highlightedCells.length} highlighted cells:`, result.highlightedCells);
+        
+        // Log each cell format to help with debugging
+        result.highlightedCells.forEach((cell: HighlightedCell, index: number) => {
+          console.log(`Cell ${index}: row=${cell.row}, col=${cell.col}, color=${cell.color}`);
+        });
+        
         setHighlightedCells(result.highlightedCells);
+        
+        // Also log the current table row format
+        if (table && table.data && table.data.length > 0) {
+          console.log(`Table row ID format sample: row-0, table uses formats like: 'row-0', 'row-1', etc.`);
+        }
       } else {
         console.log("No highlighted cells received");
         setHighlightedCells([]);

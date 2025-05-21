@@ -163,10 +163,9 @@ export default function FormulasContent() {
   const handleTableFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSelectedTableId(e.target.value);
   };
-  
-  // Handle formula edit
+    // Handle formula edit
   const handleEdit = (formula: Formula) => {
-    setEditingFormula(formula);
+    setEditingFormula({...formula});
     setIsEditing(true);
   };
   

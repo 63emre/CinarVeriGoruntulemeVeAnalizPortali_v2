@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FcAddRow, FcCancel, FcCheckmark, FcManager } from 'react-icons/fc';
+import { FcAddRow, FcCancel, FcCheckmark, FcManager, FcEditImage } from 'react-icons/fc';
 
 interface User {
   id: string;
@@ -9,6 +9,174 @@ interface User {
   email: string;
   role: 'ADMIN' | 'USER';
   createdAt: string;
+}
+
+// Add the interface for managing the edit modal
+interface EditUserModalProps {
+  user: User;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (userData: Partial<User>) => Promise<void>;
+}
+
+// Create the modal component for editing users
+function EditUserModal({ user, isOpen, onClose, onSave }: EditUserModalProps) {
+  const [name, setName] = useState(user.name || '');
+  const [email, setEmail] = useState(user.email);
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'ADMIN' | 'USER'>(user.role);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Reset form when user changes
+  useEffect(() => {
+    setName(user.name || '');
+    setEmail(user.email);
+    setPassword('');
+    setRole(user.role);
+    setError('');
+  }, [user]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validation
+    if (!name.trim() || !email.trim()) {
+      setError('Ad ve e-posta alanları gereklidir');
+      return;
+    }
+    
+    if (!email.includes('@')) {
+      setError('Geçerli bir e-posta adresi girin');
+      return;
+    }
+    
+    // If password is provided, validate it
+    if (password && password.length < 6) {
+      setError('Şifre en az 6 karakter olmalıdır');
+      return;
+    }
+    
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      // Prepare update data - only include password if it was changed
+      const updateData: Partial<User> = {
+        id: user.id,
+        name,
+        email,
+        role
+      };
+      
+      if (password) {
+        // TypeScript won't allow password in User type, so use type assertion
+        (updateData as any).password = password;
+      }
+      
+      await onSave(updateData);
+      onClose();
+    } catch (err) {
+      setError((err as Error).message || 'Kullanıcı güncellenirken bir hata oluştu');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <h3 className="text-xl font-bold mb-4">Kullanıcı Düzenle</h3>
+        
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="edit-name" className="block text-sm font-medium text-gray-700 mb-1">
+              Ad Soyad
+            </label>
+            <input
+              id="edit-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Ad Soyad"
+            />
+          </div>
+          
+          <div>
+            <label htmlFor="edit-email" className="block text-sm font-medium text-gray-700 mb-1">
+              E-posta Adresi
+            </label>
+            <input
+              id="edit-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              placeholder="ornek@cinar.com"
+            />
+          </div>
+          
+          <div>
+            <label htmlFor="edit-password" className="block text-sm font-medium text-gray-700 mb-1">
+              Şifre (Değiştirmek istemiyorsanız boş bırakın)
+            </label>
+            <input
+              id="edit-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Yeni şifre (opsiyonel)"
+            />
+          </div>
+          
+          <div>
+            <label htmlFor="edit-role" className="block text-sm font-medium text-gray-700 mb-1">
+              Kullanıcı Rolü
+            </label>
+            <select
+              id="edit-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value as 'ADMIN' | 'USER')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              disabled={user.email === 'admin@cinar.com'} // Prevent changing role for default admin
+            >
+              <option value="USER">Kullanıcı</option>
+              <option value="ADMIN">Yönetici</option>
+            </select>
+          </div>
+          
+          {error && (
+            <div className="text-red-600 flex items-center">
+              <FcCancel className="h-5 w-5 mr-1" />
+              {error}
+            </div>
+          )}
+          
+          <div className="flex justify-end space-x-3 mt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition"
+            >
+              İptal
+            </button>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            >
+              <FcCheckmark className="mr-2 bg-white rounded" />
+              {isLoading ? 'Kaydediliyor...' : 'Kaydet'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 export default function UserManager() {
@@ -21,6 +189,9 @@ export default function UserManager() {
   const [success, setSuccess] = useState('');
   const [users, setUsers] = useState<User[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  // Add state for edit modal
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
 
   useEffect(() => {
     async function fetchUsers() {
@@ -125,11 +296,10 @@ export default function UserManager() {
       console.error('Kullanıcı silme hatası:', err);
     }
   };
-
   const handleUpdateRole = async (userId: string, newRole: 'ADMIN' | 'USER') => {
     try {
-      const response = await fetch(`/api/users/${userId}/role`, {
-        method: 'PATCH',
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -152,6 +322,68 @@ export default function UserManager() {
     } catch (err) {
       setError((err as Error).message || 'Rol güncellenirken bir hata oluştu');
       console.error('Rol güncelleme hatası:', err);
+    }
+  };
+  
+  const handleEdit = (user: User) => {
+    setEditingUser(user);
+    setEditModalOpen(true);
+  };
+  
+  const handleUpdateUser = async (userData: Partial<User>) => {
+    try {
+      const response = await fetch(`/api/users/${userData.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Kullanıcı güncelleme başarısız');
+      }
+      
+      const responseData = await response.json();
+      
+      // Update the user in our list
+      setUsers(users.map(u => 
+        u.id === userData.id ? { ...u, ...userData } : u
+      ));
+      
+      setSuccess('Kullanıcı başarıyla güncellendi');
+    } catch (err) {
+      setError((err as Error).message || 'Kullanıcı güncellenirken bir hata oluştu');
+      console.error('Kullanıcı güncelleme hatası:', err);
+      throw err; // Rethrow to handle in the modal
+    }
+  };
+
+  const handleSaveUser = async (userData: Partial<User>) => {
+    try {
+      const response = await fetch(`/api/users/${userData.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Kullanıcı güncelleme başarısız');
+      }
+      
+      // Update the user in our list
+      setUsers(users.map(u => 
+        u.id === userData.id ? { ...u, ...userData } : u
+      ));
+      
+      setSuccess('Kullanıcı başarıyla güncellendi');
+    } catch (err) {
+      setError((err as Error).message || 'Kullanıcı güncellenirken bir hata oluştu');
+      console.error('Kullanıcı güncelleme hatası:', err);
     }
   };
 
@@ -301,6 +533,12 @@ export default function UserManager() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <button
+                        onClick={() => handleEdit(user)}
+                        className="text-blue-600 hover:text-blue-800 mr-3"
+                      >
+                        Düzenle
+                      </button>
+                      <button
                         onClick={() => handleDelete(user.id)}
                         className="text-red-600 hover:text-red-800"
                         disabled={user.email === 'admin@cinar.com'} // Prevent deleting default admin
@@ -317,6 +555,16 @@ export default function UserManager() {
           <p className="text-gray-600 py-2">Henüz kullanıcı bulunmamaktadır</p>
         )}
       </div>
+      
+      {/* Edit User Modal */}
+      {editingUser && (
+        <EditUserModal
+          user={editingUser}
+          isOpen={editModalOpen}
+          onClose={() => setEditModalOpen(false)}
+          onSave={handleSaveUser}
+        />
+      )}
     </div>
   );
-} 
+}

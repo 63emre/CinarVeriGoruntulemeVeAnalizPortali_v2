@@ -296,12 +296,47 @@ export async function saveExcelData(
       throw new Error('Çalışma alanı bulunamadı.');
     }
 
-    // Extract filename from the first sheet or use a default
-    const fileName = excelData.length > 0 ? excelData[0].sheetName : 'Imported Data';
-    
+    // First check for existing tables in this workspace to avoid duplicate names
+    const existingTables = await prisma.dataTable.findMany({
+      where: { workspaceId },
+      select: { sheetName: true, name: true },
+    });    // Create a map of existing sheet names for faster lookup
+    const existingSheetNames = new Map<string, number>();
+    existingTables.forEach(table => {
+      // Extract the base sheet name (without any suffix)
+      const baseSheetName = table.sheetName.replace(/\s+\(\d+\)$/, '');
+      // Add sheet name to map and count occurrences
+      const count = existingSheetNames.get(baseSheetName) || 0;
+      existingSheetNames.set(baseSheetName, count + 1);
+    });
+
+    // Track sheet names used within this batch to avoid duplicates in the same import
+    const batchSheetNames = new Map<string, number>();
+
     // Tüm sayfaları transaction içinde işle
     await prisma.$transaction(async (tx) => {
       for (const sheet of excelData) {
+        // Get the base sheet name (in case it already has a suffix)
+        const baseSheetName = sheet.sheetName.replace(/\s+\(\d+\)$/, '');
+        
+        // Determine if this sheet name already exists in database or current batch
+        const existingCount = existingSheetNames.get(baseSheetName) || 0;
+        const batchCount = batchSheetNames.get(baseSheetName) || 0;
+        const totalCount = existingCount + batchCount;
+        
+        // Create a unique sheet name
+        let uniqueSheetName = baseSheetName;
+        let fileNameToUse = baseSheetName;
+        
+        // Add suffix if needed to make name unique
+        if (totalCount > 0) {
+          uniqueSheetName = `${baseSheetName} (${totalCount + 1})`;
+          fileNameToUse = uniqueSheetName;
+        }
+        
+        // Update the batch map for future sheets in this import
+        batchSheetNames.set(baseSheetName, batchCount + 1);
+
         // Create a proper sanitized version of the data
         // Remove any row/column limits - process all data dynamically
         const sanitizedData = sheet.data.map(row => {
@@ -360,8 +395,8 @@ export async function saveExcelData(
         try {
           const table = await tx.dataTable.create({
             data: {
-              name: fileName,
-              sheetName: sheet.sheetName,
+              name: fileNameToUse,
+              sheetName: uniqueSheetName,
               workspaceId,
               columns: sheet.columns,
               data: processedData, // Store all data without row limits

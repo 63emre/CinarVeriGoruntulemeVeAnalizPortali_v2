@@ -108,13 +108,59 @@ export default function AnalysisContent() {
     const tableId = e.target.value;
     setSelectedTable(tableId);
   };
-  
-  // Handle view analysis
+    // Handle view analysis
   const handleViewAnalysis = () => {
     if (selectedWorkspace && selectedTable) {
-      router.push(`/dashboard/workspaces/${selectedWorkspace}/analysis?tableId=${selectedTable}`);
+      router.push(`/dashboard/workspaces/${selectedWorkspace}/tables/${selectedTable}`);
     }
   };
+  
+  // Connect to real data
+  const [loading, setLoading] = useState(false);
+  
+  const fetchAnalysisData = async (workspaceId: string, tableId: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/analysis`);
+      
+      if (!response.ok) {
+        throw new Error('Analiz verileri yüklenirken bir hata oluştu');
+      }
+      
+      const data = await response.json();
+      
+      // Process the data for analysis
+      console.log("Analysis data received:", data);
+      // You would set state variables for analysis data here
+      
+      return data;
+    } catch (err) {
+      console.error('Error fetching analysis data:', err);
+      setError((err as Error).message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Use effect to load analysis data when workspace and table are selected from URL params
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const tableIdFromURL = searchParams.get('tableId');
+    const workspaceIdFromURL = window.location.pathname.split('/').find(
+      segment => segment.match(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/)
+    );
+    
+    if (workspaceIdFromURL && tableIdFromURL) {
+      setSelectedWorkspace(workspaceIdFromURL);
+      setSelectedTable(tableIdFromURL);
+      
+      // Load real analysis data
+      fetchAnalysisData(workspaceIdFromURL, tableIdFromURL);
+    }
+  }, []);
   
   return (
     <div className="container mx-auto p-6">

@@ -2,17 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/auth';
 import * as z from 'zod';
 import prisma from '@/lib/db';
-import { saveFormula, getFormulas, deleteFormula } from '@/lib/formula/formula-service';
+import { deleteFormula } from '@/lib/formula/formula-service';
 
-// Schema for formula creation/update
+// Schema for formula creation
 const FormulaSchema = z.object({
-  name: z.string().min(2, 'Formül adı en az 2 karakter olmalı'),
-  description: z.string().optional().nullable(),
-  formula: z.string().min(1, 'Formül ifadesi zorunludur'),
-  tableId: z.string().optional().nullable(),
-  color: z.string().optional().nullable(),
-  type: z.enum(['CELL_VALIDATION', 'RELATIONAL']).default('CELL_VALIDATION'),
+  name: z.string().min(1, "Name is required"),
+  description: z.string().optional(),
+  formula: z.string().min(1, "Formula is required"),
+  tableId: z.string().optional(),
+  color: z.string().optional(),
+  type: z.enum(['CELL_VALIDATION', 'RELATIONAL']),
+  active: z.boolean().optional(),
 });
+
+export interface FormulaCondition {
+  operand1: string;
+  arithmeticOperator?: '+' | '-' | '*' | '/';
+  operand2?: string;
+  comparisonOperator: '>' | '<' | '>=' | '<=' | '==' | '!=';
+  operand3: string;
+  isConstant?: boolean;
+}
 
 // GET: Get all formulas for a workspace
 export async function GET(
@@ -20,9 +30,9 @@ export async function GET(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    // Access params directly without awaiting
-    const { workspaceId } = params;
-    
+    // Access params directly
+    const workspaceId = params.workspaceId;
+
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json(
@@ -33,7 +43,14 @@ export async function GET(
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
-      where: { id: workspaceId }
+      where: { id: workspaceId },
+      include: {
+        users: {
+          where: {
+            userId: currentUser.id
+          }
+        }
+      }
     });
 
     if (!workspace) {
@@ -44,34 +61,30 @@ export async function GET(
     }
 
     // Check if user has access to this workspace
-    // Admin users can access any workspace
     const isAdmin = currentUser.role === 'ADMIN';
     const isCreator = workspace.createdBy === currentUser.id;
+    const hasAccess = workspace.users.length > 0;
     
-    if (!isAdmin && !isCreator) {
-      const hasAccess = await prisma.workspaceUser.findFirst({
-        where: {
-          userId: currentUser.id,
-          workspaceId,
-        },
-      });
-      
-      if (!hasAccess) {
-        return NextResponse.json(
-          { message: 'You do not have access to this workspace' },
-          { status: 403 }
-        );
-      }
+    if (!isAdmin && !isCreator && !hasAccess) {
+      return NextResponse.json(
+        { message: 'You do not have access to this workspace' },
+        { status: 403 }
+      );
     }
 
     // Get all formulas for this workspace
-    const formulas = await getFormulas(workspaceId);
+    const formulas = await prisma.formula.findMany({
+      where: { workspaceId },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
 
     return NextResponse.json(formulas);
   } catch (error) {
-    console.error('Error getting formulas:', error);
+    console.error('Error fetching formulas:', error);
     return NextResponse.json(
-      { message: 'Server error' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }
@@ -83,8 +96,8 @@ export async function POST(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    // Access params directly without awaiting
-    const { workspaceId } = params;
+    // Access params directly
+    const workspaceId = params.workspaceId;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -96,7 +109,14 @@ export async function POST(
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
-      where: { id: workspaceId }
+      where: { id: workspaceId },
+      include: {
+        users: {
+          where: {
+            userId: currentUser.id
+          }
+        }
+      }
     });
 
     if (!workspace) {
@@ -107,51 +127,63 @@ export async function POST(
     }
 
     // Check if user has access to this workspace
-    const hasAccess = await prisma.workspaceUser.findFirst({
-      where: {
-        userId: currentUser.id,
-        workspaceId,
-      },
-    });
-
-    const isCreator = workspace.createdBy === currentUser.id;
     const isAdmin = currentUser.role === 'ADMIN';
-
-    if (!hasAccess && !isCreator && !isAdmin) {
+    const isCreator = workspace.createdBy === currentUser.id;
+    const hasAccess = workspace.users.length > 0;
+    
+    if (!isAdmin && !isCreator && !hasAccess) {
       return NextResponse.json(
         { message: 'You do not have access to this workspace' },
         { status: 403 }
       );
     }
 
-    // Parse request body
-    const data = await request.json();
+    // Parse and validate request body
+    const body = await request.json();
+    const validation = FormulaSchema.safeParse(body);
     
-    try {
-      // Validate with Zod schema
-      const validatedData = FormulaSchema.parse(data);
-      
-      // Create new formula
-      const formula = await saveFormula(
-        validatedData.name,
-        validatedData.description || '',
-        validatedData.formula,
-        workspaceId,
-        validatedData.color || '#ef4444',
-        validatedData.tableId,
-        validatedData.type === 'RELATIONAL' ? 'RELATIONAL' : 'CELL_VALIDATION'
+    if (!validation.success) {
+      return NextResponse.json(
+        { message: 'Invalid formula data', errors: validation.error.errors },
+        { status: 400 }
       );
+    }
 
-      return NextResponse.json(formula);
-    } catch (validationError) {
-      if (validationError instanceof z.ZodError) {
+    // Create the formula
+    const { name, description, formula, tableId, color, type, active } = validation.data;
+    
+    // Check if tableId exists if provided
+    if (tableId) {
+      const table = await prisma.dataTable.findUnique({
+        where: { 
+          id: tableId,
+          workspaceId 
+        }
+      });
+      
+      if (!table) {
         return NextResponse.json(
-          { message: 'Validation error', errors: validationError.errors },
-          { status: 400 }
+          { message: 'Table not found' },
+          { status: 404 }
         );
       }
-      throw validationError;
     }
+    
+    // Create formula
+    const newFormula = await prisma.formula.create({
+      data: {
+        name,
+        description: description || null,
+        formula,
+        tableId: tableId || null,
+        color: color || '#ef4444',
+        type,
+        active: active !== undefined ? active : true,
+        workspaceId,
+      }
+    });
+
+    return NextResponse.json(newFormula);
   } catch (error) {
     console.error('Error creating formula:', error);
     return NextResponse.json(

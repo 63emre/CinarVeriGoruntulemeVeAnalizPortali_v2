@@ -99,8 +99,8 @@ export async function POST(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    // Access params directly without awaiting
-    const { workspaceId } = params;
+    // Access params correctly
+    const workspaceId = params.workspaceId;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {

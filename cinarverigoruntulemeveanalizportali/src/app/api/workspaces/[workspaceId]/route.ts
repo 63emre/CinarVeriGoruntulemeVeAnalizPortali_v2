@@ -82,7 +82,7 @@ export async function GET(
   } catch (error) {
     console.error('Error fetching workspace:', error);
     return NextResponse.json(
-      { message: 'Server error' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }
@@ -102,8 +102,8 @@ export async function PATCH(
       );
     }
 
-    // Access params directly without awaiting
-    const { workspaceId } = params;
+    // Access params directly
+    const workspaceId = params.workspaceId;
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
@@ -160,7 +160,7 @@ export async function PATCH(
   } catch (error) {
     console.error('Error updating workspace:', error);
     return NextResponse.json(
-      { message: 'Server error' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }
@@ -180,8 +180,8 @@ export async function DELETE(
       );
     }
 
-    // Access params directly without awaiting
-    const { workspaceId } = params;
+    // Access params directly
+    const workspaceId = params.workspaceId;
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
@@ -217,7 +217,7 @@ export async function DELETE(
   } catch (error) {
     console.error('Error deleting workspace:', error);
     return NextResponse.json(
-      { message: 'Server error' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }

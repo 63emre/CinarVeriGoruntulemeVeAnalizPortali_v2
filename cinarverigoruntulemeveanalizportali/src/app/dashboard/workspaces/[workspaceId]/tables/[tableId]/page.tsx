@@ -27,14 +27,23 @@ interface HighlightedCell {
 
 type ArithmeticOperator = '+' | '-' | '*' | '/';
 type ComparisonOperator = '>' | '<' | '>=' | '<=' | '==' | '!=';
+type LogicalOperator = 'AND' | 'OR';
+
+interface FormulaTerm {
+  value: string;
+  isVariable: boolean;
+}
+
+interface FormulaExpression {
+  terms: FormulaTerm[];
+  operators: ArithmeticOperator[];
+}
 
 interface FormulaCondition {
-  operand1: string;
-  arithmeticOperator?: ArithmeticOperator;
-  operand2?: string;
+  leftExpression: FormulaExpression;
   comparisonOperator: ComparisonOperator;
-  operand3: string;
-  isConstant?: boolean;
+  rightExpression: FormulaExpression;
+  logicalOperator: LogicalOperator;
 }
 
 interface Formula {
@@ -285,7 +294,7 @@ export default function TablePage() {
 
   // Handle formula building from dropdown editor
   const handleFormulaBuild = (formula: string, conditions: FormulaCondition[]) => {
-    // Update the formula in the state
+    // Update the formula in the state with the formatted string
     setNewFormula({
       ...newFormula,
       formula: formula
@@ -293,6 +302,26 @@ export default function TablePage() {
     
     // Log the conditions for debugging
     console.log('Formula conditions:', conditions);
+    
+    // Detailed logging to help debug formula creation
+    console.log('Formula string:', formula);
+    
+    // For each condition, log the variables being used
+    conditions.forEach((condition, index) => {
+      console.log(`Condition ${index + 1}:`);
+      
+      // Log variables in left expression
+      const leftVariables = condition.leftExpression.terms
+        .filter(term => term.isVariable && term.value)
+        .map(term => term.value);
+      console.log('Left side variables:', leftVariables);
+      
+      // Log variables in right expression
+      const rightVariables = condition.rightExpression.terms
+        .filter(term => term.isVariable && term.value)
+        .map(term => term.value);
+      console.log('Right side variables:', rightVariables);
+    });
   };
 
   if (loading && !table) {
@@ -379,7 +408,7 @@ export default function TablePage() {
           </div>
           
           <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
-            <div className={`${showFormulaSidebar ? 'lg:col-span-5' : 'lg:col-span-7'}`}>
+            <div className={`${showFormulaSidebar ? 'lg:col-span-4' : 'lg:col-span-7'}`}>
               <div className="bg-white shadow-md rounded-lg overflow-hidden">
                 <EditableDataTable 
                   columns={tableColumns}
@@ -404,19 +433,10 @@ export default function TablePage() {
                   }}
                 />
               </div>
-              
-              {/* Dropdown Formula Editor - Side by side with table */}
-              <div className="mt-6">
-                <DropdownFormulaEditor 
-                  variables={variables}
-                  onFormulaBuild={handleFormulaBuild}
-                />
-              </div>
             </div>
             
-            {showFormulaSidebar && (
-              <div className="lg:col-span-2">
-                {/* Formulas Panel */}
+            <div className={`${showFormulaSidebar ? 'lg:col-span-3' : 'hidden'}`}>
+              <div className="space-y-4">
                 <div className="bg-white shadow-md rounded-lg p-4 mb-4">
                   <h3 className="text-lg font-semibold text-black mb-4">Formül Seçimi</h3>
                   <FormulaSelector
@@ -424,7 +444,6 @@ export default function TablePage() {
                     onSelectionChange={handleFormulaChange}
                   />
                   
-                  {/* Link to Formulas Page */}
                   <div className="mt-4 border-t pt-4">
                     <Link 
                       href={`/dashboard/formulas?workspaceId=${workspaceId}`}
@@ -436,7 +455,6 @@ export default function TablePage() {
                   </div>
                 </div>
                 
-                {/* Quick Formula Creator */}
                 <div className="bg-white shadow-md rounded-lg p-4">
                   <h3 className="text-lg font-semibold text-black mb-4 flex items-center">
                     <FcPlus className="mr-2" />
@@ -490,9 +508,10 @@ export default function TablePage() {
                         value={newFormula.formula}
                         onChange={(e) => setNewFormula({...newFormula, formula: e.target.value})}
                         placeholder="Örn: [Toplam Fosfor] > [Orto Fosfat]"
+                        readOnly
                       />
                       <p className="text-xs text-gray-600 mt-1">
-                        Değişken adlarını köşeli parantez içinde yazın: [Değişken]
+                        Formül aşağıdaki formül oluşturucudan otomatik olarak oluşturulacaktır.
                       </p>
                     </div>
                     
@@ -511,37 +530,6 @@ export default function TablePage() {
                         <span className="ml-2 text-sm text-gray-700">{newFormula.color}</span>
                       </div>
                     </div>
-                    
-                    {variables.length > 0 && (
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-800 mb-1">
-                          Tablodaki Değişkenler
-                        </label>
-                        <div className="bg-gray-50 p-2 rounded-md max-h-32 overflow-y-auto">
-                          {variables.map((variableName, index) => (
-                            <div 
-                              key={index}
-                              className="inline-block bg-white px-2 py-1 text-xs rounded border m-1 cursor-pointer hover:bg-blue-50"
-                              onClick={() => {
-                                // Add variable to formula at cursor position
-                                const formulaInput = document.getElementById('formula-expression') as HTMLTextAreaElement;
-                                const start = formulaInput.selectionStart || 0;
-                                const end = formulaInput.selectionEnd || 0;
-                                const text = newFormula.formula;
-                                const variableText = `[${variableName}]`;
-                                const newText = text.substring(0, start) + variableText + text.substring(end);
-                                setNewFormula({...newFormula, formula: newText});
-                              }}
-                            >
-                              {variableName}
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Tıklayarak formüle ekleyin
-                        </p>
-                      </div>
-                    )}
                     
                     <button
                       type="submit"
@@ -570,7 +558,14 @@ export default function TablePage() {
                   </div>
                 )}
               </div>
-            )}
+            </div>
+          </div>
+          
+          <div className="mt-6">
+            <DropdownFormulaEditor 
+              variables={variables}
+              onFormulaBuild={handleFormulaBuild}
+            />
           </div>
         </>
       ) : (

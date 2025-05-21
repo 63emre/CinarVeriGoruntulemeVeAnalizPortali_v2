@@ -3,7 +3,7 @@ import prisma from '../db';
 // Formula types
 export type ArithmeticOperator = '+' | '-' | '*' | '/';
 export type ComparisonOperator = '>' | '<' | '>=' | '<=' | '==' | '!=';
-export type LogicalOperator = '&&' | '||';
+export type LogicalOperator = '&&' | '||' | 'AND' | 'OR';
 
 export interface FormulaResult {
   result: boolean;
@@ -12,13 +12,23 @@ export interface FormulaResult {
   formulaName?: string;
 }
 
+// New interfaces for terms and expressions
+export interface FormulaTerm {
+  value: string;
+  isVariable: boolean;
+}
+
+export interface FormulaExpression {
+  terms: FormulaTerm[];
+  operators: ArithmeticOperator[];
+}
+
+// Updated FormulaCondition interface
 export interface FormulaCondition {
-  operand1: string;
-  arithmeticOperator?: ArithmeticOperator;
-  operand2?: string;
+  leftExpression: FormulaExpression;
   comparisonOperator: ComparisonOperator;
-  operand3: string;
-  isConstant?: boolean;
+  rightExpression: FormulaExpression;
+  logicalOperator: LogicalOperator;
 }
 
 export interface Formula {
@@ -121,7 +131,7 @@ export interface EvaluationResult {
   debug?: string;
 }
 
-// Parse and evaluate a formula string
+// Update the evaluateFormula function to better handle complex expressions
 /**
  * Evaluates a formula expression against the provided context.
  * 
@@ -150,21 +160,23 @@ export function evaluateFormula(formula: string, context: EvaluationContext): Ev
     evaluableFormula = evaluableFormula.replace(bracketedVarRegex, (match, varName) => {
       const value = context.variables[varName];
       if (value === undefined) {
+        // Log the context for debugging
+        console.log('Context variables:', Object.keys(context.variables));
         throw new Error(`Değişken bulunamadı: ${varName}`);
       }
       return value.toString();
     });
     
-    // Replace non-bracketed variable names
-    Object.keys(context.variables).forEach(varName => {
-      // Use word boundary to ensure we're replacing whole words
-      const varRegex = new RegExp(`\\b${varName}\\b`, 'g');
-      evaluableFormula = evaluableFormula.replace(varRegex, context.variables[varName].toString());
-    });
+    // Convert logical operators to JavaScript syntax
+    evaluableFormula = evaluableFormula.replace(/\bAND\b/g, '&&');
+    evaluableFormula = evaluableFormula.replace(/\bOR\b/g, '||');
     
     // Handle equality operators
     evaluableFormula = evaluableFormula.replace(/==/g, '===');
     evaluableFormula = evaluableFormula.replace(/!=/g, '!==');
+    
+    // Log the formula for debugging
+    console.log('Evaluating formula:', evaluableFormula);
     
     // Evaluate the formula safely
     // eslint-disable-next-line no-new-func
@@ -175,12 +187,91 @@ export function evaluateFormula(formula: string, context: EvaluationContext): Ev
       debug: `Evaluated: ${evaluableFormula} = ${result}`
     };
   } catch (error) {
+    console.error('Formula evaluation error:', error);
     return {
       isValid: false,
       message: `Formül değerlendirme hatası: ${(error as Error).message}`,
       debug: `Failed formula: ${formula}`
     };
   }
+}
+
+// Export the evaluateExpression function so it can be used elsewhere
+export function evaluateExpression(expression: FormulaExpression, context: EvaluationContext): number {
+  if (expression.terms.length === 0) return 0;
+  
+  if (expression.terms.length === 1) {
+    const term = expression.terms[0];
+    if (term.isVariable) {
+      const value = context.variables[term.value];
+      if (value === undefined) {
+        throw new Error(`Değişken bulunamadı: ${term.value}`);
+      }
+      return value;
+    } else {
+      return parseFloat(term.value);
+    }
+  }
+  
+  // For multiple terms, evaluate the expression with operators
+  // Initialize result with the first term properly
+  let result = expression.terms[0].isVariable 
+    ? context.variables[expression.terms[0].value] 
+    : parseFloat(expression.terms[0].value);
+  
+  for (let i = 1; i < expression.terms.length; i++) {
+    const term = expression.terms[i];
+    const operator = expression.operators[i - 1];
+    const value = term.isVariable ? context.variables[term.value] : parseFloat(term.value);
+    
+    switch (operator) {
+      case '+': result += value; break;
+      case '-': result -= value; break;
+      case '*': result *= value; break;
+      case '/': result /= value; break;
+    }
+  }
+  
+  return result;
+}
+
+// New function to create a formula string from the new condition format
+export function createFormulaStringFromConditions(conditions: FormulaCondition[]): string {
+  return conditions.map((condition, index) => {
+    // Build the left expression
+    const leftExpr = condition.leftExpression.terms.map((term, termIndex) => {
+      const termStr = term.isVariable ? `[${term.value}]` : term.value;
+      if (termIndex < condition.leftExpression.operators.length) {
+        return `${termStr} ${condition.leftExpression.operators[termIndex]}`;
+      }
+      return termStr;
+    }).join(' ');
+    
+    // Build the right expression
+    const rightExpr = condition.rightExpression.terms.map((term, termIndex) => {
+      const termStr = term.isVariable ? `[${term.value}]` : term.value;
+      if (termIndex < condition.rightExpression.operators.length) {
+        return `${termStr} ${condition.rightExpression.operators[termIndex]}`;
+      }
+      return termStr;
+    }).join(' ');
+    
+    // Add parentheses if there are multiple terms
+    const leftSide = condition.leftExpression.terms.length > 1 ? `(${leftExpr})` : leftExpr;
+    const rightSide = condition.rightExpression.terms.length > 1 ? `(${rightExpr})` : rightExpr;
+    
+    // Build the comparison
+    const comparison = `${leftSide} ${condition.comparisonOperator} ${rightSide}`;
+    
+    // Add logical operator if not the last condition
+    if (index < conditions.length - 1) {
+      // Convert logical operator to JavaScript syntax
+      const logicalOp = condition.logicalOperator === 'AND' ? '&&' : '||';
+      return `${comparison} ${logicalOp}`;
+    }
+    
+    return comparison;
+  }).join(' ');
 }
 
 // Apply a formula to a data table
@@ -294,14 +385,22 @@ export function generateFormulaString(
   }
   
   return conditions.map((condition, index) => {
-    let leftSide = condition.operand1;
+    const leftSide = condition.leftExpression.terms.map((term, termIndex) => {
+      const termStr = term.isVariable ? `[${term.value}]` : term.value;
+      if (termIndex < condition.leftExpression.operators.length) {
+        return `${termStr} ${condition.leftExpression.operators[termIndex]}`;
+      }
+      return termStr;
+    }).join(' ');
     
-    // Add brackets if there's an arithmetic operation
-    if (condition.arithmeticOperator && condition.operand2) {
-      leftSide = `(${condition.operand1} ${condition.arithmeticOperator} ${condition.operand2})`;
-    }
+    const rightSide = condition.rightExpression.terms.map((term, termIndex) => {
+      const termStr = term.isVariable ? `[${term.value}]` : term.value;
+      if (termIndex < condition.rightExpression.operators.length) {
+        return `${termStr} ${condition.rightExpression.operators[termIndex]}`;
+      }
+      return termStr;
+    }).join(' ');
     
-    const rightSide = condition.operand3;
     let formula = `${leftSide} ${condition.comparisonOperator} ${rightSide}`;
     
     // Add logical operator if not the last condition
@@ -354,12 +453,16 @@ export function parseFormulaString(formula: string): {
       if (arithmeticMatch && !leftSide.startsWith('(')) {
         // Simple arithmetic operation
         conditions.push({
-          operand1: arithmeticMatch[1].trim(),
-          arithmeticOperator: arithmeticMatch[2].trim() as ArithmeticOperator,
-          operand2: arithmeticMatch[3].trim(),
+          leftExpression: {
+            terms: [{ value: arithmeticMatch[1].trim(), isVariable: false }],
+            operators: [arithmeticMatch[2].trim() as ArithmeticOperator]
+          },
           comparisonOperator: operator,
-          operand3: rightSide,
-          isConstant: !isNaN(parseFloat(rightSide))
+          rightExpression: {
+            terms: [{ value: arithmeticMatch[3].trim(), isVariable: false }],
+            operators: []
+          },
+          logicalOperator: 'AND'
         });
       } else if (leftSide.includes('+') || leftSide.includes('-') || leftSide.includes('*') || leftSide.includes('/')) {
         // Complex expression inside parentheses
@@ -369,21 +472,31 @@ export function parseFormulaString(formula: string): {
         
         if (arithMatch) {
           conditions.push({
-            operand1: arithMatch[1].trim(),
-            arithmeticOperator: arithMatch[2].trim() as ArithmeticOperator,
-            operand2: arithMatch[3].trim(),
+            leftExpression: {
+              terms: [{ value: arithMatch[1].trim(), isVariable: false }],
+              operators: [arithMatch[2].trim() as ArithmeticOperator]
+            },
             comparisonOperator: operator,
-            operand3: rightSide,
-            isConstant: !isNaN(parseFloat(rightSide))
+            rightExpression: {
+              terms: [{ value: arithMatch[3].trim(), isVariable: false }],
+              operators: []
+            },
+            logicalOperator: 'AND'
           });
         }
       } else {
         // Simple comparison without arithmetic
         conditions.push({
-          operand1: leftSide,
+          leftExpression: {
+            terms: [{ value: leftSide, isVariable: false }],
+            operators: []
+          },
           comparisonOperator: operator,
-          operand3: rightSide,
-          isConstant: !isNaN(parseFloat(rightSide))
+          rightExpression: {
+            terms: [{ value: rightSide, isVariable: false }],
+            operators: []
+          },
+          logicalOperator: 'AND'
         });
       }
     }

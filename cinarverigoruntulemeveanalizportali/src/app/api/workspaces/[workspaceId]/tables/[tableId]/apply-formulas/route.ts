@@ -37,8 +37,9 @@ export async function POST(
   { params }: { params: { workspaceId: string; tableId: string } }
 ) {
   try {
-    // Access params directly without awaiting
-    const { workspaceId, tableId } = params;
+    // Access params directly
+    const workspaceId = params.workspaceId;
+    const tableId = params.tableId;
 
     // Get current user for authorization
     const currentUser = await getCurrentUser();

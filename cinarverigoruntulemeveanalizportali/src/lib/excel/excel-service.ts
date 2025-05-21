@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import prisma from '../db';
 
 export interface ExcelData {
+  fileName?: string;
   sheetName: string;
   columns: string[];
   data: (string | number | null)[][];
@@ -157,6 +158,9 @@ export async function parseExcelFile(file: File): Promise<ExcelData[]> {
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
     const result: ExcelData[] = [];
+    
+    // Extract the filename without extension for later use
+    const fileName = file.name.replace(/\.(xlsx|xls)$/i, '');
 
     for (const sheetName of workbook.SheetNames) {
       const worksheet = workbook.Sheets[sheetName];
@@ -245,6 +249,7 @@ export async function parseExcelFile(file: File): Promise<ExcelData[]> {
         });
 
         result.push({
+          fileName, // Store the original filename
           sheetName,
           columns: cleanHeaders,
           data: data as (string | number | null)[][],
@@ -326,13 +331,14 @@ export async function saveExcelData(
         
         // Create a unique sheet name
         let uniqueSheetName = baseSheetName;
-        let fileNameToUse = baseSheetName;
         
         // Add suffix if needed to make name unique
         if (totalCount > 0) {
           uniqueSheetName = `${baseSheetName} (${totalCount + 1})`;
-          fileNameToUse = uniqueSheetName;
         }
+        
+        // Use fileName-sheetName format for the table name displayed to users
+        let fileNameToUse = sheet.fileName ? `${sheet.fileName} - ${uniqueSheetName}` : uniqueSheetName;
         
         // Update the batch map for future sheets in this import
         batchSheetNames.set(baseSheetName, batchCount + 1);

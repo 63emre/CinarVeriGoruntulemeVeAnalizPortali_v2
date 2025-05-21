@@ -140,15 +140,17 @@ export function parseFormula(formula: string): {
     operator: string;
     raw: string;
   }[] 
-} {
-  const variables: string[] = [];
-  const variableRegex = /\[([^\]]+)\]/g;
+} {  const variables: string[] = [];
+  // Modified regex to capture empty bracket pairs as well
+  const variableRegex = /\[([^\]]*)\]/g;
   let match;
-
+  
   // Find all variables in the formula
   while ((match = variableRegex.exec(formula)) !== null) {
-    if (!variables.includes(match[1])) {
-      variables.push(match[1]);
+    // Include empty variables too, assign them a special name for tracking
+    const variableName = match[1] || '_empty_';
+    if (!variables.includes(variableName)) {
+      variables.push(variableName);
     }
   }
 
@@ -212,8 +214,10 @@ function formatFormula(formula: string, context: EvaluationContext): string {
   const bracketedVarRegex = /\[([^\]]+)\]/g;
   evaluableFormula = evaluableFormula.replace(bracketedVarRegex, (match, varName) => {
     const value = context.variables[varName];
-    if (value === undefined) {
-      return 'undefined';
+    if (value === undefined || value === null || isNaN(value)) {
+      console.log(`Warning: Variable [${varName}] has invalid value:`, value);
+      // Return a value that will cause the comparison to be false
+      return 'null';
     }
     return value.toString();
   });
@@ -232,51 +236,87 @@ function formatFormula(formula: string, context: EvaluationContext): string {
 // Enhanced function to evaluate formula with detailed information about failing conditions
 export function evaluateFormula(formula: string, context: EvaluationContext): EvaluationResult {
   try {
+    // Parse the formula to get detailed information about variables and conditions
+    const parsedFormula = parseFormula(formula);
     const formattedFormula = formatFormula(formula, context);
     
-    // Parse the formula to get detailed information
-    const parsedFormula = parseFormula(formula);
+    // Log for debugging
+    console.log('Formula to evaluate:', formula);
+    console.log('Formatted formula:', formattedFormula);
+    console.log('Variables in formula:', parsedFormula.variables);
     
-    // Log the parse results for debugging
-    console.log('Formula conditions:', parsedFormula.conditions);
-    console.log('Formula string:', formattedFormula);
-    
-    // If any condition, log detailed information about it
-    if (parsedFormula.conditions.length > 0) {
-      const firstCondition = parsedFormula.conditions[0];
-      console.log('Condition 1:', firstCondition.raw);
+    // Check for missing or invalid variables
+    const missingVariables: string[] = [];
+    for (const varName of parsedFormula.variables) {
+      if (varName === '_empty_') continue; // Skip our placeholder for empty brackets
       
-      // Track which specific columns caused the failure
-      const failingColumns: string[] = [];
-      
-      // Log variables for debugging
-      console.log('Left side variables:', firstCondition.leftVariables);
-      console.log('Right side variables:', firstCondition.rightVariables);
-      
-      // Check if this condition is failing
-      if (formattedFormula.includes('false')) {
-        // Add failing columns to the list
-        failingColumns.push(...firstCondition.leftVariables, ...firstCondition.rightVariables);
+      const value = context.variables[varName];
+      if (value === undefined || value === null || isNaN(value)) {
+        console.log(`Missing or invalid variable: ${varName}`, value);
+        missingVariables.push(varName);
       }
-      
-      // Evaluate the formula
-      const result = new Function('return ' + formattedFormula)();
-      
+    }
+    
+    // If we have missing variables, return specific failure
+    if (missingVariables.length > 0) {
       return {
-        isValid: result === true,
-        message: result ? 'Formula is valid' : 'Formula is not valid',
-        failingColumns: failingColumns.length > 0 ? failingColumns : undefined
+        isValid: false,
+        message: `Missing or invalid variables: ${missingVariables.join(', ')}`,
+        failingColumns: missingVariables
       };
     }
     
+    // Track which specific columns caused the failure
+    const failingColumns: string[] = [];
+    
+    // Check each condition individually to identify failing parts
+    for (const condition of parsedFormula.conditions) {
+      const { leftVariables, rightVariables, raw } = condition;
+      
+      // Check if any variable in this condition has null/undefined value
+      const invalidVars = [...leftVariables, ...rightVariables].filter(v => {
+        const value = context.variables[v];
+        return value === undefined || value === null || isNaN(value);
+      });
+      
+      if (invalidVars.length > 0) {
+        failingColumns.push(...invalidVars);
+        console.log(`Condition "${raw}" has invalid variables:`, invalidVars);
+      }
+    }
+    
     // Evaluate the formula
-    const result = new Function('return ' + formattedFormula)();
+    let result = false;
+    try {
+      result = new Function('return ' + formattedFormula)();
+    } catch (err) {
+      console.error('Error in formula evaluation:', err);
+      // If evaluation fails, use all variables as failing columns
+      return {
+        isValid: false,
+        message: `Formula evaluation error: ${(err as Error).message}`,
+        failingColumns: parsedFormula.variables.filter(v => v !== '_empty_')
+      };
+    }
+    
+    // If the result is false but we don't have specific failing columns yet
+    if (!result && failingColumns.length === 0) {
+      // Use all variables as failing columns (we don't know which specific one caused the failure)
+      const allVars = new Set<string>();
+      for (const condition of parsedFormula.conditions) {
+        condition.leftVariables.forEach(v => allVars.add(v));
+        condition.rightVariables.forEach(v => allVars.add(v));
+      }
+      failingColumns.push(...Array.from(allVars));
+    }
     
     return {
       isValid: result === true,
-      message: result ? 'Formula is valid' : 'Formula is not valid'
+      message: result ? 'Formula is valid' : 'Formula conditions not met',
+      failingColumns: failingColumns.length > 0 ? failingColumns : undefined
     };
   } catch (error) {
+    console.error('Exception in evaluateFormula:', error);
     return {
       isValid: false,
       message: `Error evaluating formula: ${(error as Error).message}`
@@ -763,4 +803,4 @@ export async function saveFormula(
     console.error('Error saving formula:', error);
     throw new Error(`Formül kaydedilirken hata oluştu: ${(error as Error).message}`);
   }
-} 
+}

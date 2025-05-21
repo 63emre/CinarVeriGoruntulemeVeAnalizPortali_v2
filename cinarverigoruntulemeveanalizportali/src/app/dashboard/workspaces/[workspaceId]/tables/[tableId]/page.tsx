@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { FcRules, FcReuse, FcPlus } from 'react-icons/fc';
+import { FcRules, FcReuse, FcPlus, FcAreaChart } from 'react-icons/fc';
 import EditableDataTable from '@/components/tables/EditableDataTable';
 import FormulaSelector from '@/components/formulas/FormulaSelector';
 import DropdownFormulaEditor from '@/components/formulas/DropdownFormulaEditor';
@@ -201,11 +201,21 @@ export default function TablePage() {
       setLoading(false);
     }
   };
-
   // Handle PDF export
   const exportToPdf = async () => {
     try {
       setLoading(true);
+      
+      // Prepare highlighted cells data
+      const preparedHighlightedCells = highlightedCells?.map(cell => ({
+        row: cell.row,
+        col: cell.col,
+        color: cell.color,
+        message: cell.message
+      })) || [];
+      
+      console.log("Sending highlighted cells:", JSON.stringify(preparedHighlightedCells));
+      
       const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/pdf`, {
         method: 'POST',
         headers: {
@@ -213,7 +223,7 @@ export default function TablePage() {
         },
         body: JSON.stringify({
           includeDate: true,
-          highlightedCells: highlightedCells,
+          highlightedCells: preparedHighlightedCells,
         }),
       });
       
@@ -374,10 +384,21 @@ export default function TablePage() {
     <div className="p-6">
       {table ? (
         <>
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold text-black">{table.name}</h1>
-            
+          <div className="flex items-center space-x-2 mb-6">
+            <div className="flex-1">
+              <h1 className="text-2xl font-semibold text-black">
+                {table ? table.name : 'Tablo Yükleniyor...'}
+              </h1>
+            </div>
             <div className="flex space-x-2">
+              <Link
+                href={`/dashboard/workspaces/${workspaceId}/analysis?tableId=${tableId}`}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"
+              >
+                <FcAreaChart className="mr-2 bg-white rounded-full" />
+                Analiz Et
+              </Link>
+              
               <button
                 onClick={() => setShowFormulaSidebar(!showFormulaSidebar)}
                 className={`px-4 py-2 rounded-md flex items-center ${
@@ -455,7 +476,7 @@ export default function TablePage() {
                   
                   <div className="mt-4 border-t pt-4">
                     <Link 
-                      href={`/dashboard/formulas?workspaceId=${workspaceId}`}
+                      href={`/dashboard/workspaces/${workspaceId}/formulas`}
                       className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
                     >
                       <FcRules className="mr-2" />

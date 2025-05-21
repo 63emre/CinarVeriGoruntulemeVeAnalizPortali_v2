@@ -48,22 +48,25 @@ export default function AnalysisPage() {
         }
         
         const data = await response.json();
+        console.log('API response:', data); // Debug log
         
-        if (!data || !data.data || !Array.isArray(data.data.columns) || !Array.isArray(data.data.data)) {
-          throw new Error('Geçersiz tablo verisi');
+        // Check if data has correct structure - it should be directly accessible, not nested in a data property
+        if (!data || !Array.isArray(data.columns) || !Array.isArray(data.data)) {
+          console.error('Unexpected data structure:', data);
+          throw new Error('Geçersiz tablo verisi yapısı');
         }
         
         // Set table name
-        setTableName(data.data.name || 'Analiz');
+        setTableName(data.name || 'Analiz');
         
         // Extract variables (typically in a column called 'Variable')
-        const variableColumnIndex = data.data.columns.findIndex((col: string) => col === 'Variable');
+        const variableColumnIndex = data.columns.findIndex((col: string) => col === 'Variable');
         
         if (variableColumnIndex !== -1) {
           // Extract unique variables from the Variable column
           const uniqueVars = new Set<string>();
           
-          data.data.data.forEach((row: (string | number | null)[]) => {
+          data.data.forEach((row: (string | number | null)[]) => {
             const varValue = row[variableColumnIndex];
             if (varValue && typeof varValue === 'string' && varValue.trim() !== '') {
               uniqueVars.add(varValue);
@@ -77,11 +80,13 @@ export default function AnalysisPage() {
           if (varArray.length > 0) {
             setSelectedVariable(varArray[0]);
           }
+        } else {
+          console.warn('Variable column not found in table data');
         }
         
         // Identify date columns (any column that is not one of the standard columns)
         const standardColumns = ['id', 'Variable', 'Data Source', 'Method', 'Unit', 'LOQ'];
-        const dateColumnsArray = data.data.columns.filter(
+        const dateColumnsArray = data.columns.filter(
           (col: string) => !standardColumns.includes(col)
         );
         
@@ -91,6 +96,8 @@ export default function AnalysisPage() {
         if (dateColumnsArray.length > 0) {
           setStartDate(dateColumnsArray[0]);
           setEndDate(dateColumnsArray[dateColumnsArray.length - 1]);
+        } else {
+          console.warn('No date columns found in table data');
         }
         
       } catch (err) {
@@ -122,12 +129,12 @@ export default function AnalysisPage() {
         
         const data = await response.json();
         
-        if (!data || !data.data || !Array.isArray(data.data.columns) || !Array.isArray(data.data.data)) {
+        if (!data || !Array.isArray(data.columns) || !Array.isArray(data.data)) {
           throw new Error('Geçersiz tablo verisi');
         }
         
         // Get column indices
-        const columns = data.data.columns;
+        const columns = data.columns;
         const variableColumnIndex = columns.findIndex((col: string) => col === 'Variable');
         
         // Determine the date columns to include
@@ -145,7 +152,7 @@ export default function AnalysisPage() {
         );
         
         // Filter data rows for the selected variable
-        const variableRows = data.data.data.filter((row: (string | number | null)[]) => 
+        const variableRows = data.data.filter((row: (string | number | null)[]) => 
           row[variableColumnIndex] === selectedVariable
         );
         
@@ -154,7 +161,7 @@ export default function AnalysisPage() {
         }
         
         // Extract values for the selected variable across date range
-        const values = dateRange.map(dateCol => {
+        const values = dateRange.map((dateCol: string) => {
           const dateColIndex = columns.indexOf(dateCol);
           // Get the first row's value for this date
           const row = variableRows[0];
@@ -211,7 +218,7 @@ export default function AnalysisPage() {
         labels: {
           color: '#000000',  // Black for better contrast
           font: {
-            weight: 'bold'
+            weight: 'bold' as const
           }
         }
       },
@@ -221,7 +228,7 @@ export default function AnalysisPage() {
         color: '#000000',  // Black for better contrast
         font: {
           size: 16,
-          weight: 'bold'
+          weight: 'bold' as const
         }
       },
     },

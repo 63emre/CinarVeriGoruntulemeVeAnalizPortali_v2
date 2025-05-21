@@ -417,17 +417,26 @@ export default function FormulaEditor({ workspaceId, tableId, onFormulaAdded }: 
       }
     }).join('');
   };
-
   // Formülün geçerli olup olmadığını kontrol et
   const isFormulaValid = (): boolean => {
+    // Check if we have valid conditions
+    if (!complexFormula.conditions || complexFormula.conditions.length === 0) {
+      return false;
+    }
+    
     return complexFormula.conditions.every(condition => {
-      // En az bir değişken olmalı
+      if (!condition || !condition.leftParts || !condition.rightParts) {
+        return false;
+      }
+      
+      // En az bir geçerli değişken olmalı
       const hasLeftVariable = condition.leftParts.some(part => 
-        part.type === 'variable' && part.value.trim() !== '');
+        part && part.type === 'variable' && part.value !== undefined && part.value !== null && part.value.trim() !== '');
       
       const hasRightVariable = condition.rightParts.some(part => 
-        part.type === 'variable' && part.value.trim() !== '');
+        part && part.type === 'variable' && part.value !== undefined && part.value !== null && part.value.trim() !== '');
       
+      // İki tarafta da geçerli değişkenler veya sabitler olmalı
       return hasLeftVariable && hasRightVariable;
     });
   };

@@ -169,8 +169,7 @@ export async function POST(
               context.variables[col] = parseFloat(value);
             }
           });
-          
-          try {
+            try {
             // Evaluate the formula for this specific row
             const result = evaluateFormula(formula.formula, context);
             
@@ -182,13 +181,21 @@ export async function POST(
               // Add only the cells that are actually used in the formula condition
               for (const varName of columnsToHighlight) {
                 const colIndex = columns.findIndex(c => c === varName);
-                if (colIndex !== -1) {                  // Add the specific cell to highlight
-                  highlightedCells.push({
+                if (colIndex !== -1) {
+                  // Add the specific cell to highlight with consistent row ID format
+                  const highlightCell = {
                     row: `row-${actualRowIndex}`, // Ensure consistent row ID format
                     col: varName, // Use the variable name as column identifier
                     color: formula.color || '#ff0000',
                     message: `${formula.name}: ${result.message || 'Koşul sağlanmadı'}`
-                  });
+                  };
+                  
+                  // Add to highlighted cells array if not already added
+                  if (!highlightedCells.some(cell => 
+                    cell.row === highlightCell.row && cell.col === highlightCell.col
+                  )) {
+                    highlightedCells.push(highlightCell);
+                  }
                 }
               }
             }

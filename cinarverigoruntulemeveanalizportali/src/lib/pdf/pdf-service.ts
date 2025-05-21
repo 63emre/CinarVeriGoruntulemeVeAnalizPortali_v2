@@ -10,19 +10,19 @@ export interface DataTable {
   workspaceId: string;
   uploadedAt: Date;
   updatedAt: Date;
-  columns: string[];
-  data: (string | number | null)[][];
+  columns: any;
+  data: any;
   workspace?: {
     name: string;
     description?: string | null;
   };
 }
 
-interface HighlightedCell {
+export interface HighlightedCell {
   row: string;
   col: string;
   color: string;
-  message: string;
+  message?: string;
 }
 
 interface Formula {
@@ -39,6 +39,8 @@ interface PdfExportOptions {
   title?: string;
   subtitle?: string;
   logo?: string;
+  includeDate?: boolean;
+  userName?: string;
 }
 
 /**
@@ -64,8 +66,12 @@ export async function exportTableToPdf(
   highlightedCells: HighlightedCell[] = [],
   formulas: Formula[] = [],
   options: PdfExportOptions = {}
-): Promise<Blob> {
-  const doc = new jsPDF();
+): Promise<Buffer> {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4'
+  });
   
   // Add title
   const title = options.title || `${table.name} - ${table.sheetName}`;
@@ -82,25 +88,36 @@ export async function exportTableToPdf(
   
   doc.setFontSize(10);
   doc.text(`Tarih: ${date} Saat: ${time}`, 14, 38);
-  
-  // Create CellHooks object to handle cell highlighting
-  const cellHooks = {
-    didParseCell: function(data: any) {
+    // Create CellHooks object to handle cell highlighting
+  const cellHooks = {    didParseCell: function(data: any) {
       // Skip header cells
       if (data.section === 'head') return;
       
-      // Get rowId based on row index (add 1 since data rows start at index 1 in the PDF)
-      const rowId = `row-${data.row.index}`;
+      // Get the actual row ID from our tracked rowIds
+      // Body rows start at index 0 in the PDF (since header is separate)
+      const actualRowId = rowIds[data.row.index];
       
-      // Get column name
+      // Get column name - make sure it's not undefined
       const colName = table.columns[data.column.index];
+      
+      if (!colName) {
+        console.log(`Warning: Cannot get column name for index ${data.column.index}`);
+        return;
+      }
+      
+      // Log for debugging with reduced verbosity
+      if (data.row.index === 0 && data.column.index === 0) {
+        console.log(`Processing cells for PDF highlighting, total highlighted cells: ${highlightedCells.length}`);
+      }
       
       // Check if this cell is highlighted
       const highlight = highlightedCells.find(cell => 
-        cell.row === rowId && cell.col === colName
+        (cell.row === actualRowId || cell.row === `${data.row.index}`) && cell.col === colName
       );
       
       if (highlight) {
+        console.log(`Found highlight for row ${highlight.row}, col ${highlight.col}, color ${highlight.color}`);
+        
         // Get RGB color from HEX
         const rgb = hexToRgb(highlight.color);
         
@@ -114,14 +131,16 @@ export async function exportTableToPdf(
           data.cell.styles.lineColor = [rgb.r, rgb.g, rgb.b]; // Border color matches highlight
         }
       }
-    },
-    willDrawCell: function(data: any) {
+    },    willDrawCell: function(data: any) {
       // Add tooltip icon to highlighted cells
       if (data.section === 'body') {
-        const rowId = `row-${data.row.index}`;
+        const actualRowId = rowIds[data.row.index];
         const colName = table.columns[data.column.index];
+        
+        if (!colName) return;
+        
         const highlight = highlightedCells.find(cell => 
-          cell.row === rowId && cell.col === colName
+          (cell.row === actualRowId || cell.row === `${data.row.index}`) && cell.col === colName
         );
         
         if (highlight && highlight.message) {
@@ -145,10 +164,12 @@ export async function exportTableToPdf(
       }
     }
   };
-  
-  // Parse data for the table
-  const tableData = table.data.map((row, rowIndex) => {
-    return row.map((cell) => cell === null ? '' : String(cell));
+    // Parse data for the table and track row IDs for highlighting
+  const rowIds: string[] = [];
+  const tableData = table.data.map((row: any[], rowIndex: number) => {
+    // Store the row ID for highlighting
+    rowIds.push(`row-${rowIndex}`);
+    return row.map((cell: any) => cell === null ? '' : String(cell));
   });
   
   // Generate the table
@@ -280,11 +301,10 @@ export async function exportTableToPdf(
       `Sayfa ${i} / ${pageCount}`,
       doc.internal.pageSize.width - 30,
       doc.internal.pageSize.height - 10
-    );
-  }
+    );  }
   
-  // Return the PDF as a blob
-  return doc.output('blob');
+  // Return the PDF as buffer (not blob, for server environment)
+  return Buffer.from(doc.output('arraybuffer'));
 }
 
 export interface PDFGenerationOptions {
@@ -402,4 +422,4 @@ export async function generatePdf(
 
   // Use the base generateTablePDF function
   return generateTablePDF(table, finalOptions);
-} 
+}

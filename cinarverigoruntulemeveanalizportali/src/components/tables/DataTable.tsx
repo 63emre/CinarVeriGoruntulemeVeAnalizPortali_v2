@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { FcDownload, FcPrint, FcFullTrash, FcExpand, FcCollapse } from 'react-icons/fc';
-import { AiOutlineFilter, AiOutlineSearch } from 'react-icons/ai';
+import { FcDownload, FcPrint, FcExpand, FcCollapse } from 'react-icons/fc';
+import { AiOutlineSearch } from 'react-icons/ai';
+import TableCell from './TableCell';
+import { evaluateFormulas } from '../../lib/formulaEvaluator';
 
 type Column = {
   id: string;
@@ -21,6 +23,19 @@ interface HighlightedCell {
   col: string;
   color: string;
   message: string;
+  formulaIds?: string[]; // IDs of formulas that triggered the highlight
+}
+
+interface Formula {
+  id: string;
+  name: string;
+  description: string | null;
+  formula: string;
+  color: string;
+  tableId: string | null;
+  workspaceId: string;
+  type: 'CELL_VALIDATION' | 'RELATIONAL';
+  active?: boolean;
 }
 
 interface DataTableProps {
@@ -58,6 +73,8 @@ export default function DataTable({
   const [selectedCell, setSelectedCell] = useState<{row: string, col: string} | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [formulas, setFormulas] = useState<Formula[]>([]);
+  const [calculatedHighlights, setCalculatedHighlights] = useState<HighlightedCell[]>([]);
   const tableRef = useRef<HTMLDivElement>(null);
 
   // Fetch table data if tableId and workspaceId are provided
@@ -78,8 +95,8 @@ export default function DataTable({
           if (responseData && responseData.data) {
             // Map the raw data to DataRow format
             const rowData: DataRow[] = Array.isArray(responseData.data.data) 
-              ? responseData.data.data.map((row: any[], index: number) => {
-                  const dataObj: DataRow = { id: `row-${index}` };
+              ? responseData.data.data.map((row: Array<string | number | null>, rowIndex: number) => {
+                  const dataObj: DataRow = { id: `row-${rowIndex}` };
                   
                   // Map columns to data values
                   if (Array.isArray(responseData.data.columns)) {
@@ -96,7 +113,7 @@ export default function DataTable({
             
             // Map columns to Column format
             const columnData: Column[] = Array.isArray(responseData.data.columns)
-              ? responseData.data.columns.map((colName: string, index: number) => ({
+              ? responseData.data.columns.map((colName: string) => ({
                   id: colName,
                   name: colName,
                   type: typeof rowData[0]?.[colName] === 'number' ? 'number' : 'string'
@@ -126,6 +143,47 @@ export default function DataTable({
       setLoading(false);
     }
   }, [tableId, workspaceId, initialData, initialColumns, initialTitle]);
+
+  // Fetch formulas when tableId changes
+  useEffect(() => {
+    if (tableId && workspaceId) {
+      fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/formulas`)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Formüller yüklenemedi');
+          }
+          return response.json();
+        })
+        .then(formulasData => {
+          setFormulas(formulasData);
+        })
+        .catch(err => {
+          console.error('Formüller yüklenirken hata:', err);
+        });
+    }
+  }, [tableId, workspaceId]);
+
+  // Evaluate formulas whenever data or formulas change
+  useEffect(() => {
+    if (data.length > 0 && columns.length > 0 && formulas.length > 0) {
+      // Only evaluate active formulas
+      const activeFormulas = formulas.filter(f => f.active !== false);
+      if (activeFormulas.length > 0) {
+        try {
+          const highlights = evaluateFormulas(
+            activeFormulas,
+            data,
+            columns.map(col => col.id)
+          );
+          setCalculatedHighlights(highlights);
+        } catch (err) {
+          console.error('Formül değerlendirme hatası:', err);
+        }
+      } else {
+        setCalculatedHighlights([]);
+      }
+    }
+  }, [data, columns, formulas]);
   
   const handleSort = (columnId: string) => {
     if (sortColumn === columnId) {
@@ -182,28 +240,10 @@ export default function DataTable({
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
-  };  // Check if a cell has a highlight - with improved matching logic
-  const getCellHighlight = (rowId: string, colId: string) => {
-    // Try multiple row ID formats to find a match
-    // The row ID might be in the format "row-X" or just a stringified number
-    const possibleRowIds = [
-      rowId,
-      `row-${rowId}`,
-      `row-${rowId.replace('row-', '')}`,
-      rowId.replace('row-', '')
-    ];
-    
-    // Try to match with any of the possible row IDs
-    const highlight = highlightedCells.find(cell => 
-      possibleRowIds.includes(cell.row) && cell.col === colId
-    );
-    
-    if (highlight) {
-      console.log(`Found highlight for cell ${rowId}-${colId}:`, highlight);
-    }
-    
-    return highlight;
   };
+
+  // Combine provided highlightedCells with calculated ones
+  const allHighlights = [...(highlightedCells || []), ...calculatedHighlights];
   
   if (error) {
     return (
@@ -215,181 +255,128 @@ export default function DataTable({
   
   return (
     <div 
-      className={`bg-white rounded-lg shadow overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : 'max-w-full'}`}
       ref={tableRef}
+      className={`bg-white rounded-lg shadow-md overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50 p-4' : ''}`}
     >
-      <div className="p-4 flex flex-wrap justify-between items-center border-b bg-gray-50">
-        <h2 className="text-xl font-bold text-black mb-2 md:mb-0">{title}</h2>
-        
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Ara..."
-              className="pl-9 pr-4 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900 w-full"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <AiOutlineSearch className="absolute left-3 top-1/2 transform -translate-y-1/2" />
+      {/* Table header */}
+      <div className="p-4 border-b">
+        <div className="flex justify-between items-center">
+          <h2 className="text-xl font-semibold text-gray-800">{title}</h2>
+          <div className="flex space-x-2">
+            {/* Search input */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Ara..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <AiOutlineSearch className="absolute left-2 top-2.5 text-gray-500" size={18} />
+            </div>
+            
+            {/* Action buttons */}
+            <div className="flex space-x-1">
+              {downloadUrl && (
+                <a
+                  href={downloadUrl}
+                  download
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  title="İndir"
+                >
+                  <FcDownload size={20} />
+                </a>
+              )}
+              
+              {printable && (
+                <button
+                  onClick={handlePrint}
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  title="Yazdır"
+                >
+                  <FcPrint size={20} />
+                </button>
+              )}
+              
+              <button
+                onClick={toggleFullscreen}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                title={isFullscreen ? "Küçült" : "Büyüt"}
+              >
+                {isFullscreen ? <FcCollapse size={20} /> : <FcExpand size={20} />}
+              </button>
+            </div>
           </div>
-          
-          {downloadUrl && (
-            <a
-              href={downloadUrl}
-              download
-              className="bg-blue-100 text-blue-800 hover:bg-blue-200 px-4 py-2 rounded-md flex items-center transition"
-            >
-              <FcDownload className="mr-2 h-5 w-5" />
-              İndir
-            </a>
-          )}
-          
-          {printable && (
-            <button
-              onClick={handlePrint}
-              className="bg-green-100 text-green-800 hover:bg-green-200 px-4 py-2 rounded-md flex items-center transition"
-            >
-              <FcPrint className="mr-2 h-5 w-5" />
-              Yazdır
-            </button>
-          )}
-          
-          <button
-            onClick={toggleFullscreen}
-            className="bg-purple-100 text-purple-800 hover:bg-purple-200 px-4 py-2 rounded-md flex items-center transition"
-          >
-            {isFullscreen ? (
-              <>
-                <FcCollapse className="mr-2 h-5 w-5" />
-                Küçült
-              </>
-            ) : (
-              <>
-                <FcExpand className="mr-2 h-5 w-5" />
-                Tam Ekran
-              </>
-            )}
-          </button>
         </div>
       </div>
       
-      <div className={`overflow-auto ${isFullscreen ? 'h-[calc(100vh-140px)]' : 'max-h-[70vh]'}`}>
-        {loading ? (
-          <div className="flex justify-center items-center py-20">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-          </div>
-        ) : !Array.isArray(filteredData) || filteredData.length === 0 ? (
-          <div className="text-center py-20 text-gray-600 font-medium">
-            {searchTerm 
-              ? 'Arama kriterlerine uygun sonuç bulunamadı.' 
-              : 'Gösterilecek veri bulunmuyor.'}
-          </div>
-        ) : (
-          <div className="overflow-x-auto w-full">
-            <table className="min-w-full divide-y divide-gray-200 border-collapse table-auto">              <thead className="bg-gray-200 sticky top-0 z-10">
-                <tr>
+      {/* Error message */}
+      {error && (
+        <div className="p-4 bg-red-50 text-red-700 border-b">
+          <p>{error}</p>
+        </div>
+      )}
+      
+      {/* Loading state */}
+      {loading ? (
+        <div className="p-8 text-center">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-300 border-t-blue-600 mb-2"></div>
+          <p className="text-gray-500">Yükleniyor...</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                {columns.map((column) => (
+                  <th
+                    key={column.id}
+                    onClick={() => handleSort(column.id)}
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  >
+                    <div className="flex items-center">
+                      <span>{column.name}</span>
+                      {sortColumn === column.id && (
+                        <span className="ml-1">
+                          {sortDirection === 'asc' ? '↑' : '↓'}
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredData.map((row) => (
+                <tr key={row.id}>
                   {columns.map((column) => (
-                    <th
-                      key={column.id}
-                      scope="col"
-                      className="px-4 py-3 text-left text-sm font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-300 border-b border-gray-300 sticky whitespace-nowrap"
-                      onClick={() => handleSort(column.id)}
-                    >
-                      <div className="flex items-center">
-                        {column.name}
-                        {sortColumn === column.id && (
-                          <span className="ml-1">
-                            {sortDirection === 'asc' ? '↑' : '↓'}
-                          </span>
-                        )}
-                      </div>
-                    </th>
+                    <TableCell
+                      key={`${row.id}-${column.id}`}
+                      rowId={row.id}
+                      colId={column.id}
+                      value={row[column.id]}
+                      highlights={allHighlights}
+                      onClick={handleCellClick}
+                      isSelected={selectedCell?.row === row.id && selectedCell?.col === column.id}
+                    />
                   ))}
                 </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredData.map((row) => (
-                  <tr key={row.id} className="hover:bg-gray-50">
-                    {columns.map((column) => {
-                      const cellValue = row[column.id];
-                      const isSelected = selectedCell?.row === row.id && selectedCell?.col === column.id;
-                      const highlight = getCellHighlight(row.id, column.id);                      // Dynamic styles based on highlight, selection, and column type
-                      let cellStyles = "px-4 py-2 whitespace-nowrap font-medium border ";
-                      
-                      // Base text color - darker for better readability
-                      cellStyles += column.id === 'Variable' ? "text-blue-900 font-semibold " : "text-gray-900 ";
-                        // Selection backgrounds (highlights are applied with inline style)
-                      if (isSelected) {
-                        cellStyles += "bg-blue-100 border-blue-300 ";
-                      } else {
-                        cellStyles += "border-gray-200 ";
-                      }
-                      
-                      // Special column styling with improved contrast
-                      if (column.id === 'id') {
-                        cellStyles += "bg-gray-100 text-gray-800 ";
-                      } else if (['Data Source', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
-                        cellStyles += "bg-gray-100 text-gray-800 ";
-                      }
-                        return (                          <td
-                            key={`${row.id}-${column.id}`}
-                            className={cellStyles}
-                            style={highlight ? {
-                              backgroundColor: `${highlight.color}30`, // 30 is hex for ~20% opacity
-                              borderColor: highlight.color,
-                              borderWidth: '2px',
-                              position: 'relative'
-                            } : {}}
-                            onClick={() => handleCellClick(row.id, column.id, cellValue)}
-                            title={highlight?.message}
-                            data-is-highlighted={!!highlight}
-                          >
-                            {cellValue === null ? (
-                              <span className="text-gray-400">-</span>
-                            ) : (                            
-                              <span>{String(cellValue)}</span>
-                            )}
-                            {highlight && (
-                              <div 
-                                className="absolute top-0 right-0 w-0 h-0"
-                                style={{ 
-                                  borderTop: `10px solid ${highlight.color}`, 
-                                  borderLeft: '10px solid transparent',
-                                }}
-                              />
-                            )}
-                          </td>
-                        );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-      
-      <div className="px-4 py-3 bg-gray-50 text-gray-900 text-sm border-t border-gray-200 flex justify-between">
-        <div>
-          {Array.isArray(filteredData) ? (
-            <>
-              <span className="font-medium">{filteredData.length}</span> satır gösteriliyor
-              {searchTerm && Array.isArray(data) && ` (toplam ${data.length} satırdan)`}
-            </>
-          ) : (
-            'Veri yok'
-          )}
+              ))}
+              
+              {filteredData.length === 0 && !loading && (
+                <tr>
+                  <td
+                    colSpan={columns.length}
+                    className="px-4 py-8 text-center text-gray-500"
+                  >
+                    {searchTerm ? 'Arama sonucu bulunamadı.' : 'Veri bulunamadı.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-        {isFullscreen && (
-          <button 
-            onClick={toggleFullscreen}
-            className="text-red-600 hover:text-red-800 flex items-center"
-          >
-            <FcFullTrash className="mr-1" />
-            Tam Ekrandan Çık
-          </button>
-        )}
-      </div>
+      )}
     </div>
   );
 } 

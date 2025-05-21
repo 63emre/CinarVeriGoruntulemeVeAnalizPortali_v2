@@ -4646,6 +4646,7 @@ export namespace Prisma {
     workspaceId: string | null
     uploadedAt: Date | null
     updatedAt: Date | null
+    csvData: string | null
   }
 
   export type DataTableMaxAggregateOutputType = {
@@ -4655,6 +4656,7 @@ export namespace Prisma {
     workspaceId: string | null
     uploadedAt: Date | null
     updatedAt: Date | null
+    csvData: string | null
   }
 
   export type DataTableCountAggregateOutputType = {
@@ -4666,6 +4668,7 @@ export namespace Prisma {
     updatedAt: number
     columns: number
     data: number
+    csvData: number
     _all: number
   }
 
@@ -4677,6 +4680,7 @@ export namespace Prisma {
     workspaceId?: true
     uploadedAt?: true
     updatedAt?: true
+    csvData?: true
   }
 
   export type DataTableMaxAggregateInputType = {
@@ -4686,6 +4690,7 @@ export namespace Prisma {
     workspaceId?: true
     uploadedAt?: true
     updatedAt?: true
+    csvData?: true
   }
 
   export type DataTableCountAggregateInputType = {
@@ -4697,6 +4702,7 @@ export namespace Prisma {
     updatedAt?: true
     columns?: true
     data?: true
+    csvData?: true
     _all?: true
   }
 
@@ -4781,6 +4787,7 @@ export namespace Prisma {
     updatedAt: Date
     columns: JsonValue
     data: JsonValue
+    csvData: string | null
     _count: DataTableCountAggregateOutputType | null
     _min: DataTableMinAggregateOutputType | null
     _max: DataTableMaxAggregateOutputType | null
@@ -4809,6 +4816,7 @@ export namespace Prisma {
     updatedAt?: boolean
     columns?: boolean
     data?: boolean
+    csvData?: boolean
     workspace?: boolean | WorkspaceDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["dataTable"]>
 
@@ -4821,6 +4829,7 @@ export namespace Prisma {
     updatedAt?: boolean
     columns?: boolean
     data?: boolean
+    csvData?: boolean
     workspace?: boolean | WorkspaceDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["dataTable"]>
 
@@ -4833,6 +4842,7 @@ export namespace Prisma {
     updatedAt?: boolean
     columns?: boolean
     data?: boolean
+    csvData?: boolean
     workspace?: boolean | WorkspaceDefaultArgs<ExtArgs>
   }, ExtArgs["result"]["dataTable"]>
 
@@ -4845,9 +4855,10 @@ export namespace Prisma {
     updatedAt?: boolean
     columns?: boolean
     data?: boolean
+    csvData?: boolean
   }
 
-  export type DataTableOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "sheetName" | "workspaceId" | "uploadedAt" | "updatedAt" | "columns" | "data", ExtArgs["result"]["dataTable"]>
+  export type DataTableOmit<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = $Extensions.GetOmit<"id" | "name" | "sheetName" | "workspaceId" | "uploadedAt" | "updatedAt" | "columns" | "data" | "csvData", ExtArgs["result"]["dataTable"]>
   export type DataTableInclude<ExtArgs extends $Extensions.InternalArgs = $Extensions.DefaultArgs> = {
     workspace?: boolean | WorkspaceDefaultArgs<ExtArgs>
   }
@@ -4872,6 +4883,7 @@ export namespace Prisma {
       updatedAt: Date
       columns: Prisma.JsonValue
       data: Prisma.JsonValue
+      csvData: string | null
     }, ExtArgs["result"]["dataTable"]>
     composites: {}
   }
@@ -5304,6 +5316,7 @@ export namespace Prisma {
     readonly updatedAt: FieldRef<"DataTable", 'DateTime'>
     readonly columns: FieldRef<"DataTable", 'Json'>
     readonly data: FieldRef<"DataTable", 'Json'>
+    readonly csvData: FieldRef<"DataTable", 'String'>
   }
     
 
@@ -6911,7 +6924,8 @@ export namespace Prisma {
     uploadedAt: 'uploadedAt',
     updatedAt: 'updatedAt',
     columns: 'columns',
-    data: 'data'
+    data: 'data',
+    csvData: 'csvData'
   };
 
   export type DataTableScalarFieldEnum = (typeof DataTableScalarFieldEnum)[keyof typeof DataTableScalarFieldEnum]
@@ -7270,6 +7284,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFilter<"DataTable"> | Date | string
     columns?: JsonFilter<"DataTable">
     data?: JsonFilter<"DataTable">
+    csvData?: StringNullableFilter<"DataTable"> | string | null
     workspace?: XOR<WorkspaceScalarRelationFilter, WorkspaceWhereInput>
   }
 
@@ -7282,6 +7297,7 @@ export namespace Prisma {
     updatedAt?: SortOrder
     columns?: SortOrder
     data?: SortOrder
+    csvData?: SortOrderInput | SortOrder
     workspace?: WorkspaceOrderByWithRelationInput
   }
 
@@ -7297,6 +7313,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFilter<"DataTable"> | Date | string
     columns?: JsonFilter<"DataTable">
     data?: JsonFilter<"DataTable">
+    csvData?: StringNullableFilter<"DataTable"> | string | null
     workspace?: XOR<WorkspaceScalarRelationFilter, WorkspaceWhereInput>
   }, "id">
 
@@ -7309,6 +7326,7 @@ export namespace Prisma {
     updatedAt?: SortOrder
     columns?: SortOrder
     data?: SortOrder
+    csvData?: SortOrderInput | SortOrder
     _count?: DataTableCountOrderByAggregateInput
     _max?: DataTableMaxOrderByAggregateInput
     _min?: DataTableMinOrderByAggregateInput
@@ -7326,6 +7344,7 @@ export namespace Prisma {
     updatedAt?: DateTimeWithAggregatesFilter<"DataTable"> | Date | string
     columns?: JsonWithAggregatesFilter<"DataTable">
     data?: JsonWithAggregatesFilter<"DataTable">
+    csvData?: StringNullableWithAggregatesFilter<"DataTable"> | string | null
   }
 
   export type FormulaWhereInput = {
@@ -7617,6 +7636,7 @@ export namespace Prisma {
     updatedAt?: Date | string
     columns: JsonNullValueInput | InputJsonValue
     data: JsonNullValueInput | InputJsonValue
+    csvData?: string | null
     workspace: WorkspaceCreateNestedOneWithoutTablesInput
   }
 
@@ -7629,6 +7649,7 @@ export namespace Prisma {
     updatedAt?: Date | string
     columns: JsonNullValueInput | InputJsonValue
     data: JsonNullValueInput | InputJsonValue
+    csvData?: string | null
   }
 
   export type DataTableUpdateInput = {
@@ -7639,6 +7660,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     columns?: JsonNullValueInput | InputJsonValue
     data?: JsonNullValueInput | InputJsonValue
+    csvData?: NullableStringFieldUpdateOperationsInput | string | null
     workspace?: WorkspaceUpdateOneRequiredWithoutTablesNestedInput
   }
 
@@ -7651,6 +7673,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     columns?: JsonNullValueInput | InputJsonValue
     data?: JsonNullValueInput | InputJsonValue
+    csvData?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type DataTableCreateManyInput = {
@@ -7662,6 +7685,7 @@ export namespace Prisma {
     updatedAt?: Date | string
     columns: JsonNullValueInput | InputJsonValue
     data: JsonNullValueInput | InputJsonValue
+    csvData?: string | null
   }
 
   export type DataTableUpdateManyMutationInput = {
@@ -7672,6 +7696,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     columns?: JsonNullValueInput | InputJsonValue
     data?: JsonNullValueInput | InputJsonValue
+    csvData?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type DataTableUncheckedUpdateManyInput = {
@@ -7683,6 +7708,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     columns?: JsonNullValueInput | InputJsonValue
     data?: JsonNullValueInput | InputJsonValue
+    csvData?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type FormulaCreateInput = {
@@ -8050,6 +8076,7 @@ export namespace Prisma {
     updatedAt?: SortOrder
     columns?: SortOrder
     data?: SortOrder
+    csvData?: SortOrder
   }
 
   export type DataTableMaxOrderByAggregateInput = {
@@ -8059,6 +8086,7 @@ export namespace Prisma {
     workspaceId?: SortOrder
     uploadedAt?: SortOrder
     updatedAt?: SortOrder
+    csvData?: SortOrder
   }
 
   export type DataTableMinOrderByAggregateInput = {
@@ -8068,6 +8096,7 @@ export namespace Prisma {
     workspaceId?: SortOrder
     uploadedAt?: SortOrder
     updatedAt?: SortOrder
+    csvData?: SortOrder
   }
   export type JsonWithAggregatesFilter<$PrismaModel = never> =
     | PatchUndefined<
@@ -8673,6 +8702,7 @@ export namespace Prisma {
     updatedAt?: Date | string
     columns: JsonNullValueInput | InputJsonValue
     data: JsonNullValueInput | InputJsonValue
+    csvData?: string | null
   }
 
   export type DataTableUncheckedCreateWithoutWorkspaceInput = {
@@ -8683,6 +8713,7 @@ export namespace Prisma {
     updatedAt?: Date | string
     columns: JsonNullValueInput | InputJsonValue
     data: JsonNullValueInput | InputJsonValue
+    csvData?: string | null
   }
 
   export type DataTableCreateOrConnectWithoutWorkspaceInput = {
@@ -8775,6 +8806,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFilter<"DataTable"> | Date | string
     columns?: JsonFilter<"DataTable">
     data?: JsonFilter<"DataTable">
+    csvData?: StringNullableFilter<"DataTable"> | string | null
   }
 
   export type FormulaUpsertWithWhereUniqueWithoutWorkspaceInput = {
@@ -9084,6 +9116,7 @@ export namespace Prisma {
     updatedAt?: Date | string
     columns: JsonNullValueInput | InputJsonValue
     data: JsonNullValueInput | InputJsonValue
+    csvData?: string | null
   }
 
   export type FormulaCreateManyWorkspaceInput = {
@@ -9125,6 +9158,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     columns?: JsonNullValueInput | InputJsonValue
     data?: JsonNullValueInput | InputJsonValue
+    csvData?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type DataTableUncheckedUpdateWithoutWorkspaceInput = {
@@ -9135,6 +9169,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     columns?: JsonNullValueInput | InputJsonValue
     data?: JsonNullValueInput | InputJsonValue
+    csvData?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type DataTableUncheckedUpdateManyWithoutWorkspaceInput = {
@@ -9145,6 +9180,7 @@ export namespace Prisma {
     updatedAt?: DateTimeFieldUpdateOperationsInput | Date | string
     columns?: JsonNullValueInput | InputJsonValue
     data?: JsonNullValueInput | InputJsonValue
+    csvData?: NullableStringFieldUpdateOperationsInput | string | null
   }
 
   export type FormulaUpdateWithoutWorkspaceInput = {

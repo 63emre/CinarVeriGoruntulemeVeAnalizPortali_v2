@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
+import { getCurrentUser } from '@/lib/auth/auth';
 import * as z from 'zod';
 import prisma from '@/lib/db';
-import { applyFormulaToTable } from '@/lib/formula/formula-service';
+import { evaluateFormula, EvaluationContext, applyFormulaToTable } from '@/lib/formula/formula-service';
 
 // Schema for formula application request
 const ApplyFormulasSchema = z.object({
@@ -11,169 +11,151 @@ const ApplyFormulasSchema = z.object({
   formulaType: z.enum(['CELL_VALIDATION', 'RELATIONAL']).optional(),
 });
 
+// Define interfaces for type safety
+interface FormulaResult {
+  formula: any;
+  results: Array<{
+    rowIndex: number;
+    isValid: boolean;
+  }>;
+}
+
+interface HighlightedCell {
+  rowIndex: number;
+  colIndex: number;
+  color: string;
+  message: string;
+}
+
+interface FormulaRequest {
+  formulaIds: string[];
+}
+
 // POST /api/workspaces/[workspaceId]/tables/[tableId]/apply-formulas
 export async function POST(
   request: NextRequest,
-  { params }: { params: { workspaceId: string, tableId: string } }
+  { params }: { params: { workspaceId: string; tableId: string } }
 ) {
   try {
-    const user = await getCurrentUser();
-
-    if (!user) {
-      return new NextResponse('Unauthorized', { status: 401 });
-    }
-
+    // Access params directly without awaiting
     const { workspaceId, tableId } = params;
 
-    // Check if user has access to this workspace
-    const workspaceUser = await prisma.workspaceUser.findFirst({
-      where: {
-        workspaceId,
-        userId: user.id,
-      },
-    });
-
-    if (!workspaceUser) {
-      return new NextResponse('Forbidden', { status: 403 });
+    // Get current user for authorization
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
+      return NextResponse.json(
+        { message: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
-    // Get the table data
+    // Check if workspace exists
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId }
+    });
+
+    if (!workspace) {
+      return NextResponse.json(
+        { message: 'Workspace not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if user has access to this workspace
+    const isAdmin = currentUser.role === 'ADMIN';
+    const isCreator = workspace.createdBy === currentUser.id;
+    
+    if (!isAdmin && !isCreator) {
+      const userWorkspace = await prisma.workspaceUser.findFirst({
+        where: {
+          userId: currentUser.id,
+          workspaceId,
+        },
+      });
+      
+      if (!userWorkspace) {
+        return NextResponse.json(
+          { message: 'You do not have access to this workspace' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // Get table data
     const table = await prisma.dataTable.findUnique({
-      where: {
+      where: { 
         id: tableId,
-        workspaceId,
-      },
+        workspaceId
+      }
     });
 
     if (!table) {
-      return new NextResponse('Table not found', { status: 404 });
+      return NextResponse.json(
+        { message: 'Table not found' },
+        { status: 404 }
+      );
     }
 
-    // Parse and validate request
-    let body;
-    try {
-      body = await request.json();
-      ApplyFormulasSchema.parse(body);
-    } catch (parseError) {
-      console.error('Error parsing request body:', parseError);
-      return new NextResponse(
-        `Invalid request: ${parseError instanceof z.ZodError ? JSON.stringify(parseError.errors) : 'Invalid JSON'}`, 
+    // Get the formulas to apply
+    const body = await request.json() as FormulaRequest;
+    const { formulaIds } = body;
+
+    if (!formulaIds || !Array.isArray(formulaIds) || formulaIds.length === 0) {
+      return NextResponse.json(
+        { message: 'At least one formula ID is required' },
         { status: 400 }
       );
     }
 
-    // Initialize query for finding formulas
-    const formulasQuery: {
+    // Get formulas for the workspace
+    const formulas = await prisma.formula.findMany({
       where: {
-        workspaceId: string;
-        active: boolean;
-        id?: { in: string[] };
-        type?: string;
-      };
-      select: {
-        id: boolean;
-        name: boolean;
-        formula: boolean;
-        type: boolean;
-        color: boolean;
-      };
-    } = {
-      where: {
-        workspaceId,
-        active: true,
-      },
-      select: {
-        id: true,
-        name: true,
-        formula: true,
-        type: true,
-        color: true,
-      },
-    };
-
-    // If specific formulaIds are provided, filter by them
-    if (body.formulaIds && body.formulaIds.length > 0) {
-      formulasQuery.where.id = {
-        in: body.formulaIds,
-      };
-    }
-
-    // If formula type is specified, add it to the filter
-    if (body.formulaType) {
-      formulasQuery.where.type = body.formulaType;
-    }
-
-    const formulas = await prisma.formula.findMany(formulasQuery);
+        id: { in: formulaIds },
+        workspaceId
+      }
+    });
 
     if (formulas.length === 0) {
-      return new NextResponse('No formulas found matching criteria', { status: 404 });
+      return NextResponse.json(
+        { message: 'No valid formulas found' },
+        { status: 404 }
+      );
     }
 
-    // Evaluate each formula against the table
-    const evaluationResults: {
-      formula: any;
-      results?: any[];
-      error?: string;
-    }[] = [];
+    // Initialize array to hold results
+    const results = [];
 
-    const highlightedCells: {
-      rowIndex: number;
-      colIndex: number;
-      color: string;
-      message: string;
-    }[] = [];
-
-    // Parse table data
-    const tableColumns = table.columns as string[];
-    const tableData = table.data as (string | number | null)[][];
-
+    // Apply each formula to the table
     for (const formula of formulas) {
       try {
-        const results = applyFormulaToTable(formula, {
-          columns: tableColumns,
-          data: tableData,
+        const result = applyFormulaToTable(formula, {
+          columns: table.columns as string[],
+          data: table.data as (string | number | null)[][],
         });
-
-        // Process results and collect highlighted cells
-        results.forEach((result, rowIndex) => {
-          if (!result.isValid && formula.color) {
-            // Add highlighted cell information
-            const variableColIndex = tableColumns.findIndex(
-              col => col && typeof col === 'string' && col.toLowerCase() === 'variable'
-            );
-            
-            if (variableColIndex !== -1) {
-              highlightedCells.push({
-                rowIndex,
-                colIndex: variableColIndex,
-                color: formula.color || '#ff0000',
-                message: result.message || `${formula.name} değerlendirme hatası`
-              });
-            }
-          }
+        
+        results.push({
+          formulaId: formula.id,
+          formulaName: formula.name,
+          result
         });
-
-        evaluationResults.push({
-          formula,
-          results,
-        });
-      } catch (evalError) {
-        console.error(`Error evaluating formula ${formula.id}:`, evalError);
-        evaluationResults.push({
-          formula,
-          error: (evalError as Error).message,
+      } catch (error) {
+        results.push({
+          formulaId: formula.id,
+          formulaName: formula.name,
+          error: (error as Error).message
         });
       }
     }
 
     return NextResponse.json({
       tableId,
-      tableData,
-      evaluationResults,
-      highlightedCells,
+      formulaResults: results
     });
   } catch (error) {
     console.error('Error applying formulas:', error);
-    return new NextResponse(`Internal Error: ${(error as Error).message}`, { status: 500 });
+    return NextResponse.json(
+      { message: 'Server error', error: (error as Error).message },
+      { status: 500 }
+    );
   }
-} 
+}

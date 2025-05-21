@@ -371,9 +371,9 @@ export default function WorkspaceManager({ onWorkspaceAdded }: WorkspaceManagerP
                       onChange={(e) => setSelectedWorkspace(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     >
-                      <option value="">Bir çalışma alanı seçin</option>
+                      <option key="default-workspace" value="">Bir çalışma alanı seçin</option>
                       {workspaces.map((workspace) => (
-                        <option key={workspace.id} value={workspace.id}>
+                        <option key={`workspace-${workspace.id}`} value={workspace.id}>
                           {workspace.name}
                         </option>
                       ))}
@@ -391,9 +391,9 @@ export default function WorkspaceManager({ onWorkspaceAdded }: WorkspaceManagerP
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       disabled={isLoadingUsers}
                     >
-                      <option value="">Bir kullanıcı seçin</option>
+                      <option key="default-user" value="">Bir kullanıcı seçin</option>
                       {users.map((user) => (
-                        <option key={user.id} value={user.id}>
+                        <option key={`user-${user.id}`} value={user.id}>
                           {user.name} ({user.email})
                         </option>
                       ))}
@@ -426,7 +426,7 @@ export default function WorkspaceManager({ onWorkspaceAdded }: WorkspaceManagerP
             {/* Workspace Accordion */}
             <div className="space-y-4">
               {workspaces.map((workspace) => (
-                <div key={workspace.id} className="border rounded-md overflow-hidden">
+                <div key={`workspace-container-${workspace.id}`} className="border rounded-md overflow-hidden">
                   <div className="bg-gray-50 px-4 py-3 flex justify-between items-center">
                     <h3 className="text-lg font-medium">{workspace.name}</h3>
                     <span className="text-sm text-gray-500">
@@ -446,7 +446,7 @@ export default function WorkspaceManager({ onWorkspaceAdded }: WorkspaceManagerP
                     ) : (
                       <ul className="divide-y divide-gray-200">
                         {workspace.users.map((userWorkspace) => (
-                          <li key={userWorkspace.id} className="py-3 flex justify-between items-center">
+                          <li key={`user-workspace-${userWorkspace.id || userWorkspace.userId}-${workspace.id}`} className="py-3 flex justify-between items-center">
                             <div>
                               <p className="font-medium">{userWorkspace.user?.name || 'Bilinmeyen Kullanıcı'}</p>
                               <p className="text-sm text-gray-500">{userWorkspace.user?.email || 'E-posta yok'}</p>

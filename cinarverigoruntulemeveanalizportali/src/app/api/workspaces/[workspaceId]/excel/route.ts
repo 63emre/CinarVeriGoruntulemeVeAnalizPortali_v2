@@ -8,7 +8,8 @@ export async function POST(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    const { workspaceId } = params;
+    // Use await to properly access params
+    const workspaceId = await params.workspaceId;
     
     const user = await getCurrentUser();
     
@@ -65,15 +66,32 @@ export async function POST(
       );
     }
 
-    // Save the data to the database
-    const result = await saveExcelData(sheetData, workspaceId);
-
-    return NextResponse.json(result);
-
+    try {
+      // Save the data to the database
+      const result = await saveExcelData(sheetData, workspaceId);
+      return NextResponse.json(result);
+    } catch (dbError) {
+      // Handle specific database errors
+      console.error('Database error saving Excel data:', dbError);
+      
+      // Check if this is related to the missing csvData column
+      if ((dbError as Error).message.includes("The column `csvData` does not exist")) {
+        // Provide a more helpful error message for the missing column
+        return NextResponse.json(
+          { 
+            message: 'Veritabanı şeması güncel değil. Lütfen veritabanı şemasını güncelleyin.', 
+            details: 'csvData kolonu eksik. "npx prisma db push" komutunu çalıştırın.'
+          },
+          { status: 500 }
+        );
+      }
+      
+      throw dbError;
+    }
   } catch (error) {
     console.error('Excel upload error:', error);
     return NextResponse.json(
-      { message: 'Excel dosyası işlenirken bir hata oluştu' },
+      { message: 'Excel dosyası işlenirken bir hata oluştu', error: (error as Error).message },
       { status: 500 }
     );
   }

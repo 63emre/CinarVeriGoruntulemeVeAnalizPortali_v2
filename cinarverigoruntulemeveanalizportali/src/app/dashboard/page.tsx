@@ -5,20 +5,31 @@ import { Card } from '@/components/ui/card';
 import Link from 'next/link';
 import { FcDatabase, FcRules, FcAddDatabase, FcFolder } from 'react-icons/fc';
 
+interface Workspace {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  _count?: {
+    tables: number;
+    formulas: number;
+  };
+}
+
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
-  const [workspaces, setWorkspaces] = useState<any[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchData = async () => {
-      try {
+      try {        
         setLoading(true);
         // Kullanıcı bilgilerini getir
-        const userRes = await fetch('/api/user');
+        const userRes = await fetch('/api/auth/me');
         if (userRes.ok) {
           const userData = await userRes.json();
-          setUser(userData);
+          setUser(userData.user);
         }
 
         // Çalışma alanlarını getir
@@ -60,14 +71,19 @@ export default function DashboardPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {workspaces.map((workspace: any) => (
+            {workspaces.map((workspace) => (
               <Card key={workspace.id} className="p-5 hover:shadow-md transition-shadow">
                 <div className="flex flex-col h-full">
                   <div className="flex items-start justify-between mb-3">
                     <h3 className="text-lg font-medium text-gray-800">{workspace.name}</h3>
-                    <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-md">
-                      {workspace.tables?.length || 0} Tablo
-                    </span>
+                    <div className="flex gap-2">
+                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-md">
+                        {workspace._count?.tables || 0} Tablo
+                      </span>
+                      <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-md">
+                        {workspace._count?.formulas || 0} Formül
+                      </span>
+                    </div>
                   </div>
                   
                   <p className="text-gray-600 text-sm mb-4 flex-grow">

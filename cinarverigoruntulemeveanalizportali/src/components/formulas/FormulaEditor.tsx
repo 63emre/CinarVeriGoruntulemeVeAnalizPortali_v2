@@ -113,8 +113,13 @@ export default function FormulaEditor({ workspaceId, tableId, onFormulaAdded }: 
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Fetch formulas
-        const formulasResponse = await fetch(`/api/workspaces/${workspaceId}/formulas`);
+        // Fetch formulas specific to this table if tableId is provided
+        // Otherwise fetch all formulas for the workspace
+        const formulasEndpoint = tableId 
+          ? `/api/workspaces/${workspaceId}/tables/${tableId}/formulas`
+          : `/api/workspaces/${workspaceId}/formulas`;
+        
+        const formulasResponse = await fetch(formulasEndpoint);
         if (formulasResponse.ok) {
           const formulasData = await formulasResponse.json();
           setFormulas(formulasData);
@@ -467,8 +472,7 @@ export default function FormulaEditor({ workspaceId, tableId, onFormulaAdded }: 
       type: formulaType
     });
   };
-  
-  const saveFormula = async (formulaData: { 
+    const saveFormula = async (formulaData: { 
     name: string; 
     description: string | null; 
     formula: string; 
@@ -497,7 +501,9 @@ export default function FormulaEditor({ workspaceId, tableId, onFormulaAdded }: 
           description: formulaData.description,
           expression: formulaData.formula,
           color: formulaData.color,
-          tableId: selectedTableId  // Link the formula to the selected table
+          tableId: selectedTableId,  // Link the formula to the selected table
+          type: formulaData.type === 'cellValidation' ? 'CELL_VALIDATION' : 'RELATIONAL',
+          active: true // Set formula as active by default
         }),
       });
       
@@ -964,4 +970,4 @@ export default function FormulaEditor({ workspaceId, tableId, onFormulaAdded }: 
       </div>
     </div>
   );
-} 
+}

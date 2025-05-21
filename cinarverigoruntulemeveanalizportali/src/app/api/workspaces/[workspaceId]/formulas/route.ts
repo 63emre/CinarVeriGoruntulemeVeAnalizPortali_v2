@@ -6,12 +6,12 @@ import { saveFormula, getFormulas, deleteFormula } from '@/lib/formula/formula-s
 
 // Schema for formula creation/update
 const FormulaSchema = z.object({
-  name: z.string().min(1, 'Formül adı zorunludur'),
+  name: z.string().min(2, 'Formül adı en az 2 karakter olmalı'),
   description: z.string().optional().nullable(),
   formula: z.string().min(1, 'Formül ifadesi zorunludur'),
   tableId: z.string().optional().nullable(),
   color: z.string().optional().nullable(),
-  type: z.enum(['CELL_VALIDATION', 'RELATIONAL']),
+  type: z.enum(['CELL_VALIDATION', 'RELATIONAL']).default('CELL_VALIDATION'),
 });
 
 // GET: Get all formulas for a workspace
@@ -20,8 +20,8 @@ export async function GET(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    const safeParams = await params;
-    const { workspaceId } = safeParams;
+    // Access params directly without awaiting
+    const { workspaceId } = params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -83,8 +83,8 @@ export async function POST(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    const safeParams = await params;
-    const { workspaceId } = safeParams;
+    // Access params directly without awaiting
+    const { workspaceId } = params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -167,8 +167,8 @@ export async function DELETE(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    const safeParams = await params;
-    const { workspaceId } = safeParams;
+    // Use await to properly access params
+    const workspaceId = await params.workspaceId;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {

@@ -8,10 +8,9 @@ export async function GET(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    console.log(`GET /api/workspaces/${params.workspaceId}/tables called`);
-    
-    const safeParams = await params;
-    const { workspaceId } = safeParams;
+    // Access params directly without awaiting
+    const { workspaceId } = params;
+    console.log(`GET /api/workspaces/${workspaceId}/tables called`);
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -100,8 +99,8 @@ export async function POST(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    const safeParams = await params;
-    const { workspaceId } = safeParams;
+    // Access params directly without awaiting
+    const { workspaceId } = params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {

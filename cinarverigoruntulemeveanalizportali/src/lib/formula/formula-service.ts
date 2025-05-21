@@ -122,6 +122,16 @@ export interface EvaluationResult {
 }
 
 // Parse and evaluate a formula string
+/**
+ * Evaluates a formula expression against the provided context.
+ * 
+ * Replace bracketed variables with values, enforce strict comparison,
+ * then evaluate the boolean expression.
+ * 
+ * @param formula The formula string to evaluate (e.g., "[COD] > [LOQ]")
+ * @param context The variables and their values available for evaluation
+ * @returns Result of the evaluation, including validity and debug info
+ */
 export function evaluateFormula(formula: string, context: EvaluationContext): EvaluationResult {
   try {
     // Basic security check - only allow specific characters

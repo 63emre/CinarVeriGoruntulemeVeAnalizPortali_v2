@@ -18,14 +18,13 @@ export default function Navigation() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const pathname = usePathname();
-
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const response = await fetch('/api/user');
+        const response = await fetch('/api/auth/me');
         if (response.ok) {
           const userData = await response.json();
-          setUser(userData);
+          setUser(userData.user);
         }
       } catch (error) {
         console.error('Kullanıcı bilgileri yüklenemedi:', error);

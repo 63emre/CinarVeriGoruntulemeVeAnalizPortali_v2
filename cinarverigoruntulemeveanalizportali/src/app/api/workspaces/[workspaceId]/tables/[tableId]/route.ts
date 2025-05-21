@@ -8,9 +8,10 @@ export async function GET(
   { params }: { params: { workspaceId: string; tableId: string } }
 ) {
   try {
-    // Don't use string interpolation with params directly - await it
-    const safeParams = await params;
-    console.log(`GET /api/workspaces/${safeParams.workspaceId}/tables/${safeParams.tableId} called`);
+    // Access params directly without awaiting
+    const { workspaceId, tableId } = params;
+    
+    console.log(`GET /api/workspaces/${workspaceId}/tables/${tableId} called`);
 
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -19,8 +20,6 @@ export async function GET(
         { status: 401 }
       );
     }
-
-    const { workspaceId, tableId } = safeParams;
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
@@ -69,7 +68,7 @@ export async function GET(
     }
 
     // Format dates in the JSON data if needed
-    let formattedData = table.data as any[];
+    const formattedData = table.data as any[];
     if (Array.isArray(formattedData)) {
       // Don't modify actual data, but provide proper metadata for date columns
       const dateColumnIndexes: number[] = [];
@@ -115,7 +114,7 @@ export async function GET(
   } catch (error) {
     console.error('Error fetching table:', error);
     return NextResponse.json(
-      { message: 'Server error', error: (error as Error).message },
+      { message: 'Server error' },
       { status: 500 }
     );
   }
@@ -127,8 +126,9 @@ export async function PUT(
   { params }: { params: { workspaceId: string; tableId: string } }
 ) {
   try {
-    const safeParams = await params;
-    const { workspaceId, tableId } = safeParams;
+    // Use await to properly access params
+    const workspaceId = await params.workspaceId;
+    const tableId = await params.tableId;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -217,8 +217,9 @@ export async function DELETE(
   { params }: { params: { workspaceId: string; tableId: string } }
 ) {
   try {
-    const safeParams = await params;
-    const { workspaceId, tableId } = safeParams;
+    // Use await to properly access params
+    const workspaceId = await params.workspaceId;
+    const tableId = await params.tableId;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {

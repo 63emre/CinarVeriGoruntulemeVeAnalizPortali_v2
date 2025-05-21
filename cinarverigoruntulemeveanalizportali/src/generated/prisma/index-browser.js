@@ -154,7 +154,8 @@ exports.Prisma.DataTableScalarFieldEnum = {
   uploadedAt: 'uploadedAt',
   updatedAt: 'updatedAt',
   columns: 'columns',
-  data: 'data'
+  data: 'data',
+  csvData: 'csvData'
 };
 
 exports.Prisma.FormulaScalarFieldEnum = {

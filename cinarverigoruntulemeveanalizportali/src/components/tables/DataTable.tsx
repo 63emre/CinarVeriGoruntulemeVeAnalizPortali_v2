@@ -305,11 +305,8 @@ export default function DataTable({
                       
                       // Base text color - darker for better readability
                       cellStyles += column.id === 'Variable' ? "text-blue-900 font-semibold " : "text-gray-900 ";
-                      
-                      // Highlight or selection backgrounds
-                      if (highlight) {
-                        cellStyles += `bg-${highlight.color}-100 border-${highlight.color}-300 `;
-                      } else if (isSelected) {
+                        // Selection backgrounds (highlights are applied with inline style)
+                      if (isSelected) {
                         cellStyles += "bg-blue-100 border-blue-300 ";
                       } else {
                         cellStyles += "border-gray-200 ";
@@ -321,11 +318,15 @@ export default function DataTable({
                       } else if (['Data Source', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
                         cellStyles += "bg-gray-50 ";
                       }
-                      
-                      return (
+                        return (
                         <td
                           key={`${row.id}-${column.id}`}
                           className={cellStyles}
+                          style={highlight ? {
+                            backgroundColor: `${highlight.color}20`, // Add 20 hex for 12.5% opacity
+                            borderColor: highlight.color,
+                            borderWidth: '1px'
+                          } : {}}
                           onClick={() => handleCellClick(row.id, column.id, cellValue)}
                           title={highlight?.message}
                         >

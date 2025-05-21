@@ -16,6 +16,7 @@ import {
   FcClock,
   FcCalendar
 } from 'react-icons/fc';
+import WorkspaceSelector from '@/components/workspaces/WorkspaceSelector';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -100,6 +101,15 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   {isSidebarOpen && <span className="ml-3">Çalışma Alanları</span>}
                 </Link>
               </li>
+              
+              {isSidebarOpen && (
+                <li className="px-4 py-2">
+                  <div className="p-2 bg-gray-50 rounded-md">
+                    <WorkspaceSelector />
+                  </div>
+                </li>
+              )}
+              
               <li>
                 <Link 
                   href="/dashboard/tables" 
@@ -202,4 +212,4 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
     </div>
   );
-} 
+}

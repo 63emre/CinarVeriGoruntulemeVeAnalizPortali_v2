@@ -33,7 +33,7 @@ interface Table {
 }
 
 export default function WorkspaceDetailPage({ params }: WorkspaceDetailPageProps) {
-  const { workspaceId } = params;
+  const workspaceId = params.workspaceId;
   const router = useRouter();
   
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -201,7 +201,7 @@ export default function WorkspaceDetailPage({ params }: WorkspaceDetailPageProps
               onClick={(e) => {
                 if (!selectedTable) {
                   e.preventDefault();
-                  alert('Analiz yapabilmek için önce bir tablo seçmelisiniz');
+                  alert('Analiz yapabilmek için önce bir tablo seçmalısınız');
                 }
               }}
             >
@@ -239,4 +239,4 @@ export default function WorkspaceDetailPage({ params }: WorkspaceDetailPageProps
       </div>
     </div>
   );
-} 
+}

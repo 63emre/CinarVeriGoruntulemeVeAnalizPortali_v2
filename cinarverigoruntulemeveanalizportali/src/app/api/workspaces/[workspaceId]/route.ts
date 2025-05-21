@@ -7,16 +7,17 @@ export async function GET(
   request: NextRequest,
   { params }: { params: { workspaceId: string } }
 ) {
-  try {
-    const currentUser = await getCurrentUser();
-    if (!currentUser) {
-      return NextResponse.json(
-        { message: 'Unauthorized' },
-        { status: 401 }
-      );
-    }
-
-    const { workspaceId } = await params;
+    try {
+      const currentUser = await getCurrentUser();
+      if (!currentUser) {
+        return NextResponse.json(
+          { message: 'Unauthorized' },
+          { status: 401 }
+        );
+      }
+      
+      // Access params directly without awaiting
+      const { workspaceId } = params;
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
@@ -40,6 +41,19 @@ export async function GET(
             name: true,
             sheetName: true,
             uploadedAt: true
+          }
+        },
+        formulas: {
+          select: {
+            id: true,
+            name: true,
+            type: true
+          }
+        },
+        _count: {
+          select: {
+            tables: true,
+            formulas: true
           }
         }
       }
@@ -74,9 +88,9 @@ export async function GET(
   }
 }
 
-// PUT: Update a workspace
-export async function PUT(
-  request: Request,
+// PATCH: Update a workspace
+export async function PATCH(
+  request: NextRequest,
   { params }: { params: { workspaceId: string } }
 ) {
   try {
@@ -87,47 +101,66 @@ export async function PUT(
         { status: 401 }
       );
     }
-    
+
+    // Access params directly without awaiting
     const { workspaceId } = params;
-    
+
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
-      where: { id: workspaceId }
+      where: { id: workspaceId },
+      include: {
+        users: {
+          where: {
+            userId: currentUser.id
+          }
+        }
+      }
     });
-    
+
     if (!workspace) {
       return NextResponse.json(
         { message: 'Workspace not found' },
         { status: 404 }
       );
     }
-    
-    // Only the creator or admin can modify the workspace
-    if (currentUser.role !== 'ADMIN' && workspace.createdBy !== currentUser.id) {
+
+    // Only admin, creator, or members can update workspace
+    const isAdmin = currentUser.role === 'ADMIN';
+    const isCreator = workspace.createdBy === currentUser.id;
+    const isMember = workspace.users.length > 0;
+
+    if (!isAdmin && !isCreator && !isMember) {
       return NextResponse.json(
-        { message: 'You do not have permission to modify this workspace' },
+        { message: 'You do not have permission to update this workspace' },
         { status: 403 }
       );
     }
-    
+
+    // Parse request body
     const body = await request.json();
     const { name, description } = body;
-    
-    // Update the workspace
+
+    if (!name) {
+      return NextResponse.json(
+        { message: 'Name is required' },
+        { status: 400 }
+      );
+    }
+
+    // Update workspace
     const updatedWorkspace = await prisma.workspace.update({
       where: { id: workspaceId },
       data: {
-        name: name !== undefined ? name : undefined,
-        description: description !== undefined ? description : undefined,
+        name,
+        description
       }
     });
-    
+
     return NextResponse.json(updatedWorkspace);
-    
   } catch (error) {
     console.error('Error updating workspace:', error);
     return NextResponse.json(
-      { message: 'Error updating workspace' },
+      { message: 'Server error' },
       { status: 500 }
     );
   }
@@ -135,7 +168,7 @@ export async function PUT(
 
 // DELETE: Delete a workspace
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { workspaceId: string } }
 ) {
   try {
@@ -146,55 +179,45 @@ export async function DELETE(
         { status: 401 }
       );
     }
-    
+
+    // Access params directly without awaiting
     const { workspaceId } = params;
-    
+
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId }
     });
-    
+
     if (!workspace) {
       return NextResponse.json(
         { message: 'Workspace not found' },
         { status: 404 }
       );
     }
-    
-    // Only the creator or admin can delete the workspace
-    if (currentUser.role !== 'ADMIN' && workspace.createdBy !== currentUser.id) {
+
+    // Only admin or creator can delete workspace
+    const isAdmin = currentUser.role === 'ADMIN';
+    const isCreator = workspace.createdBy === currentUser.id;
+
+    if (!isAdmin && !isCreator) {
       return NextResponse.json(
         { message: 'You do not have permission to delete this workspace' },
         { status: 403 }
       );
     }
-    
-    // Delete related records first
-    await prisma.workspaceUser.deleteMany({
-      where: { workspaceId }
-    });
-    
-    // Delete the workspace's tables
-    await prisma.dataTable.deleteMany({
-      where: { workspaceId }
-    });
-    
-    // Delete formulas 
-    await prisma.formula.deleteMany({
-      where: { workspaceId }
-    });
-    
-    // Finally delete the workspace
+
+    // Delete workspace
     await prisma.workspace.delete({
       where: { id: workspaceId }
     });
-    
-    return NextResponse.json({ message: 'Workspace deleted successfully' });
-    
+
+    return NextResponse.json({
+      message: 'Workspace deleted successfully'
+    });
   } catch (error) {
     console.error('Error deleting workspace:', error);
     return NextResponse.json(
-      { message: 'Error deleting workspace' },
+      { message: 'Server error' },
       { status: 500 }
     );
   }

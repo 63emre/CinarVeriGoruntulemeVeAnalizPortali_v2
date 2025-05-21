@@ -490,11 +490,8 @@ export default function EditableDataTable({
                     
                     // Base text color - darker for better readability
                     cellStyles += column.id === 'Variable' ? "text-blue-900 font-semibold " : "text-gray-900 ";
-                    
-                    // Highlight or selection backgrounds
-                    if (highlight) {
-                      cellStyles += `bg-${highlight.color}-100 border-${highlight.color}-300 `;
-                    } else if (isSelected) {
+                      // Selection backgrounds (highlights are applied with inline style)
+                    if (isSelected) {
                       cellStyles += "bg-blue-100 border-blue-300 ";
                     } else {
                       cellStyles += "border-gray-200 ";
@@ -512,10 +509,14 @@ export default function EditableDataTable({
                       cellStyles += "cursor-pointer hover:bg-yellow-50 ";
                     }
                     
-                    return (
-                      <td
+                    return (                      <td
                         key={`${row.id}-${column.id}`}
                         className={cellStyles}
+                        style={highlight ? {
+                          backgroundColor: `${highlight.color}20`, // Add 20 hex for 12.5% opacity
+                          borderColor: highlight.color,
+                          borderWidth: '1px'
+                        } : {}}
                         onClick={() => handleCellClick(row.id, column.id, cellValue)}
                         onDoubleClick={() => handleCellDoubleClick(row.id, column.id, cellValue, isEditable)}
                         title={highlight?.message || (isEditable ? 'Düzenlemek için çift tıklayın' : '')}

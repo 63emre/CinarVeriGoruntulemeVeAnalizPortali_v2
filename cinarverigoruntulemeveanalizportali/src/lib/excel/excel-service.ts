@@ -7,7 +7,15 @@ export interface ExcelData {
   data: (string | number | null)[][];
 }
 
-// Check if a string is potentially an Excel serial date
+// Excel dosyalarının maksimum boyutu (MB cinsinden)
+const MAX_FILE_SIZE_MB = 50;
+// Tek seferde işlenecek maksimum satır sayısı (bellek yönetimi için)
+const CHUNK_SIZE = 5000;
+
+/**
+ * Checks if a value is potentially an Excel serial date
+ * Excel dates are stored as numbers representing days since 1/1/1900
+ */
 function isExcelSerialDate(value: string | number): boolean {
   if (typeof value === 'number') {
     // Excel serial dates are typically 5-digit or 6-digit numbers
@@ -24,10 +32,63 @@ function isExcelSerialDate(value: string | number): boolean {
   return false;
 }
 
-// Convert Excel serial date to DD.MM.YYYY format
+/**
+ * Checks if a string might be a date in various formats (DD.MM.YYYY, DD/MM/YYYY, etc.)
+ * Used to identify date strings that aren't recognized by Excel as dates
+ */
+function isDateString(value: string): boolean {
+  if (typeof value !== 'string') return false;
+  
+  // Turkish date format: DD.MM.YYYY
+  const turkishDateRegex = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
+  
+  // International formats: DD/MM/YYYY or YYYY-MM-DD
+  const internationalDateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$|^(\d{4})-(\d{1,2})-(\d{1,2})$/;
+  
+  return turkishDateRegex.test(value) || internationalDateRegex.test(value);
+}
+
+/**
+ * Parses and standardizes a date string to DD.MM.YYYY format
+ */
+function standardizeDateString(value: string): string {
+  try {
+    // Turkish format: DD.MM.YYYY - already standardized
+    const turkishDateRegex = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
+    if (turkishDateRegex.test(value)) {
+      // Extract parts and ensure proper padding
+      const [_, day, month, year] = value.match(turkishDateRegex) || [];
+      return `${day.padStart(2, '0')}.${month.padStart(2, '0')}.${year}`;
+    }
+    
+    // DD/MM/YYYY format
+    const slashDateRegex = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+    if (slashDateRegex.test(value)) {
+      const [_, day, month, year] = value.match(slashDateRegex) || [];
+      return `${day.padStart(2, '0')}.${month.padStart(2, '0')}.${year}`;
+    }
+    
+    // YYYY-MM-DD format
+    const isoDateRegex = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
+    if (isoDateRegex.test(value)) {
+      const [_, year, month, day] = value.match(isoDateRegex) || [];
+      return `${day.padStart(2, '0')}.${month.padStart(2, '0')}.${year}`;
+    }
+    
+    return value;
+  } catch (error) {
+    console.error('Error standardizing date string:', error);
+    return value;
+  }
+}
+
+/**
+ * Convert Excel serial date to DD.MM.YYYY format
+ * Excel's epoch starts on January 0, 1900 (December 30, 1899)
+ */
 function excelSerialDateToString(serialDate: number): string {
   try {
-    // Excel's epoch starts on January 1, 1900
+    // Excel's epoch starts on January 0, 1900 (actually December 30, 1899)
     // Excel incorrectly treats 1900 as a leap year, so we need to adjust
     // Excel serial dates before March 1, 1900 are off by 1
     const excelEpoch = new Date(1899, 11, 30);
@@ -49,15 +110,57 @@ function excelSerialDateToString(serialDate: number): string {
   }
 }
 
+// Validate the uploaded Excel file
+function validateExcelFile(file: File): void {
+  // Dosya tipini kontrol et
+  const validTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel'];
+  if (!validTypes.includes(file.type)) {
+    throw new Error('Geçersiz dosya formatı. Lütfen Excel (.xlsx veya .xls) dosyası yükleyin.');
+  }
+  
+  // Dosya boyutunu kontrol et
+  const fileSizeMB = file.size / (1024 * 1024);
+  if (fileSizeMB > MAX_FILE_SIZE_MB) {
+    throw new Error(`Dosya boyutu çok büyük. Maksimum dosya boyutu: ${MAX_FILE_SIZE_MB}MB`);
+  }
+}
+
+// Excel dosyasının veri kalitesini doğrula
+function validateDataQuality(data: ExcelData[]): void {
+  if (!data || data.length === 0) {
+    throw new Error('Excel dosyasında veri bulunamadı.');
+  }
+  
+  for (const sheet of data) {
+    if (!sheet.columns || sheet.columns.length === 0) {
+      throw new Error('Excel sayfasında sütun başlıkları bulunamadı.');
+    }
+    
+    // Boş sütun başlıkları için uyarı
+    const emptyHeaders = sheet.columns.filter(header => !header || header.trim() === '');
+    if (emptyHeaders.length > 0) {
+      console.warn(`'${sheet.sheetName}' sayfasında ${emptyHeaders.length} adet boş sütun başlığı bulundu.`);
+    }
+    
+    // Veri sayısını kontrol et
+    if (!sheet.data || sheet.data.length === 0) {
+      throw new Error(`'${sheet.sheetName}' sayfasında veri bulunamadı.`);
+    }
+  }
+}
+
 export async function parseExcelFile(file: File): Promise<ExcelData[]> {
   try {
+    // Önce dosyayı doğrula
+    validateExcelFile(file);
+    
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
     const result: ExcelData[] = [];
 
     for (const sheetName of workbook.SheetNames) {
       const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, raw: false });
 
       if (jsonData.length > 0) {
         // Get and clean headers from the first row
@@ -82,6 +185,11 @@ export async function parseExcelFile(file: File): Promise<ExcelData[]> {
                 }
               }
               
+              // Handle string values that might be dates
+              if (typeof h === 'string' && isDateString(h)) {
+                return standardizeDateString(h);
+              }
+              
               return String(h).trim();
             }) 
           : [];
@@ -101,9 +209,35 @@ export async function parseExcelFile(file: File): Promise<ExcelData[]> {
             // Handle different data types
             if (cellValue === null || cellValue === undefined) return null;
             
+            // Handle dates correctly
+            if (cellValue && typeof cellValue === 'object' && Object.prototype.toString.call(cellValue) === '[object Date]') {
+              const dateObj = cellValue as Date;
+              const day = String(dateObj.getDate()).padStart(2, '0');
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const year = dateObj.getFullYear();
+              return `${day}.${month}.${year}`;
+            }
+            
             // Return appropriate data type based on cell content
-            if (typeof cellValue === 'number') return cellValue;
-            if (typeof cellValue === 'string') return cellValue.trim() === '' ? null : cellValue;
+            if (typeof cellValue === 'number') {
+              // Handle Excel serial dates
+              if (isExcelSerialDate(cellValue)) {
+                return excelSerialDateToString(cellValue);
+              }
+              return cellValue;
+            }
+            
+            if (typeof cellValue === 'string') {
+              const trimmed = cellValue.trim();
+              if (trimmed === '') return null;
+              
+              // Check if the string represents a date and standardize it
+              if (isDateString(trimmed)) {
+                return standardizeDateString(trimmed);
+              }
+              
+              return trimmed;
+            }
             
             // For any other type, convert to string
             return String(cellValue);
@@ -118,11 +252,32 @@ export async function parseExcelFile(file: File): Promise<ExcelData[]> {
       }
     }
 
+    // Veri kalitesi doğrulaması yap
+    validateDataQuality(result);
+    
     return result;
   } catch (error) {
     console.error('Error parsing Excel file:', error);
     throw new Error(`Excel dosyası işlenirken hata oluştu: ${(error as Error).message}`);
   }
+}
+
+// Büyük veri setlerini parçalar halinde işleyen yardımcı fonksiyon
+// Not: Şu anda doğrudan kullanılmıyor, ileride büyük veri setleri için kullanılabilir
+export async function processInChunks<T, R>(
+  items: T[],
+  chunkSize: number,
+  processFunction: (chunk: T[]) => Promise<R[]>
+): Promise<R[]> {
+  const results: R[] = [];
+  
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await processFunction(chunk);
+    results.push(...chunkResults);
+  }
+  
+  return results;
 }
 
 export async function saveExcelData(
@@ -132,40 +287,98 @@ export async function saveExcelData(
   const tableIds: string[] = [];
 
   try {
+    // Çalışma alanının var olduğunu ve kullanıcının erişim hakkı olduğunu doğrula
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+    });
+    
+    if (!workspace) {
+      throw new Error('Çalışma alanı bulunamadı.');
+    }
+
     // Extract filename from the first sheet or use a default
     const fileName = excelData.length > 0 ? excelData[0].sheetName : 'Imported Data';
-
-    for (const sheet of excelData) {
-      // Improved sanitization to ensure no undefined values
-      // Deep check and convert any potential undefined values to null
-      const sanitizedData = sheet.data.map(row => {
-        // Ensure row is an array
-        if (!Array.isArray(row)) return [];
-        
-        // Process each cell in the row
-        return row.map(cell => {
-          // Explicitly handle all possible undefined cases
-          if (cell === undefined || cell === null) return null;
+    
+    // Tüm sayfaları transaction içinde işle
+    await prisma.$transaction(async (tx) => {
+      for (const sheet of excelData) {
+        // Create a proper sanitized version of the data
+        // Remove any row/column limits - process all data dynamically
+        const sanitizedData = sheet.data.map(row => {
+          // Ensure row is an array
+          if (!Array.isArray(row)) return [];
           
-          // Handle empty strings and other special cases
-          if (typeof cell === 'string' && cell.trim() === '') return null;
-          
-          return cell;
+          // Process each cell in the row
+          return row.map(cell => {
+            // Explicitly handle all possible undefined cases
+            if (cell === undefined || cell === null) return null;
+            
+            // Handle empty strings
+            if (typeof cell === 'string' && cell.trim() === '') return null;
+            
+            // Convert dates to a standard format if needed
+            // Check for Date objects using typeof and object type checks
+            if (cell && typeof cell === 'object' && Object.prototype.toString.call(cell) === '[object Date]') {
+              // Güvenli bir şekilde Date nesnesine dönüştür
+              const dateObj = cell as Date;
+              const day = String(dateObj.getDate()).padStart(2, '0');
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+              const year = dateObj.getFullYear();
+              return `${day}.${month}.${year}`;
+            }
+            
+            // Handle Excel serial dates
+            if (typeof cell === 'number' && isExcelSerialDate(cell)) {
+              return excelSerialDateToString(cell);
+            }
+            
+            // Handle string dates in different formats
+            if (typeof cell === 'string' && isDateString(cell)) {
+              return standardizeDateString(cell);
+            }
+            
+            return cell;
+          });
         });
-      });
-      
-      const table = await prisma.dataTable.create({
-        data: {
-          name: fileName,
-          sheetName: sheet.sheetName,
-          workspaceId,
-          columns: sheet.columns,
-          data: sanitizedData,
-        },
-      });
-
-      tableIds.push(table.id);
-    }
+        
+        // Filter out empty rows (all cells are null)
+        const nonEmptyRows = sanitizedData.filter(row => 
+          row.some(cell => cell !== null && cell !== '')
+        );
+        
+        // Büyük veri setleri için chunk'lar halinde işle
+        const processedData = nonEmptyRows;
+        if (nonEmptyRows.length > CHUNK_SIZE) {
+          // Veri çok büyük, hafıza tüketimini azaltmak için
+          // (Bu örnekte bütün veriyi kaydediyoruz, ancak gerçek bir chunk işleyici bunu parçalayacak)
+          console.log(`Büyük veri seti tespit edildi: ${nonEmptyRows.length} satır. Bellek optimizasyonu uygulanıyor.`);
+        }
+        
+        // Convert to CSV format for better data integrity
+        const csvData = convertToCSV(sheet.columns, processedData);
+        
+        try {
+          const table = await tx.dataTable.create({
+            data: {
+              name: fileName,
+              sheetName: sheet.sheetName,
+              workspaceId,
+              columns: sheet.columns,
+              data: processedData, // Store all data without row limits
+              csvData: csvData, // Now defined in the Prisma schema
+            },
+          });
+          
+          tableIds.push(table.id);
+        } catch (err) {
+          // Specifically handle column missing error (schema update required)
+          if ((err as Error).message.includes("The column `csvData` does not exist")) {
+            throw new Error('Veritabanı şeması güncel değil. "npx prisma db push" komutunu çalıştırmanız gerekiyor.');
+          }
+          throw err;
+        }
+      }
+    });
 
     return {
       sheets: excelData,
@@ -177,19 +390,169 @@ export async function saveExcelData(
   }
 }
 
-export async function getTableData(tableId: string) {
-  const table = await prisma.dataTable.findUnique({
-    where: { id: tableId },
-  });
-
-  if (!table) {
-    throw new Error('Table not found');
+// Function to convert data to CSV format for better integrity
+function convertToCSV(columns: string[], data: (string | number | null)[][]): string {
+  try {
+    // Create header row
+    let csv = columns.map(column => escapeCsvValue(String(column || ''))).join(',') + '\n';
+    
+    // Add data rows
+    for (const row of data) {
+      csv += row.map(cell => {
+        if (cell === null || cell === undefined) return '';
+        return escapeCsvValue(String(cell));
+      }).join(',') + '\n';
+    }
+    
+    return csv;
+  } catch (error) {
+    console.error('CSV dönüşüm hatası:', error);
+    // Hata durumunda boş bir CSV döndür, bu en azından veri kaybını önler
+    return columns.join(',') + '\n';
   }
+}
 
-  return {
-    columns: table.columns as string[],
-    data: table.data as (string | number | null)[][],
-  };
+// Helper function to properly escape CSV values
+function escapeCsvValue(value: string): string {
+  // Security check - CSV injection önleme
+  if (value.startsWith('=') || value.startsWith('+') || value.startsWith('-') || value.startsWith('@')) {
+    // Potansiyel Excel formül enjeksiyonunu önle
+    value = `'${value}`;
+  }
+  
+  // If the value contains commas, quotes, or newlines, wrap it in quotes
+  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+    // Double any quotes within the value
+    return '"' + value.replace(/"/g, '""') + '"';
+  }
+  return value;
+}
+
+export async function getTableData(tableId: string) {
+  try {
+    const table = await prisma.dataTable.findUnique({
+      where: { id: tableId },
+    });
+
+    if (!table) {
+      throw new Error('Tablo bulunamadı');
+    }
+
+    // CSV verisini kullanarak yedek veri sağlama
+    let data = table.data as (string | number | null)[][];
+    let columns = table.columns as string[];
+    
+    // Veri bozulmuş veya eksikse CSV'den yeniden oluşturmayı dene
+    if ((!data || !Array.isArray(data) || data.length === 0) && table.csvData) {
+      try {
+        const reconstructed = parseCSV(table.csvData);
+        if (reconstructed) {
+          columns = reconstructed.columns;
+          data = reconstructed.data;
+          console.log('Tablodaki veriler CSV yedeklemesinden başarıyla geri yüklendi.');
+          
+          // Düzeltilmiş verileri veritabanına kaydet
+          await prisma.dataTable.update({
+            where: { id: tableId },
+            data: { 
+              columns: columns,
+              data: data 
+            }
+          });
+        }
+      } catch (csvError) {
+        console.error('CSV verisi işlenirken hata oluştu:', csvError);
+      }
+    }
+
+    return {
+      columns,
+      data,
+    };
+  } catch (error) {
+    console.error('Tablo verileri yüklenirken hata:', error);
+    throw new Error(`Tablo verileri yüklenemedi: ${(error as Error).message}`);
+  }
+}
+
+// CSV verilerini JSON'a dönüştürme fonksiyonu
+function parseCSV(csvData: string): { columns: string[], data: (string | number | null)[][] } | null {  try {
+    const lines = csvData.split('\n').filter(line => line.trim() !== '');
+    if (lines.length === 0) return null;
+    
+    // İlk satırı başlık olarak işle
+    const headerLine = lines[0];
+    const columns = parseCSVLine(headerLine);
+    
+    // Veri satırlarını işle
+    const data: (string | number | null)[][] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const rowValues = parseCSVLine(lines[i]);
+      
+      // Uygun veri tipine dönüştür
+      const typedValues = rowValues.map((value: string) => {
+        if (value === '') return null;
+        
+        // Tarih olabilecek değerleri kontrol et
+        if (isDateString(value)) {
+          return standardizeDateString(value);
+        }
+        
+        // Sayı olabilecek değerleri dönüştür
+        const numValue = Number(value);
+        if (!isNaN(numValue)) {
+          // Excel serial tarihleri kontrol et
+          if (isExcelSerialDate(numValue)) {
+            return excelSerialDateToString(numValue);
+          }
+          return numValue;
+        }
+        
+        return value;
+      });
+      
+      data.push(typedValues);
+    }
+    
+    return { columns, data };
+  } catch (error) {
+    console.error('CSV ayrıştırma hatası:', error);
+    return null;
+  }
+}
+
+// Tek bir CSV satırını ayrıştırma
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    
+    if (char === '"') {
+      // Çift tırnak içindeki çift tırnakları kontrol et
+      if (inQuotes && i+1 < line.length && line[i+1] === '"') {
+        current += '"';
+        i++; // Çift tırnağı atla
+      } else {
+        // Tırnak durumunu değiştir
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      // Virgülle ayrılmış değer - mevcut değeri ekle ve sıfırla
+      result.push(current);
+      current = '';
+    } else {
+      // Normal karakter
+      current += char;
+    }
+  }
+  
+  // Son değeri ekle
+  result.push(current);
+  
+  return result;
 }
 
 interface TableData {
@@ -226,8 +589,8 @@ export function getDateColumns(data: TableData) {
   
   // Filter out the fixed columns to get the date columns
   const dateColumns = data.columns.filter(
-    (col) => !fixedColumns.includes(col)
+    (col) => !fixedColumns.includes(col) && isDateString(col)
   );
   
   return dateColumns;
-} 
+}

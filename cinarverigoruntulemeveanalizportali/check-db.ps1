@@ -3,6 +3,12 @@
 
 Write-Host "Checking database connection..." -ForegroundColor Cyan
 
+# Set environment variables if not already set
+if (-not $env:DATABASE_URL) {
+    $env:DATABASE_URL = "postgresql://postgres:123@localhost:5432/cinar_portal"
+    Write-Host "DATABASE_URL environment variable not set, using default value." -ForegroundColor Yellow
+}
+
 # Create a temporary TypeScript file to check database connection
 $tempFile = "temp-db-check.ts"
 
@@ -32,6 +38,7 @@ async function checkConnection() {
   } catch (error) {
     console.error('\x1b[31m%s\x1b[0m', '✗ Database connection failed!');
     console.error(`Error details: ${error.message}`);
+    process.exit(1);
   } finally {
     await prisma.`$disconnect();
   }
@@ -43,7 +50,15 @@ checkConnection();
 # Run the check with ts-node
 Write-Host "Running database connection test..." -ForegroundColor Yellow
 npx ts-node --compiler-options "{\"module\":\"CommonJS\"}" $tempFile
+$dbCheckResult = $LASTEXITCODE
 
 # Clean up
 Remove-Item $tempFile
-Write-Host "Check completed." -ForegroundColor Green 
+
+if ($dbCheckResult -ne 0) {
+    Write-Host "Database connection test failed. Make sure PostgreSQL is running and database is properly configured." -ForegroundColor Red
+    Write-Host "Run 'init-db.ps1' to initialize or reset the database." -ForegroundColor Yellow
+    exit 1
+} else {
+    Write-Host "Check completed successfully." -ForegroundColor Green
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useParams } from 'next/navigation';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { FcBarChart, FcBullish, FcLineChart, FcCalendar } from 'react-icons/fc';
@@ -9,19 +9,14 @@ import { FcBarChart, FcBullish, FcLineChart, FcCalendar } from 'react-icons/fc';
 // Register ChartJS components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-interface AnalysisPageProps {
-  params: {
-    workspaceId: string;
-  };
-}
-
 interface AnalysisData {
   labels: string[];
   values: number[];
 }
 
-export default function AnalysisPage({ params }: AnalysisPageProps) {
-  const { workspaceId } = params;
+export default function AnalysisPage() {
+  const params = useParams();
+  const workspaceId = params.workspaceId as string;
   const searchParams = useSearchParams();
   const tableId = searchParams.get('tableId');
   
@@ -213,16 +208,41 @@ export default function AnalysisPage({ params }: AnalysisPageProps) {
     plugins: {
       legend: {
         position: 'top' as const,
+        labels: {
+          color: '#000000',  // Black for better contrast
+          font: {
+            weight: 'bold'
+          }
+        }
       },
       title: {
         display: true,
         text: `${selectedVariable} Trend Analizi`,
+        color: '#000000',  // Black for better contrast
+        font: {
+          size: 16,
+          weight: 'bold'
+        }
       },
     },
     scales: {
       y: {
         beginAtZero: false,
+        ticks: {
+          color: '#000000'  // Black for better contrast
+        },
+        grid: {
+          color: 'rgba(0, 0, 0, 0.1)'  // Darker grid lines
+        }
       },
+      x: {
+        ticks: {
+          color: '#000000'  // Black for better contrast
+        },
+        grid: {
+          color: 'rgba(0, 0, 0, 0.1)'  // Darker grid lines
+        }
+      }
     },
   };
   
@@ -235,7 +255,7 @@ export default function AnalysisPage({ params }: AnalysisPageProps) {
               <FcBarChart className="h-5 w-5" />
             </div>
             <div className="ml-3">
-              <p className="text-sm text-yellow-700">
+              <p className="text-sm font-medium text-yellow-800">
                 Analiz yapmak için bir tablo seçmelisiniz.
               </p>
             </div>
@@ -254,15 +274,15 @@ export default function AnalysisPage({ params }: AnalysisPageProps) {
         </h1>
         
         {error && (
-          <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
+          <div className="bg-red-100 border-l-4 border-red-500 p-4 mb-4">
             <div className="flex">
               <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
                 </svg>
               </div>
               <div className="ml-3">
-                <p className="text-sm text-red-700">{error}</p>
+                <p className="text-sm font-medium text-red-800">{error}</p>
               </div>
             </div>
           </div>
@@ -270,7 +290,7 @@ export default function AnalysisPage({ params }: AnalysisPageProps) {
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-800 mb-1">
               Değişken Seçin
             </label>
             <select
@@ -292,7 +312,7 @@ export default function AnalysisPage({ params }: AnalysisPageProps) {
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-800 mb-1">
               Başlangıç Tarihi
             </label>
             <div className="relative">
@@ -317,7 +337,7 @@ export default function AnalysisPage({ params }: AnalysisPageProps) {
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-gray-800 mb-1">
               Bitiş Tarihi
             </label>
             <div className="relative">
@@ -342,7 +362,7 @@ export default function AnalysisPage({ params }: AnalysisPageProps) {
           </div>
         </div>
         
-        <div className="bg-gray-50 p-1 rounded-lg border border-gray-200">
+        <div className="bg-gray-100 p-1 rounded-lg border border-gray-300">
           {loading ? (
             <div className="flex justify-center items-center py-24">
               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
@@ -352,7 +372,7 @@ export default function AnalysisPage({ params }: AnalysisPageProps) {
               <Line options={chartOptions} data={chartData} />
             </div>
           ) : (
-            <div className="text-center py-24 text-gray-500">
+            <div className="text-center py-24 text-gray-800">
               <FcBullish className="h-16 w-16 mx-auto mb-4" />
               <p className="font-medium">Analiz için değişken ve tarih aralığı seçin</p>
               <p className="text-sm mt-2">Seçimleriniz değiştikçe grafik otomatik olarak güncellenecektir</p>

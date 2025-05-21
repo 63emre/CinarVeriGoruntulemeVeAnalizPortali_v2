@@ -1,18 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import { FcDataSheet, FcAddRow, FcDocument, FcAreaChart, FcSettings } from 'react-icons/fc';
 import ExcelUploader from '@/components/tables/ExcelUploader';
 import WorkspaceInfo from '@/components/workspaces/WorkspaceInfo';
 import TablesView from '@/components/tables/TablesView';
 import Link from 'next/link';
-
-interface WorkspaceDetailPageProps {
-  params: {
-    workspaceId: string;
-  };
-}
 
 interface Workspace {
   id: string;
@@ -32,8 +26,9 @@ interface Table {
   uploadedAt: string;
 }
 
-export default function WorkspaceDetailPage({ params }: WorkspaceDetailPageProps) {
-  const workspaceId = params.workspaceId;
+export default function WorkspaceDetailPage() {
+  const params = useParams();
+  const workspaceId = params.workspaceId as string;
   const router = useRouter();
   
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -79,8 +74,10 @@ export default function WorkspaceDetailPage({ params }: WorkspaceDetailPageProps
       }
     }
     
-    fetchWorkspaceData();
-    fetchTables();
+    if (workspaceId) {
+      fetchWorkspaceData();
+      fetchTables();
+    }
   }, [workspaceId]);
   
   const handleTableSelect = (tableId: string) => {

@@ -16,8 +16,8 @@ export async function GET(
         );
       }
       
-      // Access params directly without awaiting
-      const { workspaceId } = params;
+      // Correctly access params in Next.js 14
+      const workspaceId = params.workspaceId;
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({

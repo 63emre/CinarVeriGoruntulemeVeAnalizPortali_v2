@@ -197,7 +197,7 @@ const config = {
       "value": "prisma-client-js"
     },
     "output": {
-      "value": "C:\\Users\\user\\Desktop\\beta_CinarVeriGoruntulemeVeAnalizPortali\\cinarverigoruntulemeveanalizportali\\src\\generated\\prisma",
+      "value": "C:\\Users\\user\\Desktop\\CinarVeriGoruntulemeVeAnalizPortali_v2\\cinarverigoruntulemeveanalizportali\\src\\generated\\prisma",
       "fromEnvVar": null
     },
     "config": {
@@ -211,7 +211,7 @@ const config = {
       }
     ],
     "previewFeatures": [],
-    "sourceFilePath": "C:\\Users\\user\\Desktop\\beta_CinarVeriGoruntulemeVeAnalizPortali\\cinarverigoruntulemeveanalizportali\\prisma\\schema.prisma",
+    "sourceFilePath": "C:\\Users\\user\\Desktop\\CinarVeriGoruntulemeVeAnalizPortali_v2\\cinarverigoruntulemeveanalizportali\\prisma\\schema.prisma",
     "isCustomOutput": true
   },
   "relativeEnvPaths": {
@@ -225,17 +225,16 @@ const config = {
     "db"
   ],
   "activeProvider": "postgresql",
-  "postinstall": false,
   "inlineDatasources": {
     "db": {
       "url": {
-        "fromEnvVar": null,
-        "value": "postgresql://postgres:123@localhost:5432/cinar_portal"
+        "fromEnvVar": "DATABASE_URL",
+        "value": null
       }
     }
   },
-  "inlineSchema": "// This is your Prisma schema file,\n// learn more about it in the docs: https://pris.ly/d/prisma-schema\n\n// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?\n// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init\n\ngenerator client {\n  provider = \"prisma-client-js\"\n  output   = \"../src/generated/prisma\"\n}\n\ndatasource db {\n  provider = \"postgresql\"\n  url      = \"postgresql://postgres:123@localhost:5432/cinar_portal\"\n}\n\n// User model for authentication and authorization\nmodel User {\n  id         String          @id @default(uuid())\n  email      String          @unique\n  name       String?\n  password   String\n  role       UserRole        @default(USER)\n  createdAt  DateTime        @default(now())\n  updatedAt  DateTime        @updatedAt\n  workspaces WorkspaceUser[]\n}\n\nenum UserRole {\n  USER\n  ADMIN\n}\n\n// Workspace model for isolation of data\nmodel Workspace {\n  id          String          @id @default(uuid())\n  name        String\n  description String?\n  createdAt   DateTime        @default(now())\n  updatedAt   DateTime        @updatedAt\n  createdBy   String\n  users       WorkspaceUser[]\n  tables      DataTable[]\n  formulas    Formula[]\n}\n\n// Many-to-many relationship between users and workspaces\nmodel WorkspaceUser {\n  id          String    @id @default(uuid())\n  userId      String\n  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)\n  workspaceId String\n  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)\n  addedAt     DateTime  @default(now())\n\n  @@unique([userId, workspaceId])\n}\n\n// Data table model for storing uploaded Excel tables\nmodel DataTable {\n  id          String    @id @default(uuid())\n  name        String\n  sheetName   String\n  workspaceId String\n  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)\n  uploadedAt  DateTime  @default(now())\n  updatedAt   DateTime  @updatedAt\n  columns     Json // Store column definitions\n  data        Json // Store actual table data\n  csvData     String? // Store CSV representation for data integrity\n}\n\nenum FormulaType {\n  CELL_VALIDATION\n  RELATIONAL\n}\n\n// Formula model for data evaluation\nmodel Formula {\n  id          String      @id @default(uuid())\n  name        String\n  description String?\n  formula     String // The actual formula string\n  workspaceId String\n  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)\n  tableId     String? // Optional reference to specific table\n  createdAt   DateTime    @default(now())\n  updatedAt   DateTime    @updatedAt\n  color       String? // Color for highlighting cells\n  type        FormulaType @default(CELL_VALIDATION)\n  active      Boolean     @default(true)\n}\n",
-  "inlineSchemaHash": "1b4d413c200aa0c43c9caad69518262832d11529e10c3a186d08f0032cc69e38",
+  "inlineSchema": "// This is your Prisma schema file,\n// learn more about it in the docs: https://pris.ly/d/prisma-schema\n\n// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?\n// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init\n\ngenerator client {\n  provider = \"prisma-client-js\"\n  output   = \"../src/generated/prisma\"\n}\n\ndatasource db {\n  provider = \"postgresql\"\n  url      = env(\"DATABASE_URL\")\n}\n\n// User model for authentication and authorization\nmodel User {\n  id         String          @id @default(uuid())\n  email      String          @unique\n  name       String?\n  password   String\n  role       UserRole        @default(USER)\n  createdAt  DateTime        @default(now())\n  updatedAt  DateTime        @updatedAt\n  workspaces WorkspaceUser[]\n}\n\nenum UserRole {\n  USER\n  ADMIN\n}\n\n// Workspace model for isolation of data\nmodel Workspace {\n  id          String          @id @default(uuid())\n  name        String\n  description String?\n  createdAt   DateTime        @default(now())\n  updatedAt   DateTime        @updatedAt\n  createdBy   String\n  users       WorkspaceUser[]\n  tables      DataTable[]\n  formulas    Formula[]\n}\n\n// Many-to-many relationship between users and workspaces\nmodel WorkspaceUser {\n  id          String    @id @default(uuid())\n  userId      String\n  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)\n  workspaceId String\n  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)\n  addedAt     DateTime  @default(now())\n\n  @@unique([userId, workspaceId])\n}\n\n// Data table model for storing uploaded Excel tables\nmodel DataTable {\n  id          String    @id @default(uuid())\n  name        String\n  sheetName   String\n  workspaceId String\n  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)\n  uploadedAt  DateTime  @default(now())\n  updatedAt   DateTime  @updatedAt\n  columns     Json // Store column definitions\n  data        Json // Store actual table data\n  csvData     String? // Store CSV representation for data integrity\n}\n\nenum FormulaType {\n  CELL_VALIDATION\n  RELATIONAL\n}\n\n// Formula model for data evaluation\nmodel Formula {\n  id          String      @id @default(uuid())\n  name        String\n  description String?\n  formula     String // The actual formula string\n  workspaceId String\n  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)\n  tableId     String? // Optional reference to specific table\n  createdAt   DateTime    @default(now())\n  updatedAt   DateTime    @updatedAt\n  color       String? // Color for highlighting cells\n  type        FormulaType @default(CELL_VALIDATION)\n  active      Boolean     @default(true)\n}\n",
+  "inlineSchemaHash": "0a55f9a09407e78407a4b4007bdf7090feeac0c008cdc205b596bf4913647f3c",
   "copyEngine": true
 }
 

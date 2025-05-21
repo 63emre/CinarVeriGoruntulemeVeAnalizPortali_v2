@@ -513,7 +513,7 @@ export default function EditableDataTable({
                         key={`${row.id}-${column.id}`}
                         className={cellStyles}
                         style={highlight ? {
-                          backgroundColor: `${highlight.color}20`, // Add 20 hex for 12.5% opacity
+                          backgroundColor: highlight.color,
                           borderColor: highlight.color,
                           borderWidth: '1px'
                         } : {}}

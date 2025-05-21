@@ -14,10 +14,22 @@ interface Workspace {
     tables: number;
     formulas: number;
   };
+  stats?: {
+    userCount: number;
+    tableCount: number;
+    formulaCount: number;
+  };
+}
+
+interface User {
+  id: string;
+  name: string | null;
+  email: string;
+  role: string;
 }
 
 export default function DashboardPage() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -36,7 +48,25 @@ export default function DashboardPage() {
         const workspacesRes = await fetch('/api/workspaces');
         if (workspacesRes.ok) {
           const workspacesData = await workspacesRes.json();
-          setWorkspaces(workspacesData);
+          
+          // Fetch statistics for each workspace
+          const workspacesWithStats = await Promise.all(
+            workspacesData.map(async (workspace: Workspace) => {
+              try {
+                const statsRes = await fetch(`/api/workspaces/${workspace.id}/summary`);
+                if (statsRes.ok) {
+                  const stats = await statsRes.json();
+                  return { ...workspace, stats };
+                }
+                return workspace;
+              } catch (error) {
+                console.error(`Stats fetch error for workspace ${workspace.id}:`, error);
+                return workspace;
+              }
+            })
+          );
+          
+          setWorkspaces(workspacesWithStats);
         }
       } catch (error) {
         console.error('Veri yükleme hatası:', error);
@@ -76,19 +106,32 @@ export default function DashboardPage() {
                 <div className="flex flex-col h-full">
                   <div className="flex items-start justify-between mb-3">
                     <h3 className="text-lg font-medium text-gray-800">{workspace.name}</h3>
-                    <div className="flex gap-2">
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-md">
-                        {workspace._count?.tables || 0} Tablo
-                      </span>
-                      <span className="px-2 py-1 bg-purple-100 text-purple-800 text-xs rounded-md">
-                        {workspace._count?.formulas || 0} Formül
-                      </span>
-                    </div>
                   </div>
                   
                   <p className="text-gray-600 text-sm mb-4 flex-grow">
                     {workspace.description || 'Açıklama yok'}
                   </p>
+                  
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    <div className="bg-blue-50 rounded-md p-2 text-center">
+                      <span className="block text-sm text-gray-500">Tablolar</span>
+                      <span className="font-bold text-blue-600">
+                        {workspace.stats?.tableCount || workspace._count?.tables || 0}
+                      </span>
+                    </div>
+                    <div className="bg-purple-50 rounded-md p-2 text-center">
+                      <span className="block text-sm text-gray-500">Formüller</span>
+                      <span className="font-bold text-purple-600">
+                        {workspace.stats?.formulaCount || workspace._count?.formulas || 0}
+                      </span>
+                    </div>
+                    <div className="bg-green-50 rounded-md p-2 text-center">
+                      <span className="block text-sm text-gray-500">Kullanıcılar</span>
+                      <span className="font-bold text-green-600">
+                        {workspace.stats?.userCount || 0}
+                      </span>
+                    </div>
+                  </div>
                   
                   <div className="flex gap-2 mt-auto">
                     <Link

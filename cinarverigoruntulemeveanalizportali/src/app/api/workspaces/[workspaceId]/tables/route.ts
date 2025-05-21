@@ -8,8 +8,8 @@ export async function GET(
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    // Access params directly without awaiting
-    const { workspaceId } = params;
+    // Correctly access params in Next.js 14
+    const workspaceId = params.workspaceId;
     console.log(`GET /api/workspaces/${workspaceId}/tables called`);
     
     const currentUser = await getCurrentUser();

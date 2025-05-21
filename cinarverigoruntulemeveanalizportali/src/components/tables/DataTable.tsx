@@ -319,24 +319,24 @@ export default function DataTable({
                         cellStyles += "bg-gray-50 ";
                       }
                         return (
-                        <td
-                          key={`${row.id}-${column.id}`}
-                          className={cellStyles}
-                          style={highlight ? {
-                            backgroundColor: `${highlight.color}20`, // Add 20 hex for 12.5% opacity
-                            borderColor: highlight.color,
-                            borderWidth: '1px'
-                          } : {}}
-                          onClick={() => handleCellClick(row.id, column.id, cellValue)}
-                          title={highlight?.message}
-                        >
-                          {cellValue === null ? (
-                            <span className="text-gray-400">-</span>
-                          ) : (
-                            <span>{String(cellValue)}</span>
-                          )}
-                        </td>
-                      );
+                          <td
+                            key={`${row.id}-${column.id}`}
+                            className={cellStyles}
+                            style={highlight ? {
+                              backgroundColor: highlight.color,
+                              borderColor: highlight.color,
+                              borderWidth: '1px'
+                            } : {}}
+                            onClick={() => handleCellClick(row.id, column.id, cellValue)}
+                            title={highlight?.message}
+                          >
+                            {cellValue === null ? (
+                              <span className="text-gray-400">-</span>
+                            ) : (
+                              <span>{String(cellValue)}</span>
+                            )}
+                          </td>
+                        );
                     })}
                   </tr>
                 ))}

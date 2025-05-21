@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { FcRules, FcReuse, FcPlus } from 'react-icons/fc';
 import EditableDataTable from '@/components/tables/EditableDataTable';
 import FormulaSelector from '@/components/formulas/FormulaSelector';
+import DropdownFormulaEditor from '@/components/formulas/DropdownFormulaEditor';
 import Link from 'next/link';
 
 interface TableData {
@@ -12,7 +13,7 @@ interface TableData {
   name: string;
   sheetName: string;
   columns: string[];
-  data: (string | number)[][];
+  data: (string | number | null)[][];
   uploadedAt: string;
   updatedAt: string;
 }
@@ -24,14 +25,16 @@ interface HighlightedCell {
   message: string;
 }
 
-interface FormulaResult {
-  tableData: (string | number | null)[][];
-  highlightedCells: {
-    rowIndex: number;
-    colIndex: number;
-    color: string;
-    message: string;
-  }[];
+type ArithmeticOperator = '+' | '-' | '*' | '/';
+type ComparisonOperator = '>' | '<' | '>=' | '<=' | '==' | '!=';
+
+interface FormulaCondition {
+  operand1: string;
+  arithmeticOperator?: ArithmeticOperator;
+  operand2?: string;
+  comparisonOperator: ComparisonOperator;
+  operand3: string;
+  isConstant?: boolean;
 }
 
 interface Formula {
@@ -162,28 +165,16 @@ export default function TablePage() {
         throw new Error(`Error applying formulas: ${response.statusText}`);
       }
       
-      const result = await response.json() as FormulaResult;
+      const result = await response.json();
+      console.log("Formula application result:", result);
       
-      // Update table with results
-      if (result.tableData) {
-        // Ensure the data doesn't contain null values
-        const sanitizedData = result.tableData.map(row => 
-          row.map(cell => cell === null ? '' : cell)
-        ) as (string | number)[][];
-        
-        setTable(prev => prev ? { ...prev, data: sanitizedData } : null);
-        
-        // Process highlighted cells
-        if (result.highlightedCells && result.highlightedCells.length > 0) {
-          const formattedHighlights = result.highlightedCells.map(cell => ({
-            row: `row-${cell.rowIndex + 1}`,
-            col: table?.columns[cell.colIndex] || '',
-            color: cell.color,
-            message: cell.message
-          }));
-          
-          setHighlightedCells(formattedHighlights);
-        }
+      // Process highlighted cells
+      if (result.highlightedCells && result.highlightedCells.length > 0) {
+        console.log(`Received ${result.highlightedCells.length} highlighted cells`);
+        setHighlightedCells(result.highlightedCells);
+      } else {
+        console.log("No highlighted cells received");
+        setHighlightedCells([]);
       }
     } catch (err) {
       setError((err as Error).message);
@@ -290,6 +281,18 @@ export default function TablePage() {
     } finally {
       setCreatingFormula(false);
     }
+  };
+
+  // Handle formula building from dropdown editor
+  const handleFormulaBuild = (formula: string, conditions: FormulaCondition[]) => {
+    // Update the formula in the state
+    setNewFormula({
+      ...newFormula,
+      formula: formula
+    });
+    
+    // Log the conditions for debugging
+    console.log('Formula conditions:', conditions);
   };
 
   if (loading && !table) {
@@ -399,6 +402,14 @@ export default function TablePage() {
                       data: updatedTableData
                     });
                   }}
+                />
+              </div>
+              
+              {/* Dropdown Formula Editor - Side by side with table */}
+              <div className="mt-6">
+                <DropdownFormulaEditor 
+                  variables={variables}
+                  onFormulaBuild={handleFormulaBuild}
                 />
               </div>
             </div>

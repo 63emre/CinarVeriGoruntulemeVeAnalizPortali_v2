@@ -15,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="tr">
+    <html lang="tr" className="h-full">
       <head>
         {/* Preload key assets properly */}
         <link
@@ -30,9 +30,12 @@ export default function RootLayout({
           as="image"
           type="image/svg+xml"
         />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       </head>
-      <body className={`${inter.className} min-h-screen bg-gray-50`}>
-        {children}
+      <body className={`${inter.className} min-h-screen bg-gray-50 w-full m-0 p-0`}>
+        <div className="min-h-screen w-full">
+          {children}
+        </div>
       </body>
     </html>
   );

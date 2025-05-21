@@ -21,8 +21,8 @@ interface FormulaResult {
 }
 
 interface HighlightedCell {
-  rowIndex: number;
-  colIndex: number;
+  row: string;
+  col: string;
   color: string;
   message: string;
 }
@@ -123,23 +123,43 @@ export async function POST(
     }
 
     // Initialize array to hold results
-    const results = [];
+    const formulaResults = [];
+    const highlightedCells: HighlightedCell[] = [];
 
     // Apply each formula to the table
     for (const formula of formulas) {
       try {
-        const result = applyFormulaToTable(formula, {
+        const evaluationResults = applyFormulaToTable(formula, {
           columns: table.columns as string[],
           data: table.data as (string | number | null)[][],
         });
         
-        results.push({
+        // Process evaluation results to generate highlighted cells
+        evaluationResults.forEach((result, rowIndex) => {
+          if (!result.isValid && formula.color) {
+            // Find the appropriate column to highlight (first one that matches the formula)
+            const columnIndex = 0; // Default to first column if can't determine
+            const variableColumnIndex = (table.columns as string[]).findIndex(
+              col => col.toLowerCase() === 'variable'
+            );
+            
+            // Create a highlighted cell entry for this result
+            highlightedCells.push({
+              row: `row-${rowIndex + 1}`,
+              col: (table.columns as string[])[variableColumnIndex >= 0 ? variableColumnIndex : columnIndex],
+              color: formula.color || '#ff0000',
+              message: result.message || `${formula.name} formülü doğrulanmadı`
+            });
+          }
+        });
+        
+        formulaResults.push({
           formulaId: formula.id,
           formulaName: formula.name,
-          result
+          result: evaluationResults
         });
       } catch (error) {
-        results.push({
+        formulaResults.push({
           formulaId: formula.id,
           formulaName: formula.name,
           error: (error as Error).message
@@ -147,9 +167,13 @@ export async function POST(
       }
     }
 
+    // Log to verify highlighted cells are populated
+    console.log(`Generated ${highlightedCells.length} highlighted cells`);
+
     return NextResponse.json({
       tableId,
-      formulaResults: results
+      formulaResults,
+      highlightedCells
     });
   } catch (error) {
     console.error('Error applying formulas:', error);

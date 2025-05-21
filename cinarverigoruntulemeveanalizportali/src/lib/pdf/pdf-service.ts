@@ -107,9 +107,40 @@ export async function exportTableToPdf(
         // Apply color with reduced opacity for background
         if (rgb) {
           // Create a light version of the color for the background
-          data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b, 0.1]; // 10% opacity
-          data.cell.styles.textColor = [rgb.r / 2, rgb.g / 2, rgb.b / 2]; // Darker text
+          data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b, 0.2]; // 20% opacity for better visibility
+          data.cell.styles.textColor = [Math.max(0, rgb.r - 100), Math.max(0, rgb.g - 100), Math.max(0, rgb.b - 100)]; // Darker text for better contrast
           data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.lineWidth = 0.5; // Add border
+          data.cell.styles.lineColor = [rgb.r, rgb.g, rgb.b]; // Border color matches highlight
+        }
+      }
+    },
+    willDrawCell: function(data: any) {
+      // Add tooltip icon to highlighted cells
+      if (data.section === 'body') {
+        const rowId = `row-${data.row.index}`;
+        const colName = table.columns[data.column.index];
+        const highlight = highlightedCells.find(cell => 
+          cell.row === rowId && cell.col === colName
+        );
+        
+        if (highlight && highlight.message) {
+          // Calc position for tooltip indicator
+          const x = data.cell.x + data.cell.width - 2;
+          const y = data.cell.y + 2;
+          
+          // Draw a small triangle in the corner to indicate there's a tooltip
+          const doc = data.doc;
+          const rgb = hexToRgb(highlight.color);
+          if (rgb) {
+            doc.setFillColor(rgb.r, rgb.g, rgb.b);
+            doc.triangle(
+              x, y,
+              x - 3, y,
+              x, y + 3,
+              'F'
+            );
+          }
         }
       }
     }
@@ -140,7 +171,54 @@ export async function exportTableToPdf(
     },
     // @ts-ignore - type definition issue with jspdf-autotable
     didParseCell: cellHooks.didParseCell,
+    // @ts-ignore
+    willDrawCell: cellHooks.willDrawCell,
   });
+  
+  // Add explanation of cell highlights if there are any
+  if (highlightedCells.length > 0) {
+    const lastTableY = (doc as any).lastAutoTable.finalY || 45;
+    let yPos = lastTableY + 15;
+    
+    doc.setFontSize(12);
+    doc.text('Uyarılar ve Açıklamalar:', 14, yPos);
+    yPos += 10;
+    
+    // Group highlightedCells by color and message
+    const uniqueHighlights = highlightedCells.reduce((acc: any[], cell) => {
+      const existing = acc.find(h => h.color === cell.color && h.message === cell.message);
+      if (!existing) {
+        acc.push({
+          color: cell.color,
+          message: cell.message
+        });
+      }
+      return acc;
+    }, []);
+    
+    // Add each unique highlight message with its color
+    uniqueHighlights.forEach((highlight, index) => {
+      // Check if we need a new page
+      if (yPos > 270) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      const rgb = hexToRgb(highlight.color);
+      
+      // Draw color indicator
+      if (rgb) {
+        doc.setFillColor(rgb.r, rgb.g, rgb.b);
+        doc.rect(14, yPos - 4, 6, 6, 'F');
+      }
+      
+      // Add message
+      doc.setFontSize(9);
+      doc.text(`${index + 1}. ${highlight.message}`, 24, yPos);
+      
+      yPos += 8;
+    });
+  }
   
   // Add formula explanations if requested
   if (options.includeFormulas && formulas.length > 0) {

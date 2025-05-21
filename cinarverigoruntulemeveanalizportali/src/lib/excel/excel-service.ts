@@ -7,36 +7,52 @@ export interface ExcelData {
   data: (string | number | null)[][];
 }
 
-// Convert Excel serial date to DD.MM.YYYY format
-function excelSerialDateToString(serialDate: number): string {
-  // Excel's epoch starts on January 1, 1900
-  // Excel incorrectly treats 1900 as a leap year, so we need to adjust
-  // Excel serial dates before March 1, 1900 are off by 1
-  const excelEpoch = new Date(1899, 11, 30);
-  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+// Check if a string is potentially an Excel serial date
+function isExcelSerialDate(value: string | number): boolean {
+  if (typeof value === 'number') {
+    // Excel serial dates are typically 5-digit or 6-digit numbers
+    // representing days since Excel epoch (Dec 30, 1899)
+    return value > 1000 && value < 1000000;
+  }
   
-  // Calculate the number of milliseconds from the Excel epoch
-  const milliseconds = serialDate * millisecondsPerDay;
-  const date = new Date(excelEpoch.getTime() + milliseconds);
+  // Convert string to number and check
+  const numValue = Number(value);
+  if (!isNaN(numValue)) {
+    return numValue > 1000 && numValue < 1000000;
+  }
   
-  // Format as DD.MM.YYYY
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-  const year = date.getFullYear();
-  
-  return `${day}.${month}.${year}`;
+  return false;
 }
 
-// Check if a string is potentially an Excel serial date
-function isExcelSerialDate(value: string): boolean {
-  // Excel serial dates are typically 5-digit numbers
-  return /^\d{5,6}$/.test(value) && !isNaN(Number(value));
+// Convert Excel serial date to DD.MM.YYYY format
+function excelSerialDateToString(serialDate: number): string {
+  try {
+    // Excel's epoch starts on January 1, 1900
+    // Excel incorrectly treats 1900 as a leap year, so we need to adjust
+    // Excel serial dates before March 1, 1900 are off by 1
+    const excelEpoch = new Date(1899, 11, 30);
+    const millisecondsPerDay = 24 * 60 * 60 * 1000;
+    
+    // Calculate the number of milliseconds from the Excel epoch
+    const milliseconds = serialDate * millisecondsPerDay;
+    const date = new Date(excelEpoch.getTime() + milliseconds);
+    
+    // Format as DD.MM.YYYY
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
+    const year = date.getFullYear();
+    
+    return `${day}.${month}.${year}`;
+  } catch (error) {
+    console.error('Error converting Excel serial date:', error);
+    return String(serialDate); // Return original value if conversion fails
+  }
 }
 
 export async function parseExcelFile(file: File): Promise<ExcelData[]> {
   try {
     const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
     const result: ExcelData[] = [];
 
     for (const sheetName of workbook.SheetNames) {
@@ -51,12 +67,22 @@ export async function parseExcelFile(file: File): Promise<ExcelData[]> {
               if (h === null || h === undefined) return '';
               
               // Convert Excel serial dates in headers to readable format
-              const stringValue = String(h).trim();
-              if (isExcelSerialDate(stringValue)) {
-                return excelSerialDateToString(Number(stringValue));
+              if (h instanceof Date) {
+                const day = String(h.getDate()).padStart(2, '0');
+                const month = String(h.getMonth() + 1).padStart(2, '0');
+                const year = h.getFullYear();
+                return `${day}.${month}.${year}`;
               }
               
-              return stringValue;
+              // Handle numeric values that might be dates
+              if (typeof h === 'number' || (typeof h === 'string' && !isNaN(Number(h)))) {
+                const numValue = typeof h === 'number' ? h : Number(h);
+                if (isExcelSerialDate(numValue)) {
+                  return excelSerialDateToString(numValue);
+                }
+              }
+              
+              return String(h).trim();
             }) 
           : [];
         

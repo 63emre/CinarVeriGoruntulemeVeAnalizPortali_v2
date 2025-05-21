@@ -67,8 +67,10 @@ export default function EditableDataTable({
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savingError, setSavingError] = useState<string | null>(null);
+  const [containerWidth, setContainerWidth] = useState('100%');
   
   const editInputRef = useRef<HTMLInputElement>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   // Focus the edit input when it becomes visible
   useEffect(() => {
@@ -313,7 +315,22 @@ export default function EditableDataTable({
     setData(JSON.parse(JSON.stringify(originalData)));
     setHasChanges(false);
   };
-  
+
+  // Add resize observer to adjust the table container size
+  useEffect(() => {
+    if (!tableContainerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width;
+        setContainerWidth(`${width}px`);
+      }
+    });
+
+    resizeObserver.observe(tableContainerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+
   if (error) {
     return (
       <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -404,7 +421,7 @@ export default function EditableDataTable({
         </div>
       )}
       
-      <div className={`overflow-x-auto ${isFullscreen ? 'h-[calc(100vh-140px)]' : 'max-h-[80vh]'}`}>
+      <div className={`overflow-x-auto ${isFullscreen ? 'h-[calc(100vh-140px)]' : 'max-h-[80vh]'}`} ref={tableContainerRef}>
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -416,26 +433,46 @@ export default function EditableDataTable({
               : 'Gösterilecek veri bulunmuyor.'}
           </div>
         ) : (
-          <table className="min-w-full divide-y divide-gray-200 border-collapse">
+          <table className="w-full divide-y divide-gray-200 border-collapse table-fixed">
             <thead className="bg-gray-100 sticky top-0 z-10">
               <tr>
-                {columns.map((column) => (
-                  <th
-                    key={column.id}
-                    scope="col"
-                    className="px-6 py-3 text-left text-sm font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-200 border-b border-gray-300 sticky"
-                    onClick={() => handleSort(column.id)}
-                  >
-                    <div className="flex items-center">
-                      {column.name}
-                      {sortColumn === column.id && (
-                        <span className="ml-1">
-                          {sortDirection === 'asc' ? '↑' : '↓'}
-                        </span>
-                      )}
-                    </div>
-                  </th>
-                ))}
+                {columns.map((column) => {
+                  // Determine column width based on type
+                  let colWidth = "auto";
+                  
+                  // ID columns should be narrow
+                  if (column.id === 'id') {
+                    colWidth = "60px";
+                  } 
+                  // Fixed columns get appropriate width
+                  else if (['Data Source', 'Variable', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
+                    colWidth = "150px";
+                  } 
+                  // Date columns (all others) should be compact
+                  else {
+                    colWidth = "120px";
+                  }
+                  
+                  return (
+                    <th
+                      key={column.id}
+                      scope="col"
+                      style={{ width: colWidth }}
+                      className="px-4 py-3 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-200 border-b border-gray-300 sticky truncate"
+                      onClick={() => handleSort(column.id)}
+                      title={column.name}
+                    >
+                      <div className="flex items-center">
+                        <span className="truncate">{column.name}</span>
+                        {sortColumn === column.id && (
+                          <span className="ml-1 flex-shrink-0">
+                            {sortDirection === 'asc' ? '↑' : '↓'}
+                          </span>
+                        )}
+                      </div>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -449,7 +486,7 @@ export default function EditableDataTable({
                     const isEditable = column.editable !== false;
                     
                     // Dynamic styles based on highlight, selection, and column type
-                    let cellStyles = "px-6 py-3 whitespace-nowrap font-medium border ";
+                    let cellStyles = "px-4 py-2 text-sm border truncate ";
                     
                     // Base text color - darker for better readability
                     cellStyles += column.id === 'Variable' ? "text-blue-900 font-semibold " : "text-gray-900 ";

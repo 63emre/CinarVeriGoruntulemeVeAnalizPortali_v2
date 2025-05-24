@@ -124,55 +124,12 @@ export default function TablePage() {
   };
 
   // Handle cell selection for variable identification
-  const handleCellSelect = (rowId: string, colId: string, value: string | number | null) => {
-    if (colId === 'Variable' && typeof value === 'string') {
-      setSelectedVariable(value);
-    }
-  };
-
-  // Apply formulas to the table data
-  const applyFormulas = async () => {
-    if (!activeFormulas.length) return;
-    
-    try {
-      setLoading(true);
-      const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/apply-formulas`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          formulaIds: activeFormulas,
-          selectedVariable: selectedVariable,
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Error applying formulas: ${response.statusText}`);
-      }
-      
-      const result = await response.json();
-      console.log("Formula application result:", result);
-      
-      if (result.highlightedCells && result.highlightedCells.length > 0) {
-        console.log(`Received ${result.highlightedCells.length} highlighted cells:`, result.highlightedCells);
-        setHighlightedCells(result.highlightedCells);
-      } else {
-        console.log("No highlighted cells received");
-        setHighlightedCells([]);
-      }
-    } catch (err) {
-      setError((err as Error).message);
-      console.error('Error applying formulas:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle PDF export
+    const handleCellSelect = (rowId: string, colId: string, value: string | number | null) => {    if (colId === 'Variable' && typeof value === 'string') {      setSelectedVariable(value);    }  };    // Apply formulas to the table data with enhanced error handling  const applyFormulas = async () => {    if (!activeFormulas.length) {      setError('Lütfen en az bir formül seçin');      return;    }        try {      setLoading(true);      setError(null); // Clear any previous errors            const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/apply-formulas`, {        method: 'POST',        headers: {          'Content-Type': 'application/json',        },        body: JSON.stringify({          formulaIds: activeFormulas,          selectedVariable: selectedVariable,          formulaType: 'CELL_VALIDATION', // Include formulaType to prevent Zod validation errors        }),      });            if (!response.ok) {        const errorData = await response.text();        throw new Error(`Formül uygulanırken hata oluştu (${response.status}): ${errorData}`);      }            const result = await response.json();      console.log("Formula application result:", result);            // Update table data if provided      if (result.tableData) {        // The API now returns tableData in the format we expect        const updatedTable = {          ...table,          data: result.tableData.map((row: any) => {            return table!.columns.map(col => row[col]);          })        };        setTable(updatedTable);      }            if (result.highlightedCells && result.highlightedCells.length > 0) {        console.log(`Received ${result.highlightedCells.length} highlighted cells:`, result.highlightedCells);        setHighlightedCells(result.highlightedCells);                // Show success feedback        const formulaNames = formulas          .filter(f => activeFormulas.includes(f.id))          .map(f => f.name)          .join(', ');                // You could add a toast notification here        console.log(`Formüller başarıyla uygulandı: ${formulaNames}`);      } else {        console.log("No highlighted cells received - all validations passed");        setHighlightedCells([]);                // Show info message that no violations were found        console.log("Tüm hücreler seçili formülleri sağladı");      }    } catch (err) {      const errorMessage = (err as Error).message;      setError(errorMessage);      console.error('Error applying formulas:', err);      setHighlightedCells([]); // Clear highlights on error    } finally {      setLoading(false);    }  };
+  // Handle PDF export with enhanced error handling and progress feedback
   const exportToPdf = async () => {
     try {
       setLoading(true);
+      setError(null);
       
       const preparedHighlightedCells = highlightedCells?.map(cell => ({
         row: cell.row,
@@ -180,6 +137,8 @@ export default function TablePage() {
         color: cell.color,
         message: cell.message
       })) || [];
+      
+      console.log(`Exporting PDF with ${preparedHighlightedCells.length} highlighted cells`);
       
       const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/pdf`, {
         method: 'POST',
@@ -189,25 +148,31 @@ export default function TablePage() {
         body: JSON.stringify({
           includeDate: true,
           highlightedCells: preparedHighlightedCells,
+          title: `${table?.name} - Formül Analizi`,
+          subtitle: 'Çınar Çevre Laboratuvarı',
         }),
       });
       
       if (!response.ok) {
-        throw new Error(`Error generating PDF: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`PDF oluşturulamadı (${response.status}): ${errorText}`);
       }
       
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${table?.name || 'table'}.pdf`;
+      a.download = `${table?.name || 'table'}_formula_analysis.pdf`;
       document.body.appendChild(a);
       a.click();
       
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      
+      console.log('PDF başarıyla indirildi');
     } catch (err) {
-      setError((err as Error).message);
+      const errorMessage = (err as Error).message;
+      setError(errorMessage);
       console.error('Error exporting to PDF:', err);
     } finally {
       setLoading(false);
@@ -301,9 +266,7 @@ export default function TablePage() {
       rowData[col] = row[colIndex];
     });
     return rowData;
-  }) || [];
-
-  return (
+  }) || [];  return (
     <div className="p-6">
       {table ? (
         <>
@@ -312,7 +275,41 @@ export default function TablePage() {
               <h1 className="text-2xl font-semibold text-black">
                 {table.name}
               </h1>
+              <p className="text-gray-600 text-sm mt-1">
+                Sayfa: {table.sheetName} • Son güncelleme: {new Date(table.updatedAt).toLocaleDateString('tr-TR')}
+              </p>
             </div>
+            
+            {/* Formula Results Status */}
+            {highlightedCells.length > 0 && (
+              <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 max-w-xs">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-orange-400 rounded-full mr-2"></div>
+                  <span className="text-orange-800 font-medium text-sm">
+                    {highlightedCells.length} hücre uyarısı
+                  </span>
+                </div>
+                <p className="text-orange-700 text-xs mt-1">
+                  Formül kriterlerini karşılamayan hücreler vurgulandı
+                </p>
+              </div>
+            )}
+
+            {/* No Issues Status */}
+            {activeFormulas.length > 0 && highlightedCells.length === 0 && !loading && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 max-w-xs">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-green-400 rounded-full mr-2"></div>
+                  <span className="text-green-800 font-medium text-sm">
+                    Tüm kontroller başarılı
+                  </span>
+                </div>
+                <p className="text-green-700 text-xs mt-1">
+                  Seçili formüller tüm hücreler için sağlandı
+                </p>
+              </div>
+            )}
+
             <div className="flex space-x-2">
               <Link
                 href={`/dashboard/workspaces/${workspaceId}/analysis?tableId=${tableId}`}

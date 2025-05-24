@@ -1,8 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { FcDownload, FcPrint, FcFullTrash, FcExpand, FcCollapse, FcCheckmark, FcCancel } from 'react-icons/fc';
-import { AiOutlineFilter, AiOutlineSearch, AiOutlineEdit, AiOutlineSave } from 'react-icons/ai';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { FcPrint, FcFullTrash, FcCheckmark, FcCancel } from 'react-icons/fc';import { AiOutlineSearch, AiOutlineEdit, AiOutlineSave } from 'react-icons/ai';
 
 type Column = {
   id: string;
@@ -23,6 +22,17 @@ interface HighlightedCell {
   color: string;
   message?: string;
 }
+
+// Utility function to convert hex color to RGB
+const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
+  if (!hex) return null;
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : null;
+};
 
 interface EditableDataTableProps {
   data?: DataRow[];
@@ -66,11 +76,7 @@ export default function EditableDataTable({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [savingError, setSavingError] = useState<string | null>(null);
-  const [containerWidth, setContainerWidth] = useState('100%');
-  
-  const editInputRef = useRef<HTMLInputElement>(null);
-  const tableContainerRef = useRef<HTMLDivElement>(null);
+    const [savingError, setSavingError] = useState<string | null>(null);    const editInputRef = useRef<HTMLInputElement>(null);  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   // Focus the edit input when it becomes visible
   useEffect(() => {
@@ -260,10 +266,19 @@ export default function EditableDataTable({
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
   };
+  // Create a lookup map for O(1) highlight access - performance optimization
+  const highlightLookup = useMemo(() => {
+    const lookup = new Map<string, HighlightedCell>();
+    highlightedCells.forEach(cell => {
+      const key = `${cell.row}-${cell.col}`;
+      lookup.set(key, cell);
+    });
+    return lookup;
+  }, [highlightedCells]);
 
-  // Check if a cell has a highlight
+  // Check if a cell has a highlight - now O(1) instead of O(n)
   const getCellHighlight = (rowId: string, colId: string) => {
-    return highlightedCells.find(cell => cell.row === rowId && cell.col === colId);
+    return highlightLookup.get(`${rowId}-${colId}`);
   };
   
   // Save all changes back to the server
@@ -316,20 +331,7 @@ export default function EditableDataTable({
     setHasChanges(false);
   };
 
-  // Add resize observer to adjust the table container size
-  useEffect(() => {
-    if (!tableContainerRef.current) return;
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const width = entry.contentRect.width;
-        setContainerWidth(`${width}px`);
-      }
-    });
-
-    resizeObserver.observe(tableContainerRef.current);
-    return () => resizeObserver.disconnect();
-  }, []);
+    // Add resize observer to adjust the table container size  useEffect(() => {    if (!tableContainerRef.current) return;    const resizeObserver = new ResizeObserver(() => {      // Observer is kept for potential future use    });    resizeObserver.observe(tableContainerRef.current);    return () => resizeObserver.disconnect();  }, []);
 
   if (error) {
     return (
@@ -485,38 +487,88 @@ export default function EditableDataTable({
                     const highlight = getCellHighlight(row.id, column.id);
                     const isEditable = column.editable !== false;
                     
-                    // Dynamic styles based on highlight, selection, and column type
-                    let cellStyles = "px-4 py-2 text-sm border truncate ";
+                    // Base styling
+                    let cellStyles = "px-4 py-2 text-sm border truncate transition-all duration-200 ";
                     
-                    // Base text color - darker for better readability
+                    // Base text styling with better readability
                     cellStyles += column.id === 'Variable' ? "text-blue-900 font-semibold " : "text-gray-900 ";
-                      // Selection backgrounds (highlights are applied with inline style)
-                    if (isSelected) {
-                      cellStyles += "bg-blue-100 border-blue-300 ";
-                    } else {
-                      cellStyles += "border-gray-200 ";
-                    }
                     
-                    // Special column styling
-                    if (column.id === 'id') {
-                      cellStyles += "bg-gray-50 text-gray-600 ";
-                    } else if (['Data Source', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
-                      cellStyles += "bg-gray-50 ";
+                    // Only add non-conflicting classes when not highlighted
+                    if (!highlight) {
+                      // Handle selection styling
+                      if (isSelected) {
+                        cellStyles += "bg-blue-100 border-blue-300 ring-2 ring-blue-200 ";
+                      } else {
+                        cellStyles += "border-gray-200 ";
+                      }
+                      
+                      // Special column background colors
+                      if (column.id === 'id') {
+                        cellStyles += "bg-gray-50 text-gray-600 ";
+                      } else if (['Data Source', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
+                        cellStyles += "bg-gray-50 ";
+                      }
+                    } else {
+                      // If highlighted, only add border class
+                      cellStyles += "border-2 ";
                     }
                     
                     // Editable styling
                     if (isEditable && !isEditing) {
-                      cellStyles += "cursor-pointer hover:bg-yellow-50 ";
+                      cellStyles += "cursor-pointer ";
+                      if (!highlight) {
+                        cellStyles += "hover:bg-yellow-50 ";
+                      }
+                    }
+
+                    // Enhanced inline style for highlights with better visibility
+                    const inlineStyle: React.CSSProperties = {};
+                    if (highlight) {
+                      // Use the color directly from highlight
+                      const color = highlight.color;
+                      
+                      // Apply background color with appropriate opacity
+                      const rgb = hexToRgb(color);
+                      if (rgb) {
+                        // Use slightly transparent background for better visibility
+                        inlineStyle.backgroundColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3)`;
+                        inlineStyle.borderColor = color;
+                        inlineStyle.borderWidth = '2px';
+                        inlineStyle.borderStyle = 'solid';
+                        inlineStyle.position = 'relative';
+                        
+                        // Add a subtle glow effect
+                        inlineStyle.boxShadow = `0 0 4px ${color}40`;
+                        
+                        // Ensure text is readable on colored background
+                        const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+                        // For light backgrounds, use dark text; for dark backgrounds, use original color
+                        if (brightness > 200) {
+                          inlineStyle.color = '#1a1a1a';
+                        } else {
+                          inlineStyle.color = color;
+                        }
+                        inlineStyle.fontWeight = '600'; // Make text bolder on highlighted cells
+                      } else {
+                        // Fallback if RGB conversion fails
+                        inlineStyle.backgroundColor = `${color}30`; // 30 = ~0.3 opacity in hex
+                        inlineStyle.borderColor = color;
+                        inlineStyle.borderWidth = '2px';
+                        inlineStyle.borderStyle = 'solid';
+                      }
+                      
+                      // Override any conflicting styles when highlighted
+                      if (isSelected) {
+                        // Show selection with different visual cue when highlighted
+                        inlineStyle.boxShadow = `0 0 4px ${color}40, 0 0 0 3px #3b82f640`;
+                      }
                     }
                     
-                    return (                      <td
+                    return (
+                      <td
                         key={`${row.id}-${column.id}`}
                         className={cellStyles}
-                        style={highlight ? {
-                          backgroundColor: highlight.color,
-                          borderColor: highlight.color,
-                          borderWidth: '1px'
-                        } : {}}
+                        style={inlineStyle}
                         onClick={() => handleCellClick(row.id, column.id, cellValue)}
                         onDoubleClick={() => handleCellDoubleClick(row.id, column.id, cellValue, isEditable)}
                         title={highlight?.message || (isEditable ? 'Düzenlemek için çift tıklayın' : '')}
@@ -532,13 +584,19 @@ export default function EditableDataTable({
                               className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                             <button 
-                              onClick={() => handleEditSave(row.id, column.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditSave(row.id, column.id);
+                              }}
                               className="ml-1 p-1 text-green-600"
                             >
                               <FcCheckmark className="h-5 w-5" />
                             </button>
                             <button 
-                              onClick={handleEditCancel}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditCancel();
+                              }}
                               className="ml-1 p-1 text-red-600"
                             >
                               <FcCancel className="h-5 w-5" />

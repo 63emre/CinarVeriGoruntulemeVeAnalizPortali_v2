@@ -13,6 +13,7 @@ interface HighlightedCell {
 interface FormulaRequest {
   formulaIds: string[];
   selectedVariable?: string;
+  formulaType?: string; // Add formulaType to prevent Zod validation issues
 }
 
 // POST /api/workspaces/[workspaceId]/tables/[tableId]/apply-formulas
@@ -82,7 +83,7 @@ export async function POST(
 
     // Get the formulas to apply
     const body = await request.json() as FormulaRequest;
-    const { formulaIds, selectedVariable } = body;
+    const { formulaIds, selectedVariable, formulaType = 'CELL_VALIDATION' } = body; // Provide default formulaType
 
     if (!formulaIds || !Array.isArray(formulaIds) || formulaIds.length === 0) {
       return NextResponse.json(
@@ -91,11 +92,12 @@ export async function POST(
       );
     }
 
-    // Get formulas for the workspace
+    // Get formulas for the workspace with optional type filter
     const formulas = await prisma.formula.findMany({
       where: {
         id: { in: formulaIds },
-        workspaceId
+        workspaceId,
+        ...(formulaType && { type: formulaType as 'CELL_VALIDATION' | 'RELATIONAL' })
       }
     });
 
@@ -168,7 +170,8 @@ export async function POST(
               context.variables[col] = parseFloat(value);
             }
           });
-            try {
+            
+          try {
             // Evaluate the formula for this specific row
             const result = evaluateFormula(formula.formula, context);
             
@@ -220,10 +223,29 @@ export async function POST(
     // Log to verify highlighted cells are populated
     console.log(`Generated ${highlightedCells.length} highlighted cells`);
 
+    // Prepare table data in the format expected by frontend
+    const tableColumns = columns.map(col => ({
+      id: col,
+      name: col,
+      type: 'string'
+    }));
+    
+    const tableRows = data.map((row, rowIndex) => {
+      const rowData: { [key: string]: string | number | null, id: string } = { 
+        id: `row-${rowIndex + 1}` 
+      };
+      columns.forEach((col, colIndex) => {
+        rowData[col] = row[colIndex];
+      });
+      return rowData;
+    });
+
     return NextResponse.json({
       tableId,
       formulaResults,
-      highlightedCells
+      highlightedCells,
+      tableData: tableRows,  // Add tableData for frontend compatibility
+      columns: tableColumns   // Add columns for frontend compatibility
     });
   } catch (error) {
     console.error('Error applying formulas:', error);

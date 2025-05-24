@@ -36,6 +36,7 @@
 - Node.js 18.0 veya üzeri
 - PostgreSQL veritabanı
 - Git
+- PowerShell (Windows)
 
 ### Kurulum Adımları
 
@@ -49,6 +50,50 @@
    ```bash
    npm install
    ```
+
+3. **Kolay Kurulum (Önerilen)**: PowerShell script'ini kullanın:
+   ```powershell
+   # Proje dizininde:
+   .\init-db.ps1
+   
+   # Veya ana dizinden:
+   .\run-init-db.ps1
+   ```
+
+4. **Manuel Kurulum**: Adım adım kurulum:
+   ```bash
+   # .env dosyasını oluşturun ve veritabanı bağlantısını yapılandırın
+   cp .env.example .env
+   
+   # Veritabanı migrasyonlarını uygulayın
+   npx prisma migrate deploy
+   
+   # Prisma client'ı oluşturun
+   npx prisma generate
+   
+   # Başlangıç verilerini yükleyin (opsiyonel)
+   npm run prisma:seed
+   ```
+
+5. Uygulamayı başlatın:
+   ```bash
+   npm run dev
+   ```
+
+### 🚀 Hızlı Başlangıç
+
+Projeyi hızlıca başlatmak için otomatik script'leri kullanabilirsiniz:
+
+```powershell
+# Proje dizininde - Tam otomatik kurulum ve başlatma:
+.\start-project.ps1
+
+# Sadece veritabanı kurulumu:
+.\init-db.ps1
+
+# Ana dizinden çalıştırmak için:
+.\run-init-db.ps1
+```
 
 3. `.env` dosyasını oluşturun:
    ```

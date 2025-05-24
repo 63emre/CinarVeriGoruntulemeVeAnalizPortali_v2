@@ -178,7 +178,7 @@ export default function WorkspaceManager({ onWorkspaceAdded }: WorkspaceManagerP
             return {
               ...ws,
               users: [
-                ...ws.users,
+                ...(ws.users || []),
                 {
                   id: `temp-${Date.now()}`, // This will be replaced when we refresh
                   userId: user.id,

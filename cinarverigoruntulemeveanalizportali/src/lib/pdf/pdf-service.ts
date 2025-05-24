@@ -10,8 +10,7 @@ export interface DataTable {
   workspaceId: string;
   uploadedAt: Date;
   updatedAt: Date;
-  columns: any;
-  data: any;
+    columns: string[];  data: (string | number | null)[][];
   workspace?: {
     name: string;
     description?: string | null;
@@ -88,8 +87,9 @@ export async function exportTableToPdf(
   
   doc.setFontSize(10);
   doc.text(`Tarih: ${date} Saat: ${time}`, 14, 38);
-    // Create CellHooks object to handle cell highlighting
-  const cellHooks = {    didParseCell: function(data: any) {
+  // Create CellHooks object to handle cell highlighting with enhanced styling
+  const cellHooks = {
+    didParseCell: function(data: any) {
       // Skip header cells
       if (data.section === 'head') return;
       
@@ -110,9 +110,9 @@ export async function exportTableToPdf(
         console.log(`Processing cells for PDF highlighting, total highlighted cells: ${highlightedCells.length}`);
       }
       
-      // Check if this cell is highlighted
+      // Check if this cell is highlighted - support both row ID formats
       const highlight = highlightedCells.find(cell => 
-        (cell.row === actualRowId || cell.row === `${data.row.index}`) && cell.col === colName
+        (cell.row === actualRowId || cell.row === `row-${data.row.index + 1}`) && cell.col === colName
       );
       
       if (highlight) {
@@ -121,42 +121,51 @@ export async function exportTableToPdf(
         // Get RGB color from HEX
         const rgb = hexToRgb(highlight.color);
         
-        // Apply color with reduced opacity for background
+        // Apply enhanced color styling
         if (rgb) {
-          // Create a light version of the color for the background
-          data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b, 0.2]; // 20% opacity for better visibility
-          data.cell.styles.textColor = [Math.max(0, rgb.r - 100), Math.max(0, rgb.g - 100), Math.max(0, rgb.b - 100)]; // Darker text for better contrast
+          // Use a more visible background with appropriate opacity
+          data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b];
+          
+          // Calculate text color for optimal contrast
+          const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+          data.cell.styles.textColor = brightness > 128 ? [0, 0, 0] : [255, 255, 255];
+          
           data.cell.styles.fontStyle = 'bold';
-          data.cell.styles.lineWidth = 0.5; // Add border
-          data.cell.styles.lineColor = [rgb.r, rgb.g, rgb.b]; // Border color matches highlight
+          data.cell.styles.lineWidth = 1; // Thicker border for better visibility
+          data.cell.styles.lineColor = [Math.max(0, rgb.r - 50), Math.max(0, rgb.g - 50), Math.max(0, rgb.b - 50)]; // Darker border
         }
       }
     },    willDrawCell: function(data: any) {
-      // Add tooltip icon to highlighted cells
+      // Add visual indicators to highlighted cells in PDF
       if (data.section === 'body') {
         const actualRowId = rowIds[data.row.index];
         const colName = table.columns[data.column.index];
         
         if (!colName) return;
         
+        // Support both row ID formats for flexibility
         const highlight = highlightedCells.find(cell => 
-          (cell.row === actualRowId || cell.row === `${data.row.index}`) && cell.col === colName
+          (cell.row === actualRowId || cell.row === `row-${data.row.index + 1}`) && cell.col === colName
         );
         
         if (highlight && highlight.message) {
-          // Calc position for tooltip indicator
-          const x = data.cell.x + data.cell.width - 2;
-          const y = data.cell.y + 2;
+          // Calculate position for indicator
+          const x = data.cell.x + data.cell.width - 3;
+          const y = data.cell.y + 1;
           
-          // Draw a small triangle in the corner to indicate there's a tooltip
+          // Draw a triangle indicator in the corner
           const doc = data.doc;
           const rgb = hexToRgb(highlight.color);
           if (rgb) {
-            doc.setFillColor(rgb.r, rgb.g, rgb.b);
+            // Use a contrasting color for the indicator
+            const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+            const indicatorColor = brightness > 128 ? [0, 0, 0] : [255, 255, 255];
+            
+            doc.setFillColor(indicatorColor[0], indicatorColor[1], indicatorColor[2]);
             doc.triangle(
               x, y,
-              x - 3, y,
-              x, y + 3,
+              x - 2, y,
+              x, y + 2,
               'F'
             );
           }
@@ -190,10 +199,7 @@ export async function exportTableToPdf(
     alternateRowStyles: {
       fillColor: [240, 240, 240],
     },
-    // @ts-ignore - type definition issue with jspdf-autotable
-    didParseCell: cellHooks.didParseCell,
-    // @ts-ignore
-    willDrawCell: cellHooks.willDrawCell,
+        // @ts-expect-error - type definition issue with jspdf-autotable    didParseCell: cellHooks.didParseCell,    // @ts-expect-error    willDrawCell: cellHooks.willDrawCell,
   });
   
   // Add explanation of cell highlights if there are any
@@ -202,7 +208,7 @@ export async function exportTableToPdf(
     let yPos = lastTableY + 15;
     
     doc.setFontSize(12);
-    doc.text('Uyarılar ve Açıklamalar:', 14, yPos);
+    doc.text('Formül Sonuçları ve Uyarılar:', 14, yPos);
     yPos += 10;
     
     // Group highlightedCells by color and message
@@ -211,8 +217,13 @@ export async function exportTableToPdf(
       if (!existing) {
         acc.push({
           color: cell.color,
-          message: cell.message
+          message: cell.message,
+          count: 1,
+          cells: [{row: cell.row, col: cell.col}]
         });
+      } else {
+        existing.count++;
+        existing.cells.push({row: cell.row, col: cell.col});
       }
       return acc;
     }, []);
@@ -233,12 +244,25 @@ export async function exportTableToPdf(
         doc.rect(14, yPos - 4, 6, 6, 'F');
       }
       
-      // Add message
+      // Add message with cell count
       doc.setFontSize(9);
-      doc.text(`${index + 1}. ${highlight.message}`, 24, yPos);
+      doc.text(`${index + 1}. ${highlight.message} (${highlight.count} hücre)`, 24, yPos);
+      
+      // Add cell details if not too many
+      if (highlight.cells.length <= 10) {
+        yPos += 5;
+        doc.setFontSize(8);
+        const cellsText = highlight.cells.map((c: any) => `${c.col}:${c.row}`).join(', ');
+        doc.text(`   Hücreler: ${cellsText}`, 24, yPos);
+      }
       
       yPos += 8;
     });
+    
+    // Add summary statistics
+    yPos += 5;
+    doc.setFontSize(10);
+    doc.text(`Toplam uyarı sayısı: ${highlightedCells.length}`, 14, yPos);
   }
   
   // Add formula explanations if requested

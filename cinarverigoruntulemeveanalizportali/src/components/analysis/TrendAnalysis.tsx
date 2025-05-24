@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, TooltipItem } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { FcPrint } from 'react-icons/fc';
+
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
@@ -41,7 +41,7 @@ export default function TrendAnalysis({
   const [selectedVariable, setSelectedVariable] = useState<string>('');
   const [dateColumns, setDateColumns] = useState<string[]>([]);
   const [startDate, setStartDate] = useState<string>('');
-  const [chartColor, setChartColor] = useState<string>('#3b82f6'); // Default blue color
+  const [chartColor] = useState<string>('#3b82f6'); // Default blue color
   const chartRef = useRef<HTMLDivElement>(null);
 
   // Handle table selection
@@ -66,6 +66,7 @@ export default function TrendAnalysis({
 
       try {
         setIsLoading(true);
+        setError(''); // Clear previous errors
         const response = await fetch(`/api/workspaces/${workspaceId}/tables/${effectiveTableId}`);
         if (!response.ok) {
           throw new Error('Tablo verisi yüklenemedi');
@@ -74,30 +75,51 @@ export default function TrendAnalysis({
         const data = await response.json();
         setTableData(data);
 
+        // Check if table has required structure
+        if (!data.columns || !Array.isArray(data.columns) || data.columns.length === 0) {
+          setError('Tablo yapısı uygun değil. Lütfen uygun formatta bir tablo seçin.');
+          return;
+        }
+
         // Extract variables (from the "Variable" column)
         const variableColumnIndex = data.columns.findIndex(
           (col: string) => col.toLowerCase() === 'variable'
         );
 
-        if (variableColumnIndex !== -1) {
-          const uniqueVariables = Array.from(
-            new Set(
-              data.data
-                .map((row: (string | number | null)[]) => row[variableColumnIndex])
-                .filter((val: string | number | null) => val !== null && val !== '')
-            )
-          ) as string[];
+        if (variableColumnIndex === -1) {
+          setError('Bu tablo analiz için uygun değil. "Variable" sütunu bulunamadı.');
+          setVariables([]);
+          setSelectedVariable('');
+          return;
+        }
 
-          setVariables(uniqueVariables);
-          if (uniqueVariables.length > 0) {
-            setSelectedVariable(uniqueVariables[0]);
-          }
+        const uniqueVariables = Array.from(
+          new Set(
+            data.data
+              .map((row: (string | number | null)[]) => row[variableColumnIndex])
+              .filter((val: string | number | null) => val !== null && val !== '')
+          )
+        ) as string[];
+
+        if (uniqueVariables.length === 0) {
+          setError('Tabloda analiz edilecek değişken bulunamadı.');
+          return;
+        }
+
+        setVariables(uniqueVariables);
+        if (uniqueVariables.length > 0) {
+          setSelectedVariable(uniqueVariables[0]);
         }
 
         // Extract date columns (all columns except standard ones)
         const standardColumns = ['Data Source', 'Variable', 'Method', 'Unit', 'LOQ'];
         const dates = data.columns.filter((col: string) => !standardColumns.includes(col));
         
+        if (dates.length === 0) {
+          setError('Tabloda tarih sütunu bulunamadı. Trend analizi için en az bir tarih sütunu gereklidir.');
+          return;
+        }
+
         setDateColumns(dates);
         if (dates.length > 0) {
           setStartDate(dates[0]);

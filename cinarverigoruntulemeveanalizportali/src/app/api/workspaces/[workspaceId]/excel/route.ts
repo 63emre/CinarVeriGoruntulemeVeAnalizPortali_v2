@@ -5,12 +5,10 @@ import { parseExcelFile, saveExcelData } from '@/lib/excel/excel-service';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Use await to properly access params
-    const workspaceId = await params.workspaceId;
-    
+    const { workspaceId } = await params;
     const user = await getCurrentUser();
     
     if (!user) {

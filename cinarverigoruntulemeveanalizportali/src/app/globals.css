@@ -1,16 +1,20 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 @import "./theme-overrides.css";
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --font-inter: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', Menlo, Monaco, Consolas, monospace;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-mono);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,7 +34,36 @@ html, body, #__next {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  font-weight: 400;
+  line-height: 1.6;
   min-height: 100vh;
   overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Improve text readability */
+* {
+  font-variant-ligatures: common-ligatures;
+}
+
+/* Professional heading styles */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-inter);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.025em;
+}
+
+/* Button and form styling improvements */
+button, input, select, textarea {
+  font-family: var(--font-inter);
+}
+
+/* Code and monospace elements */
+code, pre, .font-mono {
+  font-family: var(--font-mono);
+  font-feature-settings: 'liga' 0;
 }

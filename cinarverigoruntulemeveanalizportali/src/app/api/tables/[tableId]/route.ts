@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_: Request, { params }: { params: { tableId: string } }) {
   try {
     const user = await getCurrentUser();
     
@@ -13,12 +13,12 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
       );
     }
 
-    const { id } = params;
+    const { tableId } = params;
 
     // Check if table exists and user has access to it
     const table = await prisma.dataTable.findFirst({
       where: {
-        id,
+        id: tableId,
         workspace: {
           OR: [
             { createdBy: user.id },
@@ -43,7 +43,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
 
     // Delete the table
     await prisma.dataTable.delete({
-      where: { id },
+      where: { id: tableId },
     });
 
     return NextResponse.json({ message: 'Tablo başarıyla silindi' });

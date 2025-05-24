@@ -1,7 +1,16 @@
 'use client';
 
 import { Suspense } from 'react';
-import AnalysisContent from '@/components/analysis/AnalysisContent';
+import { useSearchParams } from 'next/navigation';
+import MultiChartAnalysis from '@/components/analysis/MultiChartAnalysis';
+
+function AnalysisContent() {
+  const searchParams = useSearchParams();
+  const workspaceId = searchParams.get('workspaceId') || '';
+  const tableId = searchParams.get('tableId') || undefined;
+
+  return <MultiChartAnalysis workspaceId={workspaceId} tableId={tableId} />;
+}
 
 export default function AnalysisPage() {
   return (

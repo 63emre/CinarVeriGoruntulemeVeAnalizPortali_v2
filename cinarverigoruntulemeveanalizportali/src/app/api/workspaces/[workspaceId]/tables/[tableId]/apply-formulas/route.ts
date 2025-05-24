@@ -18,12 +18,11 @@ interface FormulaRequest {
 // POST /api/workspaces/[workspaceId]/tables/[tableId]/apply-formulas
 export async function POST(
   request: NextRequest,
-  { params }: { params: { workspaceId: string; tableId: string } }
+  { params }: { params: Promise<{ workspaceId: string; tableId: string }> }
 ) {
   try {
-    // Access params directly
-    const workspaceId = params.workspaceId;
-    const tableId = params.tableId;
+    // Await params in Next.js 15
+    const { workspaceId, tableId } = await params;
 
     // Get current user for authorization
     const currentUser = await getCurrentUser();
@@ -184,7 +183,7 @@ export async function POST(
                 if (colIndex !== -1) {
                   // Add the specific cell to highlight with consistent row ID format
                   const highlightCell = {
-                    row: `row-${actualRowIndex}`, // Ensure consistent row ID format
+                    row: `row-${actualRowIndex + 1}`, // Use 1-based indexing to match table components
                     col: varName, // Use the variable name as column identifier
                     color: formula.color || '#ff0000',
                     message: `${formula.name}: ${result.message || 'Koşul sağlanmadı'}`

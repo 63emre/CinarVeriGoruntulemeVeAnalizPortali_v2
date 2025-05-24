@@ -27,11 +27,11 @@ export interface FormulaCondition {
 // GET: Get all formulas for a workspace
 export async function GET(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Access params directly
-    const workspaceId = params.workspaceId;
+    // Next.js 15: await params
+    const { workspaceId } = await params;
 
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -93,11 +93,11 @@ export async function GET(
 // POST: Create a new formula
 export async function POST(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Access params directly
-    const workspaceId = params.workspaceId;
+    // Next.js 15: await params
+    const { workspaceId } = await params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -196,11 +196,11 @@ export async function POST(
 // DELETE: Delete a formula
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Use await to properly access params
-    const workspaceId = await params.workspaceId;
+    // Next.js 15: await params
+    const { workspaceId } = await params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {

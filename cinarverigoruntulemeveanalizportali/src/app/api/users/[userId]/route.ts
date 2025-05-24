@@ -6,7 +6,7 @@ import { Prisma } from '@/generated/prisma';
 // GET: Get a specific user
 export async function GET(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ userId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -18,10 +18,10 @@ export async function GET(
       );
     }
 
-    const { id } = await context.params;
+    const { userId } = await context.params;
 
     // Check if user is admin or requesting their own profile
-    if (user.role !== 'ADMIN' && user.id !== id) {
+    if (user.role !== 'ADMIN' && user.id !== userId) {
       return NextResponse.json(
         { message: 'Bu işlem için yetkiniz bulunmamaktadır' },
         { status: 403 }
@@ -29,7 +29,7 @@ export async function GET(
     }
 
     const targetUser = await prisma.user.findUnique({
-      where: { id },
+      where: { id: userId },
       select: {
         id: true,
         name: true,
@@ -70,7 +70,7 @@ export async function GET(
 // PUT: Update a user
 export async function PUT(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ userId: string }> }
 ) {
   try {
     const currentUser = await getCurrentUser();
@@ -82,10 +82,10 @@ export async function PUT(
       );
     }
 
-    const { id } = await context.params;
+    const { userId } = await context.params;
     
     // Check if current user is admin or updating their own profile
-    if (currentUser.role !== 'ADMIN' && currentUser.id !== id) {
+    if (currentUser.role !== 'ADMIN' && currentUser.id !== userId) {
       return NextResponse.json(
         { message: 'Bu işlem için yetkiniz bulunmamaktadır' },
         { status: 403 }
@@ -104,7 +104,7 @@ export async function PUT(
 
     // Check if user exists
     const userExists = await prisma.user.findUnique({
-      where: { id },
+      where: { id: userId },
     });
 
     if (!userExists) {
@@ -119,7 +119,7 @@ export async function PUT(
       const emailExists = await prisma.user.findFirst({
         where: {
           email,
-          id: { not: id },
+          id: { not: userId },
         },
       });
 
@@ -144,19 +144,19 @@ export async function PUT(
       const updatedUser = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         // Update user details
         const user = await tx.user.update({
-          where: { id },
+          where: { id: userId },
           data: updateData,
         });
 
         // Update workspace assignments if needed
         await tx.workspaceUser.deleteMany({
-          where: { userId: id },
+          where: { userId: userId },
         });
 
         if (workspaceIds.length > 0) {
           await tx.workspaceUser.createMany({
             data: workspaceIds.map((workspaceId: string) => ({
-              userId: id,
+              userId: userId,
               workspaceId,
             })),
             skipDuplicates: true,
@@ -178,7 +178,7 @@ export async function PUT(
     } else {
       // Update user without changing workspaces
       const updatedUser = await prisma.user.update({
-        where: { id },
+        where: { id: userId },
         data: updateData,
       });
 
@@ -204,7 +204,7 @@ export async function PUT(
 // DELETE: Delete a user
 export async function DELETE(
   request: NextRequest,
-  context: { params: Promise<{ id: string }> }
+  context: { params: Promise<{ userId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -224,11 +224,11 @@ export async function DELETE(
       );
     }
 
-    const { id } = await context.params;
+    const { userId } = await context.params;
 
     // Prevent deleting the admin user
     const targetUser = await prisma.user.findUnique({
-      where: { id },
+      where: { id: userId },
     });
 
     if (!targetUser) {
@@ -239,7 +239,7 @@ export async function DELETE(
     }
 
     // Don't allow deleting the default admin or yourself
-    if (targetUser.email === 'admin@cinar.com' || id === user.id) {
+    if (targetUser.email === 'admin@cinar.com' || userId === user.id) {
       return NextResponse.json(
         { message: 'Bu kullanıcı silinemez' },
         { status: 403 }
@@ -248,7 +248,7 @@ export async function DELETE(
 
     // Delete the user (cascade delete will handle user-workspace relations)
     await prisma.user.delete({
-      where: { id },
+      where: { id: userId },
     });
 
     return NextResponse.json({

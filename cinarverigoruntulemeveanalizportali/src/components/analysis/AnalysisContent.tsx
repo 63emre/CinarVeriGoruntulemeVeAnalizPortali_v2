@@ -14,10 +14,21 @@ interface Table {
   name: string;
 }
 
+interface AnalysisData {
+  variables: string[];
+  dateColumns: string[];
+  tableData: {
+    columns: string[];
+    data: (string | number | null)[][];
+    name: string;
+  };
+}
+
 export default function AnalysisContent() {
   const router = useRouter();
   const [selectedVariable, setSelectedVariable] = useState('');
   const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [chartColor, setChartColor] = useState('#3b82f6'); // Default blue color
   
   // Add workspace and table selection states
@@ -28,6 +39,8 @@ export default function AnalysisContent() {
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [loadingTables, setLoadingTables] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
+  const [loading, setLoading] = useState(false);
   
   // Fetch workspaces on component mount
   useEffect(() => {
@@ -95,72 +108,157 @@ export default function AnalysisContent() {
     
     fetchTables();
   }, [selectedWorkspace]);
+
+  // Fetch analysis data when table is selected
+  useEffect(() => {
+    if (!selectedWorkspace || !selectedTable) {
+      setAnalysisData(null);
+      return;
+    }
+    
+    const fetchAnalysisData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const response = await fetch(`/api/workspaces/${selectedWorkspace}/tables/${selectedTable}`);
+        
+        if (!response.ok) {
+          throw new Error('Tablo verileri yüklenirken bir hata oluştu');
+        }
+        
+        const data = await response.json();
+        
+        // Extract variables from the table data
+        const variableColumnIndex = data.columns.findIndex((col: string) => col === 'Variable');
+        let variables: string[] = [];
+        
+        if (variableColumnIndex !== -1) {
+          const uniqueVars = new Set<string>();
+          data.data.forEach((row: (string | number | null)[]) => {
+            const varValue = row[variableColumnIndex];
+            if (varValue && typeof varValue === 'string' && varValue.trim() !== '') {
+              uniqueVars.add(varValue);
+            }
+          });
+          variables = Array.from(uniqueVars);
+        }
+        
+        // Identify date columns
+        const standardColumns = ['id', 'Variable', 'Data Source', 'Method', 'Unit', 'LOQ'];
+        const dateColumns = data.columns.filter(
+          (col: string) => !standardColumns.includes(col)
+        );
+        
+        setAnalysisData({
+          variables,
+          dateColumns,
+          tableData: data
+        });
+        
+        // Set default selections
+        if (variables.length > 0 && !selectedVariable) {
+          setSelectedVariable(variables[0]);
+        }
+        if (dateColumns.length > 0) {
+          if (!startDate) setStartDate(dateColumns[0]);
+          if (!endDate) setEndDate(dateColumns[dateColumns.length - 1]);
+        }
+        
+      } catch (err) {
+        console.error('Error fetching analysis data:', err);
+        setError((err as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchAnalysisData();
+  }, [selectedWorkspace, selectedTable]);
   
   // Handle workspace change
   const handleWorkspaceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const workspaceId = e.target.value;
     setSelectedWorkspace(workspaceId);
     setSelectedTable(''); // Reset table selection when workspace changes
+    setAnalysisData(null); // Reset analysis data
+    setSelectedVariable('');
+    setStartDate('');
+    setEndDate('');
   };
   
   // Handle table change
   const handleTableChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const tableId = e.target.value;
     setSelectedTable(tableId);
+    setSelectedVariable('');
+    setStartDate('');
+    setEndDate('');
   };
-    // Handle view analysis
+
+  // Validate date selection
+  const isDateSelectionValid = () => {
+    if (!startDate || !endDate || !analysisData?.dateColumns) return false;
+    
+    const startIndex = analysisData.dateColumns.indexOf(startDate);
+    const endIndex = analysisData.dateColumns.indexOf(endDate);
+    
+    return startIndex <= endIndex;
+  };
+
+  // Handle view analysis - navigate to detailed analysis page
   const handleViewAnalysis = () => {
     if (selectedWorkspace && selectedTable) {
-      router.push(`/dashboard/workspaces/${selectedWorkspace}/tables/${selectedTable}`);
+      router.push(`/dashboard/workspaces/${selectedWorkspace}/analysis?tableId=${selectedTable}`);
     }
   };
-  
-  // Connect to real data
-  const [loading, setLoading] = useState(false);
-  
-  const fetchAnalysisData = async (workspaceId: string, tableId: string) => {
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/analysis`);
-      
-      if (!response.ok) {
-        throw new Error('Analiz verileri yüklenirken bir hata oluştu');
-      }
-      
-      const data = await response.json();
-      
-      // Process the data for analysis
-      console.log("Analysis data received:", data);
-      // You would set state variables for analysis data here
-      
-      return data;
-    } catch (err) {
-      console.error('Error fetching analysis data:', err);
-      setError((err as Error).message);
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Use effect to load analysis data when workspace and table are selected from URL params
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    const tableIdFromURL = searchParams.get('tableId');
-    const workspaceIdFromURL = window.location.pathname.split('/').find(
-      segment => segment.match(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/)
+
+  // Get table data for display
+  const getTableDataForDisplay = () => {
+    if (!analysisData?.tableData || !selectedVariable) return [];
+    
+    const { columns, data } = analysisData.tableData;
+    const variableColumnIndex = columns.findIndex((col: string) => col === 'Variable');
+    
+    if (variableColumnIndex === -1) return [];
+    
+    // Filter rows for selected variable
+    const variableRows = data.filter((row: (string | number | null)[]) => 
+      row[variableColumnIndex] === selectedVariable
     );
     
-    if (workspaceIdFromURL && tableIdFromURL) {
-      setSelectedWorkspace(workspaceIdFromURL);
-      setSelectedTable(tableIdFromURL);
+    if (variableRows.length === 0) return [];
+    
+    // Get date range
+    const dateColumns = analysisData.dateColumns;
+    let startIndex = 0;
+    let endIndex = dateColumns.length - 1;
+    
+    if (startDate && endDate) {
+      startIndex = dateColumns.indexOf(startDate);
+      endIndex = dateColumns.indexOf(endDate);
       
-      // Load real analysis data
-      fetchAnalysisData(workspaceIdFromURL, tableIdFromURL);
+      if (startIndex === -1) startIndex = 0;
+      if (endIndex === -1) endIndex = dateColumns.length - 1;
     }
-  }, []);
+    
+    // Create display data
+    const displayData = [];
+    for (let i = startIndex; i <= endIndex; i++) {
+      const dateColumn = dateColumns[i];
+      const colIndex = columns.indexOf(dateColumn);
+      const value = variableRows[0][colIndex];
+      
+      displayData.push({
+        date: dateColumn,
+        value: value,
+        unit: 'µS/cm', // This should be extracted from table data
+        status: typeof value === 'number' && value > 0 ? 'Normal' : 'Veri Yok'
+      });
+    }
+    
+    return displayData;
+  };
   
   return (
     <div className="container mx-auto p-6">
@@ -249,12 +347,12 @@ export default function AnalysisContent() {
                   : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
             >
-              Analiz Yap
+              Detaylı Analiz Yap
             </button>
           </div>
         </div>
         
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3 mb-6 opacity-50">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Değişken Seçimi
@@ -262,13 +360,15 @@ export default function AnalysisContent() {
             <select 
               value={selectedVariable}
               onChange={(e) => setSelectedVariable(e.target.value)}
-              disabled={!selectedTable}
+              disabled={!analysisData?.variables.length}
               className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
             >
               <option value="">Değişken seçin</option>
-              <option value="İletkenlik">İletkenlik</option>
-              <option value="Orto Fosfat">Orto Fosfat</option>
-              <option value="Toplam Fosfor">Toplam Fosfor</option>
+              {analysisData?.variables.map((variable) => (
+                <option key={variable} value={variable}>
+                  {variable}
+                </option>
+              ))}
             </select>
           </div>
           
@@ -279,14 +379,40 @@ export default function AnalysisContent() {
             <select
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              disabled={!selectedTable}
+              disabled={!analysisData?.dateColumns.length}
               className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
             >
               <option value="">Tarih seçin</option>
-              <option value="Nisan 22">Nisan 22</option>
-              <option value="Haziran 22">Haziran 22</option>
-              <option value="Eylül 22">Eylül 22</option>
+              {analysisData?.dateColumns.map((date) => (
+                <option key={date} value={date}>
+                  {date}
+                </option>
+              ))}
             </select>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              <FcCalendar className="inline mr-1" /> Bitiş Tarihi
+            </label>
+            <select
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              disabled={!analysisData?.dateColumns.length}
+              className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
+            >
+              <option value="">Tarih seçin</option>
+              {analysisData?.dateColumns.map((date) => (
+                <option key={date} value={date}>
+                  {date}
+                </option>
+              ))}
+            </select>
+            {startDate && endDate && !isDateSelectionValid() && (
+              <p className="text-red-500 text-xs mt-1">
+                Bitiş tarihi başlangıç tarihinden sonra olmalıdır
+              </p>
+            )}
           </div>
           
           <div>
@@ -304,28 +430,41 @@ export default function AnalysisContent() {
         </div>
         
         <div className="bg-gray-100 border border-gray-200 rounded-md p-10 flex items-center justify-center min-h-[400px]">
-          {!selectedWorkspace || !selectedTable ? (
+          {loading ? (
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+          ) : !selectedWorkspace || !selectedTable ? (
             <p className="text-gray-500">
               Lütfen önce çalışma alanı ve tablo seçimi yapın
             </p>
-          ) : selectedVariable && startDate ? (
-            <p className="text-xl">
-              Grafik alanı: {selectedVariable} değerlerinin {startDate} tarihinden itibaren trendi
-            </p>
+          ) : !analysisData ? (
+            <p className="text-gray-500">Veri yükleniyor...</p>
+          ) : selectedVariable && startDate && endDate && isDateSelectionValid() ? (
+            <div className="text-center">
+              <p className="text-xl mb-4">
+                {selectedVariable} Trend Grafiği
+              </p>
+              <p className="text-gray-600">
+                {startDate} - {endDate} dönemi için analiz
+              </p>
+              <p className="text-sm text-gray-500 mt-2">
+                Detaylı grafik için &quot;Detaylı Analiz Yap&quot; butonunu kullanın
+              </p>
+            </div>
           ) : (
             <p className="text-gray-500">
-              Grafik görüntülemek için lütfen değişken ve başlangıç tarihi seçin
+              Grafik görüntülemek için lütfen tüm parametreleri seçin
             </p>
           )}
         </div>
       </div>
       
       <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex justify-end mb-4">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Veri Önizleme</h2>
           <button
-            disabled={!selectedWorkspace || !selectedTable}
+            disabled={!selectedWorkspace || !selectedTable || !selectedVariable}
             className={`flex items-center ${
-              !selectedWorkspace || !selectedTable
+              !selectedWorkspace || !selectedTable || !selectedVariable
                 ? 'bg-gray-300 cursor-not-allowed text-gray-500'
                 : 'bg-blue-600 hover:bg-blue-700 text-white'
             } font-medium py-2 px-4 rounded-md transition`}
@@ -348,28 +487,54 @@ export default function AnalysisContent() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {!selectedWorkspace || !selectedTable ? (
-                <tr>
-                  <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
-                    Veri görmek için çalışma alanı ve tablo seçimi yapın
-                  </td>
-                </tr>
-              ) : (
-                <>
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Eylül 22</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">348</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">µS/cm</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">Normal</td>
+              {(() => {
+                const tableData = getTableDataForDisplay();
+                
+                if (!selectedWorkspace || !selectedTable) {
+                  return (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                        Veri görmek için çalışma alanı ve tablo seçimi yapın
+                      </td>
+                    </tr>
+                  );
+                }
+                
+                if (!selectedVariable) {
+                  return (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                        Veri görmek için değişken seçimi yapın
+                      </td>
+                    </tr>
+                  );
+                }
+                
+                if (tableData.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                        Seçilen kriterlere uygun veri bulunamadı
+                      </td>
+                    </tr>
+                  );
+                }
+                
+                return tableData.map((row, index) => (
+                  <tr key={index}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.date}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {row.value !== null && row.value !== undefined ? row.value : '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.unit}</td>
+                    <td className={`px-6 py-4 whitespace-nowrap text-sm ${
+                      row.status === 'Normal' ? 'text-green-600' : 'text-gray-500'
+                    }`}>
+                      {row.status}
+                    </td>
                   </tr>
-                  <tr>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">Aralık 22</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">342</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">µS/cm</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600">Normal</td>
-                  </tr>
-                </>
-              )}
+                ));
+              })()}
             </tbody>
           </table>
         </div>

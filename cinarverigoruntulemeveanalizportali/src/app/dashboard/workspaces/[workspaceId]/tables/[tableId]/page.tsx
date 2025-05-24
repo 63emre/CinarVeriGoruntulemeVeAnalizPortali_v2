@@ -1,12 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { FcRules, FcReuse, FcPlus, FcAreaChart } from 'react-icons/fc';
-import EditableDataTable from '@/components/tables/EditableDataTable';
-import FormulaSelector from '@/components/formulas/FormulaSelector';
-import DropdownFormulaEditor from '@/components/formulas/DropdownFormulaEditor';
 import Link from 'next/link';
+import { FcAreaChart, FcRules, FcReuse, FcPlus } from 'react-icons/fc';
+import EditableDataTable from '@/components/tables/EditableDataTable';import FormulaSelector from '@/components/formulas/FormulaSelector';
 
 interface TableData {
   id: string;
@@ -23,27 +21,6 @@ interface HighlightedCell {
   col: string;
   color: string;
   message: string;
-}
-
-type ArithmeticOperator = '+' | '-' | '*' | '/';
-type ComparisonOperator = '>' | '<' | '>=' | '<=' | '==' | '!=';
-type LogicalOperator = 'AND' | 'OR';
-
-interface FormulaTerm {
-  value: string;
-  isVariable: boolean;
-}
-
-interface FormulaExpression {
-  terms: FormulaTerm[];
-  operators: ArithmeticOperator[];
-}
-
-interface FormulaCondition {
-  leftExpression: FormulaExpression;
-  comparisonOperator: ComparisonOperator;
-  rightExpression: FormulaExpression;
-  logicalOperator: LogicalOperator;
 }
 
 interface Formula {
@@ -67,18 +44,21 @@ export default function TablePage() {
   const [activeFormulas, setActiveFormulas] = useState<string[]>([]);
   const [highlightedCells, setHighlightedCells] = useState<HighlightedCell[]>([]);
   const [selectedVariable, setSelectedVariable] = useState<string | null>(null);
-  const [selectedCell, setSelectedCell] = useState<{rowId: string, colId: string, value: string | number | null} | null>(null);
   const [showFormulaSidebar, setShowFormulaSidebar] = useState(false);
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [variables, setVariables] = useState<string[]>([]);
-  const [newFormula, setNewFormula] = useState({
-    name: '',
-    formula: '',
-    type: 'CELL_VALIDATION' as 'CELL_VALIDATION' | 'RELATIONAL',
-    color: '#ef4444'
-  });
-  const [creatingFormula, setCreatingFormula] = useState(false);
-  const [formulaSuccess, setFormulaSuccess] = useState('');
+
+  // ESC key handling
+  const handleEscKey = useCallback((event: KeyboardEvent) => {
+    if (event.key === 'Escape' && showFormulaSidebar) {
+      setShowFormulaSidebar(false);
+    }
+  }, [showFormulaSidebar]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleEscKey);
+    return () => document.removeEventListener('keydown', handleEscKey);
+  }, [handleEscKey]);
 
   useEffect(() => {
     const fetchTableData = async () => {
@@ -145,9 +125,6 @@ export default function TablePage() {
 
   // Handle cell selection for variable identification
   const handleCellSelect = (rowId: string, colId: string, value: string | number | null) => {
-    setSelectedCell({rowId, colId, value});
-    
-    // If the Variable column is selected, update the selectedVariable
     if (colId === 'Variable' && typeof value === 'string') {
       setSelectedVariable(value);
     }
@@ -175,21 +152,11 @@ export default function TablePage() {
       }
       
       const result = await response.json();
-      console.log("Formula application result:", result);      // Process highlighted cells
+      console.log("Formula application result:", result);
+      
       if (result.highlightedCells && result.highlightedCells.length > 0) {
         console.log(`Received ${result.highlightedCells.length} highlighted cells:`, result.highlightedCells);
-        
-        // Log each cell format to help with debugging
-        result.highlightedCells.forEach((cell: HighlightedCell, index: number) => {
-          console.log(`Cell ${index}: row=${cell.row}, col=${cell.col}, color=${cell.color}`);
-        });
-        
         setHighlightedCells(result.highlightedCells);
-        
-        // Also log the current table row format
-        if (table && table.data && table.data.length > 0) {
-          console.log(`Table row ID format sample: row-0, table uses formats like: 'row-0', 'row-1', etc.`);
-        }
       } else {
         console.log("No highlighted cells received");
         setHighlightedCells([]);
@@ -201,20 +168,18 @@ export default function TablePage() {
       setLoading(false);
     }
   };
+
   // Handle PDF export
   const exportToPdf = async () => {
     try {
       setLoading(true);
       
-      // Prepare highlighted cells data
       const preparedHighlightedCells = highlightedCells?.map(cell => ({
         row: cell.row,
         col: cell.col,
         color: cell.color,
         message: cell.message
       })) || [];
-      
-      console.log("Sending highlighted cells:", JSON.stringify(preparedHighlightedCells));
       
       const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/pdf`, {
         method: 'POST',
@@ -231,10 +196,7 @@ export default function TablePage() {
         throw new Error(`Error generating PDF: ${response.statusText}`);
       }
       
-      // Get the PDF as a blob
       const blob = await response.blob();
-      
-      // Create a download link and trigger download
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -242,7 +204,6 @@ export default function TablePage() {
       document.body.appendChild(a);
       a.click();
       
-      // Clean up
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (err) {
@@ -253,94 +214,57 @@ export default function TablePage() {
     }
   };
 
-  // Create a new formula
-  const createFormula = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!newFormula.name || !newFormula.formula) {
-      setError('Formül adı ve formül ifadesi gereklidir');
-      return;
-    }
-    
+  // Handle formula toggling
+  const handleToggleFormula = async (formulaId: string, active: boolean) => {
     try {
-      setCreatingFormula(true);
-      
-      const response = await fetch(`/api/workspaces/${workspaceId}/formulas`, {
-        method: 'POST',
+      setLoading(true);
+      const response = await fetch(`/api/workspaces/${workspaceId}/formulas/${formulaId}/toggle`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          name: newFormula.name,
-          description: `Tablo için oluşturulmuş ${newFormula.type === 'CELL_VALIDATION' ? 'Hücre Doğrulama' : 'Oran ve Toplam İlişkisi'} formülü`,
-          formula: newFormula.formula,
-          color: newFormula.color,
-          type: newFormula.type,
-          tableId: tableId,
-        }),
+        body: JSON.stringify({ active }),
       });
       
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Formül eklenirken bir hata oluştu');
+        throw new Error(`Error toggling formula: ${response.statusText}`);
       }
       
-      const formula = await response.json();
-      
-      // Add the new formula to the list
-      setFormulas([...formulas, formula]);
-      
-      // Reset form
-      setNewFormula({
-        name: '',
-        formula: '',
-        type: 'CELL_VALIDATION',
-        color: '#ef4444'
-      });
-      
-      setFormulaSuccess('Formül başarıyla eklendi');
-      
-      // Clear success message after 3 seconds
-      setTimeout(() => {
-        setFormulaSuccess('');
-      }, 3000);
+      const updatedFormula = await response.json();
+      setFormulas(prevFormulas => prevFormulas.map(formula =>
+        formula.id === formulaId ? updatedFormula : formula
+      ));
     } catch (err) {
       setError((err as Error).message);
+      console.error('Error toggling formula:', err);
     } finally {
-      setCreatingFormula(false);
+      setLoading(false);
     }
   };
 
-  // Handle formula building from dropdown editor
-  const handleFormulaBuild = (formula: string, conditions: FormulaCondition[]) => {
-    // Update the formula in the state with the formatted string
-    setNewFormula({
-      ...newFormula,
-      formula: formula
-    });
-    
-    // Log the conditions for debugging
-    console.log('Formula conditions:', conditions);
-    
-    // Detailed logging to help debug formula creation
-    console.log('Formula string:', formula);
-    
-    // For each condition, log the variables being used
-    conditions.forEach((condition, index) => {
-      console.log(`Condition ${index + 1}:`);
+  // Handle formula deletion
+  const handleDeleteFormula = async (formulaId: string) => {
+    if (!confirm('Bu formülü silmek istediğinizden emin misiniz?')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/workspaces/${workspaceId}/formulas/${formulaId}`, {
+        method: 'DELETE',
+      });
       
-      // Log variables in left expression
-      const leftVariables = condition.leftExpression.terms
-        .filter(term => term.isVariable && term.value)
-        .map(term => term.value);
-      console.log('Left side variables:', leftVariables);
+      if (!response.ok) {
+        throw new Error(`Error deleting formula: ${response.statusText}`);
+      }
       
-      // Log variables in right expression
-      const rightVariables = condition.rightExpression.terms
-        .filter(term => term.isVariable && term.value)
-        .map(term => term.value);
-      console.log('Right side variables:', rightVariables);
-    });
+      setFormulas(prevFormulas => prevFormulas.filter(formula => formula.id !== formulaId));
+    } catch (err) {
+      setError((err as Error).message);
+      console.error('Error deleting formula:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (loading && !table) {
@@ -371,7 +295,6 @@ export default function TablePage() {
     type: 'string'
   })) || [];
   
-  // Convert table rows to the format expected by EditableDataTable component
   const tableRows = table?.data?.map((row, rowIndex) => {
     const rowData: { [key: string]: string | number | null, id: string } = { id: `row-${rowIndex + 1}` };
     table.columns.forEach((col, colIndex) => {
@@ -387,7 +310,7 @@ export default function TablePage() {
           <div className="flex items-center space-x-2 mb-6">
             <div className="flex-1">
               <h1 className="text-2xl font-semibold text-black">
-                {table ? table.name : 'Tablo Yükleniyor...'}
+                {table.name}
               </h1>
             </div>
             <div className="flex space-x-2">
@@ -408,17 +331,13 @@ export default function TablePage() {
                 }`}
               >
                 <FcRules className="mr-2" />
-                {showFormulaSidebar ? 'Formülleri Gizle' : 'Formülleri Göster'}
+                {showFormulaSidebar ? 'Formülleri Gizle (ESC)' : 'Formülleri Göster'}
               </button>
               
               <button
                 onClick={applyFormulas}
                 disabled={activeFormulas.length === 0 || loading}
-                className={`px-4 py-2 rounded-md flex items-center ${
-                  activeFormulas.length === 0 || loading
-                    ? 'bg-gray-300 cursor-not-allowed'
-                    : 'bg-green-600 hover:bg-green-700 text-white'
-                }`}
+                                className={`px-4 py-2 rounded-md flex items-center ${                  activeFormulas.length === 0 || loading                    ? 'bg-slate-300 cursor-not-allowed text-slate-600'                    : 'bg-green-600 hover:bg-green-700 text-white'                }`}
               >
                 <FcReuse className="mr-2 bg-white rounded-full" />
                 {loading ? 'İşleniyor...' : 'Formülleri Uygula'}
@@ -450,7 +369,6 @@ export default function TablePage() {
                   highlightedCells={highlightedCells}
                   onCellSelect={handleCellSelect}
                   onDataChange={(updatedData) => {
-                    // Convert the updated data back to the original format
                     const updatedTableData = table.data.map((_, rowIndex) => {
                       const rowData = updatedData.find(row => row.id === `row-${rowIndex + 1}`);
                       return table.columns.map(col => rowData ? rowData[col] : null);
@@ -467,12 +385,91 @@ export default function TablePage() {
             
             <div className={`${showFormulaSidebar ? 'lg:col-span-3' : 'hidden'}`}>
               <div className="space-y-4">
+                {/* Formula Management Panel */}
                 <div className="bg-white shadow-md rounded-lg p-4 mb-4">
-                  <h3 className="text-lg font-semibold text-black mb-4">Formül Seçimi</h3>
-                  <FormulaSelector
-                    workspaceId={workspaceId}
-                    onSelectionChange={handleFormulaChange}
-                  />
+                  <h3 className="text-lg font-semibold text-black mb-4 flex items-center">
+                    <FcRules className="mr-2" />
+                    Formül Yönetimi
+                  </h3>
+                  
+                  {/* Active Formulas List */}
+                  <div className="mb-6">
+                    <h4 className="font-medium text-gray-700 mb-3">Mevcut Formüller</h4>
+                    {formulas.length === 0 ? (
+                      <p className="text-gray-500 text-sm">Bu workspace için henüz formül eklenmemiş.</p>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {formulas.map((formula) => (
+                          <div 
+                            key={formula.id} 
+                            className="border border-blue-200 rounded-lg p-3 hover:bg-blue-50 transition-colors shadow-sm"
+                          >
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <div className="flex items-center mb-2">
+                                  <div 
+                                    className="w-4 h-4 rounded-full mr-2 border border-gray-300"
+                                    style={{ backgroundColor: formula.color }}
+                                  ></div>
+                                  <h5 className="font-medium text-gray-800">{formula.name}</h5>
+                                                                    <span className={`ml-2 px-2 py-1 text-xs rounded-full ${                                    formula.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'                                  }`}>
+                                    {formula.active ? 'Aktif' : 'Pasif'}
+                                  </span>
+                                </div>
+                                {formula.description && (
+                                  <p className="text-sm text-gray-600 mb-2">{formula.description}</p>
+                                )}
+                                                                <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-2">                                  <code className="text-xs text-blue-900 font-mono">{formula.formula}</code>                                </div>
+                                <div className="flex items-center text-xs text-gray-500">
+                                  <span className="mr-3">Tip: {formula.type === 'CELL_VALIDATION' ? 'Hücre Doğrulama' : 'İlişkisel'}</span>
+                                </div>
+                              </div>
+                              
+                              <div className="flex flex-col space-y-1 ml-3">
+                                <button
+                                  onClick={() => handleToggleFormula(formula.id, !formula.active)}
+                                  className={`p-1 rounded ${
+                                    formula.active 
+                                      ? 'text-orange-600 hover:bg-orange-100' 
+                                      : 'text-green-600 hover:bg-green-100'
+                                  }`}
+                                  title={formula.active ? 'Pasifleştir' : 'Aktifleştir'}
+                                >
+                                  {formula.active ? (
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728L5.636 5.636m12.728 12.728L5.636 5.636" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteFormula(formula.id)}
+                                  className="p-1 text-red-600 hover:bg-red-100 rounded"
+                                  title="Sil"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Formula Selection for Application */}
+                  <div className="border-t pt-4">
+                    <h4 className="font-medium text-gray-700 mb-3">Tabloya Uygula</h4>
+                    <FormulaSelector
+                      workspaceId={workspaceId}
+                      onSelectionChange={handleFormulaChange}
+                    />
+                  </div>
                   
                   <div className="mt-4 border-t pt-4">
                     <Link 
@@ -480,122 +477,33 @@ export default function TablePage() {
                       className="text-blue-600 hover:text-blue-800 text-sm flex items-center"
                     >
                       <FcRules className="mr-2" />
-                      Tüm Formülleri Yönet
+                      Gelişmiş Formül Yönetimi
                     </Link>
                   </div>
                 </div>
-                
-                <div className="bg-white shadow-md rounded-lg p-4">
-                  <h3 className="text-lg font-semibold text-black mb-4 flex items-center">
-                    <FcPlus className="mr-2" />
-                    Hızlı Formül Oluştur
+
+                {/* Formula Editor Placeholder */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                  <FcRules className="mx-auto text-4xl mb-3" />
+                  <h3 className="text-lg font-semibold text-blue-900 mb-2">
+                    Formül Oluştur ve Düzenle
                   </h3>
-                  
-                  {formulaSuccess && (
-                    <div className="bg-green-100 border border-green-400 text-green-700 px-3 py-2 rounded relative mb-4">
-                      <span className="block sm:inline text-sm">{formulaSuccess}</span>
-                    </div>
-                  )}
-                  
-                  <form onSubmit={createFormula}>
-                    <div className="mb-3">
-                      <label htmlFor="formula-name" className="block text-sm font-medium text-gray-800 mb-1">
-                        Formül Adı
-                      </label>
-                      <input
-                        type="text"
-                        id="formula-name"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
-                        value={newFormula.name}
-                        onChange={(e) => setNewFormula({...newFormula, name: e.target.value})}
-                        placeholder="Örn: Siyanür > LOQ"
-                      />
-                    </div>
-                    
-                    <div className="mb-3">
-                      <label htmlFor="formula-type" className="block text-sm font-medium text-gray-800 mb-1">
-                        Formül Tipi
-                      </label>
-                      <select
-                        id="formula-type"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
-                        value={newFormula.type}
-                        onChange={(e) => setNewFormula({...newFormula, type: e.target.value as 'CELL_VALIDATION' | 'RELATIONAL'})}
-                      >
-                        <option value="CELL_VALIDATION">Hücre Doğrulama</option>
-                        <option value="RELATIONAL">Oran İlişkisi</option>
-                      </select>
-                    </div>
-                    
-                    <div className="mb-3">
-                      <label htmlFor="formula-expression" className="block text-sm font-medium text-gray-800 mb-1">
-                        Formül İfadesi
-                      </label>
-                      <textarea
-                        id="formula-expression"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900"
-                        rows={4}
-                        value={newFormula.formula}
-                        onChange={(e) => setNewFormula({...newFormula, formula: e.target.value})}
-                        placeholder="Örn: [Toplam Fosfor] > [Orto Fosfat]"
-                        readOnly
-                      />
-                      <p className="text-xs text-gray-600 mt-1">
-                        Formül aşağıdaki formül oluşturucudan otomatik olarak oluşturulacaktır.
-                      </p>
-                    </div>
-                    
-                    <div className="mb-4">
-                      <label htmlFor="formula-color" className="block text-sm font-medium text-gray-800 mb-1">
-                        Vurgulama Rengi
-                      </label>
-                      <div className="flex items-center">
-                        <input
-                          type="color"
-                          id="formula-color"
-                          className="h-8 w-8 border-0"
-                          value={newFormula.color}
-                          onChange={(e) => setNewFormula({...newFormula, color: e.target.value})}
-                        />
-                        <span className="ml-2 text-sm text-gray-700">{newFormula.color}</span>
-                      </div>
-                    </div>
-                    
-                    <button
-                      type="submit"
-                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:bg-gray-400"
-                      disabled={!newFormula.name || !newFormula.formula || creatingFormula}
-                    >
-                      {creatingFormula ? 'Oluşturuluyor...' : 'Formül Oluştur'}
-                    </button>
-                  </form>
+                  <p className="text-blue-700 text-sm mb-4">
+                    Detaylı formül yönetimi için gelişmiş editörü kullanın
+                  </p>
+                  <Link 
+                    href={`/dashboard/workspaces/${workspaceId}/formulas`}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                  >
+                    <FcPlus className="mr-2" />
+                    Gelişmiş Formül Editörü
+                  </Link>
+                  <p className="text-xs text-blue-600 mt-2">
+                    ESC tuşu ile paneli kapatabilirsiniz
+                  </p>
                 </div>
-                
-                {selectedCell && (
-                  <div className="mt-4 bg-white shadow-md rounded-lg p-4">
-                    <h3 className="text-md font-semibold text-black mb-3">Seçili Hücre</h3>
-                    <div className="bg-blue-50 p-3 rounded-md">
-                      <p className="text-sm mb-1">
-                        <span className="font-semibold text-gray-800">Satır:</span> {selectedCell.rowId}
-                      </p>
-                      <p className="text-sm mb-1">
-                        <span className="font-semibold text-gray-800">Kolon:</span> {selectedCell.colId}
-                      </p>
-                      <p className="text-sm">
-                        <span className="font-semibold text-gray-800">Değer:</span> {selectedCell.value !== null ? String(selectedCell.value) : '-'}
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
-          </div>
-          
-          <div className="mt-6">
-            <DropdownFormulaEditor 
-              variables={variables}
-              onFormulaBuild={handleFormulaBuild}
-            />
           </div>
         </>
       ) : (

@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
-import { Prisma } from '@/generated/prisma';
 
 // GET: Get all workspaces for the current user
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const currentUser = await getCurrentUser();
     
@@ -22,6 +21,17 @@ export async function GET(request: NextRequest) {
       workspaces = await prisma.workspace.findMany({
         orderBy: { createdAt: 'desc' },
         include: {
+          users: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          },
           _count: {
             select: {
               tables: true,
@@ -47,6 +57,17 @@ export async function GET(request: NextRequest) {
         },
         orderBy: { createdAt: 'desc' },
         include: {
+          users: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          },
           _count: {
             select: {
               tables: true,
@@ -103,6 +124,17 @@ export async function POST(request: NextRequest) {
         }
       },
       include: {
+        users: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
+          }
+        },
         _count: {
           select: {
             tables: true,

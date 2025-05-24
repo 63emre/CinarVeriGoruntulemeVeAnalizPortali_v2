@@ -5,19 +5,19 @@ import { getCurrentUser } from '@/lib/auth/auth';
 // GET: Get a specific workspace
 export async function GET(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
-    try {
-      const currentUser = await getCurrentUser();
-      if (!currentUser) {
-        return NextResponse.json(
-          { message: 'Unauthorized' },
-          { status: 401 }
-        );
-      }
-      
-      // Correctly access params in Next.js 14
-      const workspaceId = params.workspaceId;
+  try {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
+      return NextResponse.json(
+        { message: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    
+    // Next.js 15: await params
+    const { workspaceId } = await params;
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
@@ -91,7 +91,7 @@ export async function GET(
 // PATCH: Update a workspace
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
     const currentUser = await getCurrentUser();
@@ -102,8 +102,8 @@ export async function PATCH(
       );
     }
 
-    // Access params directly
-    const workspaceId = params.workspaceId;
+    // Next.js 15: await params
+    const { workspaceId } = await params;
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
@@ -169,7 +169,7 @@ export async function PATCH(
 // DELETE: Delete a workspace
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
     const currentUser = await getCurrentUser();
@@ -180,8 +180,8 @@ export async function DELETE(
       );
     }
 
-    // Access params directly
-    const workspaceId = params.workspaceId;
+    // Next.js 15: await params
+    const { workspaceId } = await params;
 
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({

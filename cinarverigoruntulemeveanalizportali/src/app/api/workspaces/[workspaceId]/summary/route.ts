@@ -4,11 +4,11 @@ import prisma from '@/lib/db';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Ensure we're using params correctly in Next.js 14
-    const workspaceId = params.workspaceId;
+    // Await params in Next.js 15
+    const { workspaceId } = await params;
     
     // Get current user for authorization
     const currentUser = await getCurrentUser();

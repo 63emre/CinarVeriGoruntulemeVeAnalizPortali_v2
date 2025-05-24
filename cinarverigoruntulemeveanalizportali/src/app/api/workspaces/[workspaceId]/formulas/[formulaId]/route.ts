@@ -5,7 +5,7 @@ import prisma from '@/lib/db';
 // GET /api/workspaces/[workspaceId]/formulas/[formulaId]
 export async function GET(
   request: NextRequest,
-  { params }: { params: { workspaceId: string; formulaId: string } }
+  { params }: { params: Promise<{ workspaceId: string; formulaId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -14,7 +14,8 @@ export async function GET(
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
     
-    const { workspaceId, formulaId } = params;
+    // Next.js 15: await params
+    const { workspaceId, formulaId } = await params;
     
     // Check if user has access to the workspace
     const workspace = await prisma.workspace.findFirst({
@@ -62,7 +63,7 @@ export async function GET(
 // PUT /api/workspaces/[workspaceId]/formulas/[formulaId]
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { workspaceId: string; formulaId: string } }
+  { params }: { params: Promise<{ workspaceId: string; formulaId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -71,7 +72,8 @@ export async function PUT(
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
     
-    const { workspaceId, formulaId } = params;
+    // Next.js 15: await params
+    const { workspaceId, formulaId } = await params;
     
     // Check if user has access to the workspace
     const workspace = await prisma.workspace.findFirst({
@@ -135,7 +137,7 @@ export async function PUT(
 // DELETE /api/workspaces/[workspaceId]/formulas/[formulaId]
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { workspaceId: string; formulaId: string } }
+  { params }: { params: Promise<{ workspaceId: string; formulaId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -144,7 +146,8 @@ export async function DELETE(
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
     
-    const { workspaceId, formulaId } = params;
+    // Next.js 15: await params
+    const { workspaceId, formulaId } = await params;
     
     // Check if user has access to the workspace
     const workspace = await prisma.workspace.findFirst({

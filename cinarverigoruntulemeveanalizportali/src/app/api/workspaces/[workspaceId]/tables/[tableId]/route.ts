@@ -5,12 +5,11 @@ import { getCurrentUser } from '@/lib/auth/auth';
 // GET: Get a specific table
 export async function GET(
   request: NextRequest,
-  { params }: { params: { workspaceId: string; tableId: string } }
+  { params }: { params: Promise<{ workspaceId: string; tableId: string }> }
 ) {
   try {
-    // Get params directly (in Next.js 14+, we could use await params.workspaceId and await params.tableId)
-    const workspaceId = params.workspaceId;
-    const tableId = params.tableId;
+    // Next.js 15: await params
+    const { workspaceId, tableId } = await params;
 
     console.log(`GET /api/workspaces/${workspaceId}/tables/${tableId} called`);
 
@@ -82,12 +81,11 @@ export async function GET(
 // PUT: Update a table
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { workspaceId: string; tableId: string } }
+  { params }: { params: Promise<{ workspaceId: string; tableId: string }> }
 ) {
   try {
-    // Use await to properly access params
-    const workspaceId = await params.workspaceId;
-    const tableId = await params.tableId;
+    // Next.js 15: await params
+    const { workspaceId, tableId } = await params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -173,12 +171,11 @@ export async function PUT(
 // DELETE: Delete a table
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { workspaceId: string; tableId: string } }
+  { params }: { params: Promise<{ workspaceId: string; tableId: string }> }
 ) {
   try {
-    // Access params directly 
-    const workspaceId = params.workspaceId;
-    const tableId = params.tableId;
+    // Next.js 15: await params
+    const { workspaceId, tableId } = await params;
 
     const currentUser = await getCurrentUser();
     if (!currentUser) {

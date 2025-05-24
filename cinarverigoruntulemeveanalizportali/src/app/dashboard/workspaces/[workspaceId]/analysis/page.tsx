@@ -117,9 +117,19 @@ export default function AnalysisPage() {
       return;
     }
     
+    // Validate date order
+    const startIndex = dateColumns.indexOf(startDate);
+    const endIndex = dateColumns.indexOf(endDate);
+    
+    if (startIndex > endIndex) {
+      setError('Bitiş tarihi başlangıç tarihinden sonra olmalıdır');
+      return;
+    }
+    
     async function generateAnalysis() {
       try {
         setLoading(true);
+        setError(null);
         
         const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}`);
         
@@ -193,7 +203,7 @@ export default function AnalysisPage() {
     }
     
     generateAnalysis();
-  }, [workspaceId, tableId, selectedVariable, startDate, endDate]);
+  }, [workspaceId, tableId, selectedVariable, startDate, endDate, dateColumns]);
   
   // Chart configuration
   const chartData = {
@@ -390,13 +400,45 @@ export default function AnalysisPage() {
         {analysisData && (
           <div className="mt-6 text-right">
             <button
-              onClick={() => {
-                // TODO: Add PDF export with chart functionality
-                alert('Bu özellik yakında eklenecektir.');
+              onClick={async () => {
+                try {
+                  setLoading(true);
+                  const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/analysis-pdf`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      variable: selectedVariable,
+                      startDate,
+                      endDate,
+                      analysisData
+                    }),
+                  });
+                  
+                  if (!response.ok) {
+                    throw new Error('PDF oluşturulamadı');
+                  }
+                  
+                  const blob = await response.blob();
+                  const url = window.URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${selectedVariable}_analiz_${startDate}-${endDate}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                  document.body.removeChild(a);
+                } catch (err) {
+                  setError('PDF indirilemedi: ' + (err as Error).message);
+                } finally {
+                  setLoading(false);
+                }
               }}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:bg-gray-400"
             >
-              Analizi PDF Olarak İndir
+              {loading ? 'İndiriliyor...' : 'Analizi PDF Olarak İndir'}
             </button>
           </div>
         )}

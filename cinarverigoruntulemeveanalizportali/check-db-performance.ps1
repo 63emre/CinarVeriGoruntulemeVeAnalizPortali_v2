@@ -1,144 +1,402 @@
 #!/usr/bin/env pwsh
-# Database Performance Check Script
+# Çınar Veri Görüntüleme ve Analiz Portalı - Database Performance Check Script
+# Enhanced version with comprehensive performance metrics and analysis
 
-Write-Host "Running Database Performance Check..." -ForegroundColor Cyan
-
-# Set environment variables if not already set
-if (-not $env:DATABASE_URL) {
-    $env:DATABASE_URL = "postgresql://postgres:123@localhost:5432/cinar_portal"
-    Write-Host "DATABASE_URL environment variable not set, using default value." -ForegroundColor Yellow
+# Function for consistent logging
+function Write-Log {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]$Message,
+        
+        [Parameter(Mandatory=$false)]
+        [string]$ForegroundColor = "White"
+    )
+    
+    Write-Host "$(Get-Date -Format 'HH:mm:ss') - $Message" -ForegroundColor $ForegroundColor
 }
 
-# Create a temporary TypeScript file to check database performance
-$tempFile = "temp-db-perf-check.ts"
+# Function to load environment variables from .env file
+function Import-EnvFile {
+    param (
+        [string]$Path = ".env"
+    )
+    
+    if (Test-Path $Path) {
+        Get-Content $Path | ForEach-Object {
+            if ($_ -match "^([^#][^=]+)=(.+)$") {
+                $name = $matches[1].Trim()
+                $value = $matches[2].Trim().Trim('"').Trim("'")
+                [Environment]::SetEnvironmentVariable($name, $value, "Process")
+            }
+        }
+    }
+}
 
-@"
+# Function to format performance results
+function Format-PerformanceResult {
+    param (
+        [string]$TestName,
+        [double]$Duration,
+        [string]$Status = "OK"
+    )
+    
+    $color = "Green"
+    $icon = "✓"
+    
+    if ($Duration -gt 1000) {
+        $color = "Red"
+        $icon = "✗"
+        $Status = "SLOW"
+    } elseif ($Duration -gt 500) {
+        $color = "Yellow"
+        $icon = "⚠"
+        $Status = "WARNING"
+    }
+    
+    Write-Host "  $icon $TestName" -ForegroundColor $color -NoNewline
+    Write-Host " - ${Duration}ms" -ForegroundColor White -NoNewline
+    Write-Host " [$Status]" -ForegroundColor $color
+}
+
+# Main execution
+try {
+    Write-Log "Veritabanı performans analizi başlatılıyor..." "Cyan"
+    Write-Log "=============================================" "Cyan"
+    
+    # Load environment variables
+    Import-EnvFile
+    
+    # Set default DATABASE_URL if not set
+    if (-not $env:DATABASE_URL) {
+        $env:DATABASE_URL = "postgresql://postgres:123@localhost:5432/cinar_portal"
+        Write-Log "DATABASE_URL ortam değişkeni ayarlanmadı, varsayılan değer kullanılıyor." "Yellow"
+    }
+    
+    # Check prerequisites
+    Write-Log "Ön koşullar kontrol ediliyor..." "Cyan"
+    
+    if (-not (Test-Path "node_modules")) {
+        Write-Log "node_modules bulunamadı, bağımlılıklar yükleniyor..." "Yellow"
+        npm install
+        if ($LASTEXITCODE -ne 0) {
+            throw "Bağımlılıklar yüklenemedi."
+        }
+    }
+    
+    # Create comprehensive performance test script
+    $tempFile = "temp-performance-check.ts"
+    
+    @"
 import { PrismaClient } from '@prisma/client';
 
-async function checkDatabasePerformance() {
+interface PerformanceMetrics {
+  connectionTime: number;
+  simpleQueryTime: number;
+  complexQueryTime: number;
+  insertTime: number;
+  updateTime: number;
+  deleteTime: number;
+  transactionTime: number;
+  concurrentQueryTime: number;
+  memoryUsage: {
+    heapUsed: number;
+    heapTotal: number;
+    external: number;
+  };
+}
+
+interface PerformanceResult {
+  metrics: PerformanceMetrics;
+  recommendations: string[];
+  overallScore: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR';
+}
+
+async function measureTime<T>(operation: () => Promise<T>): Promise<{ result: T; duration: number }> {
+  const start = Date.now();
+  const result = await operation();
+  const duration = Date.now() - start;
+  return { result, duration };
+}
+
+async function runPerformanceTests(): Promise<PerformanceResult> {
   const prisma = new PrismaClient({
-    log: ['query', 'info', 'warn', 'error'],
+    log: ['error'],
   });
   
-  console.log('\n======= Database Performance Check =======\n');
-
+  const metrics: PerformanceMetrics = {
+    connectionTime: 0,
+    simpleQueryTime: 0,
+    complexQueryTime: 0,
+    insertTime: 0,
+    updateTime: 0,
+    deleteTime: 0,
+    transactionTime: 0,
+    concurrentQueryTime: 0,
+    memoryUsage: {
+      heapUsed: 0,
+      heapTotal: 0,
+      external: 0
+    }
+  };
+  
+  const recommendations: string[] = [];
+  
   try {
-    // Connect to the database
-    await prisma.\$connect();
-    console.log('\x1b[32m%s\x1b[0m', '✓ Database connection successful!');
+    console.log('🚀 Performans testleri başlatılıyor...\n');
     
-    // Get database counts
-    console.log('\nTable Counts:');
-    const userCount = await prisma.user.count();
-    const workspaceCount = await prisma.workspace.count();
-    const tableCount = await prisma.dataTable.count();
-    const formulaCount = await prisma.formula.count();
+    // Test 1: Connection Time
+    console.log('📡 Bağlantı süresi testi...');
+    const connectionTest = await measureTime(async () => {
+      await prisma.`$connect();
+      return true;
+    });
+    metrics.connectionTime = connectionTest.duration;
+    console.log(`   Bağlantı süresi: ${metrics.connectionTime}ms`);
     
-    console.log(`- Users: ${userCount}`);
-    console.log(`- Workspaces: ${workspaceCount}`);
-    console.log(`- Data Tables: ${tableCount}`);
-    console.log(`- Formulas: ${formulaCount}`);
+    if (metrics.connectionTime > 2000) {
+      recommendations.push('Bağlantı süresi yavaş. Veritabanı sunucusu performansını kontrol edin.');
+    }
     
-    // Check table sizes (if tables are large)
-    if (tableCount > 0) {
-      console.log('\nChecking potential performance issues:');
-      
-      // Check for large tables
-      const largeTableCheck = await prisma.dataTable.findMany({
-        select: {
-          id: true,
-          name: true,
-          _count: {
-            select: {
-              data: true
+    // Test 2: Simple Query Performance
+    console.log('\n🔍 Basit sorgu performansı...');
+    const simpleQueryTest = await measureTime(async () => {
+      return await prisma.`$queryRaw`SELECT 1 as test, NOW() as current_time`;
+    });
+    metrics.simpleQueryTime = simpleQueryTest.duration;
+    console.log(`   Basit sorgu süresi: ${metrics.simpleQueryTime}ms`);
+    
+    // Test 3: Complex Query Performance (if data exists)
+    console.log('\n🧮 Karmaşık sorgu performansı...');
+    const complexQueryTest = await measureTime(async () => {
+      return await prisma.user.findMany({
+        include: {
+          workspaces: {
+            include: {
+              workspace: {
+                include: {
+                  dataTables: true,
+                  formulas: true
+                }
+              }
             }
           }
         },
-        orderBy: {
-          updatedAt: 'desc'
-        },
-        take: 5
+        take: 10
       });
-      
-      console.log('\nLargest Tables:');
-      largeTableCheck.forEach(table => {
-        const dataSize = JSON.stringify(table).length;
-        console.log(`- ${table.name}: approx. ${Math.round(dataSize / 1024)} KB`);
-        
-        // Warn about potential performance issues
-        if (dataSize > 1024 * 1024) { // More than 1MB
-          console.log('\x1b[33m%s\x1b[0m', `  ⚠️ Large table detected: ${table.name} (${Math.round(dataSize / 1024 / 1024)} MB)`);
-          console.log('\x1b[33m%s\x1b[0m', '  Consider implementing pagination for better performance.');
+    });
+    metrics.complexQueryTime = complexQueryTest.duration;
+    console.log(`   Karmaşık sorgu süresi: ${metrics.complexQueryTime}ms`);
+    
+    if (metrics.complexQueryTime > 1000) {
+      recommendations.push('Karmaşık sorgular yavaş. İndeks optimizasyonu düşünün.');
+    }
+    
+    // Test 4: Insert Performance
+    console.log('\n➕ Ekleme performansı...');
+    const testEmail = `perf-test-${Date.now()}@example.com`;
+    const insertTest = await measureTime(async () => {
+      return await prisma.user.create({
+        data: {
+          email: testEmail,
+          name: 'Performance Test User',
+          role: 'USER'
         }
       });
-    }
-    
-    // Check relationships and indexes
-    console.log('\nChecking database relationships:');
-    const workspaceUsers = await prisma.workspaceUser.count();
-    console.log(`- Workspace User Relationships: ${workspaceUsers}`);
-    
-    if (workspaceUsers > 1000) {
-      console.log('\x1b[33m%s\x1b[0m', '  ⚠️ Large number of workspace user relationships detected.');
-      console.log('\x1b[33m%s\x1b[0m', '  Consider optimizing queries that use these relationships.');
-    }
-    
-    // Perform a simple query benchmark
-    console.log('\nRunning Simple Query Benchmark:');
-    
-    const startTime = Date.now();
-    await prisma.workspace.findMany({
-      include: {
-        users: true,
-        tables: true,
-      },
-      take: 5,
     });
-    const duration = Date.now() - startTime;
+    metrics.insertTime = insertTest.duration;
+    console.log(`   Ekleme süresi: ${metrics.insertTime}ms`);
     
-    console.log(`- Workspace query with relationships: ${duration}ms`);
+    // Test 5: Update Performance
+    console.log('\n✏️  Güncelleme performansı...');
+    const updateTest = await measureTime(async () => {
+      return await prisma.user.update({
+        where: { id: insertTest.result.id },
+        data: { name: 'Updated Performance Test User' }
+      });
+    });
+    metrics.updateTime = updateTest.duration;
+    console.log(`   Güncelleme süresi: ${metrics.updateTime}ms`);
     
-    if (duration > 500) {
-      console.log('\x1b[33m%s\x1b[0m', '  ⚠️ Slow query detected. Consider optimizing by limiting included relations or adding indexes.');
-    } else {
-      console.log('\x1b[32m%s\x1b[0m', '  ✓ Query performance is acceptable.');
+    // Test 6: Delete Performance
+    console.log('\n🗑️  Silme performansı...');
+    const deleteTest = await measureTime(async () => {
+      return await prisma.user.delete({
+        where: { id: insertTest.result.id }
+      });
+    });
+    metrics.deleteTime = deleteTest.duration;
+    console.log(`   Silme süresi: ${metrics.deleteTime}ms`);
+    
+    // Test 7: Transaction Performance
+    console.log('\n🔄 Transaction performansı...');
+    const transactionTest = await measureTime(async () => {
+      return await prisma.`$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            email: `tx-test-${Date.now()}@example.com`,
+            name: 'Transaction Test User',
+            role: 'USER'
+          }
+        });
+        
+        await tx.user.update({
+          where: { id: user.id },
+          data: { name: 'Updated Transaction Test User' }
+        });
+        
+        await tx.user.delete({
+          where: { id: user.id }
+        });
+        
+        return user;
+      });
+    });
+    metrics.transactionTime = transactionTest.duration;
+    console.log(`   Transaction süresi: ${metrics.transactionTime}ms`);
+    
+    // Test 8: Concurrent Query Performance
+    console.log('\n⚡ Eşzamanlı sorgu performansı...');
+    const concurrentTest = await measureTime(async () => {
+      const promises = Array.from({ length: 5 }, () => 
+        prisma.`$queryRaw`SELECT COUNT(*) as count FROM "User"`
+      );
+      return await Promise.all(promises);
+    });
+    metrics.concurrentQueryTime = concurrentTest.duration;
+    console.log(`   5 eşzamanlı sorgu süresi: ${metrics.concurrentQueryTime}ms`);
+    
+    // Memory Usage
+    const memUsage = process.memoryUsage();
+    metrics.memoryUsage = {
+      heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024 * 100) / 100,
+      heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024 * 100) / 100,
+      external: Math.round(memUsage.external / 1024 / 1024 * 100) / 100
+    };
+    
+    console.log(`\n💾 Bellek kullanımı:`);
+    console.log(`   Heap kullanılan: ${metrics.memoryUsage.heapUsed} MB`);
+    console.log(`   Heap toplam: ${metrics.memoryUsage.heapTotal} MB`);
+    console.log(`   External: ${metrics.memoryUsage.external} MB`);
+    
+    // Calculate overall score
+    let score = 0;
+    const tests = [
+      metrics.connectionTime,
+      metrics.simpleQueryTime,
+      metrics.complexQueryTime,
+      metrics.insertTime,
+      metrics.updateTime,
+      metrics.deleteTime,
+      metrics.transactionTime
+    ];
+    
+    tests.forEach(time => {
+      if (time < 100) score += 4;
+      else if (time < 300) score += 3;
+      else if (time < 500) score += 2;
+      else if (time < 1000) score += 1;
+      else score += 0;
+    });
+    
+    const maxScore = tests.length * 4;
+    const percentage = (score / maxScore) * 100;
+    
+    let overallScore: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR';
+    if (percentage >= 90) overallScore = 'EXCELLENT';
+    else if (percentage >= 75) overallScore = 'GOOD';
+    else if (percentage >= 50) overallScore = 'FAIR';
+    else overallScore = 'POOR';
+    
+    // Additional recommendations
+    if (metrics.memoryUsage.heapUsed > 100) {
+      recommendations.push('Yüksek bellek kullanımı tespit edildi. Bellek optimizasyonu gerekebilir.');
     }
     
-    console.log('\n======= Performance Check Complete =======\n');
+    if (metrics.concurrentQueryTime > metrics.simpleQueryTime * 3) {
+      recommendations.push('Eşzamanlı sorgu performansı düşük. Bağlantı havuzu ayarlarını kontrol edin.');
+    }
     
-  } catch (error) {
-    console.error('\x1b[31m%s\x1b[0m', '✗ Database performance check failed!');
-    console.error(`Error details: ${error.message}`);
-    process.exit(1);
+    // Display results
+    console.log('\n📊 PERFORMANS RAPORU');
+    console.log('====================');
+    console.log(`Genel Skor: ${overallScore} (${Math.round(percentage)}%)`);
+    
+    if (recommendations.length > 0) {
+      console.log('\n💡 Öneriler:');
+      recommendations.forEach((rec, index) => {
+        console.log(`   ${index + 1}. ${rec}`);
+      });
+    } else {
+      console.log('\n✅ Tüm performans testleri başarılı!');
+    }
+    
+    return {
+      metrics,
+      recommendations,
+      overallScore
+    };
+    
+  } catch (error: any) {
+    console.error('\n❌ Performans testi sırasında hata:', error.message);
+    throw error;
   } finally {
-    await prisma.\$disconnect();
+    await prisma.`$disconnect();
   }
 }
 
-checkDatabasePerformance();
+// Run performance tests
+runPerformanceTests()
+  .then((result) => {
+    console.log('\n🎯 Performans analizi tamamlandı!');
+    
+    if (result.overallScore === 'POOR') {
+      console.log('\n⚠️  Performans sorunları tespit edildi. Optimizasyon gerekli.');
+      process.exit(1);
+    } else {
+      console.log('\n✅ Performans kabul edilebilir seviyede.');
+      process.exit(0);
+    }
+  })
+  .catch((error) => {
+    console.error('\n💥 Performans testi başarısız:', error.message);
+    process.exit(1);
+  });
 "@ | Out-File -Encoding utf8 $tempFile
-
-# Run the check with ts-node
-Write-Host "Running database performance test..." -ForegroundColor Yellow
-npx ts-node --compiler-options "{\"module\":\"CommonJS\"}" $tempFile
-$dbPerfCheckResult = $LASTEXITCODE
-
-# Clean up
-Remove-Item $tempFile
-
-if ($dbPerfCheckResult -ne 0) {
-    Write-Host "Database performance check failed. Please review the error messages above." -ForegroundColor Red
+    
+    # Run the performance test
+    Write-Log "Kapsamlı performans testleri çalıştırılıyor..." "Yellow"
+    Write-Log "Bu işlem birkaç dakika sürebilir..." "Yellow"
+    
+    npx ts-node --compiler-options "{\"module\":\"CommonJS\"}" $tempFile
+    $perfTestResult = $LASTEXITCODE
+    
+    # Clean up
+    Remove-Item $tempFile -ErrorAction SilentlyContinue
+    
+    if ($perfTestResult -ne 0) {
+        Write-Log "=============================================" "Red"
+        Write-Log "Performans testleri başarısız!" "Red"
+        Write-Log "=============================================" "Red"
+        Write-Log "Önerilen iyileştirmeler:" "Yellow"
+        Write-Log "  1. PostgreSQL yapılandırmasını optimize edin" "White"
+        Write-Log "  2. Veritabanı indekslerini kontrol edin" "White"
+        Write-Log "  3. Bağlantı havuzu ayarlarını gözden geçirin" "White"
+        Write-Log "  4. Sunucu kaynaklarını (RAM, CPU) artırın" "White"
+        Write-Log "  5. Veritabanı istatistiklerini güncelleyin (ANALYZE)" "White"
+        exit 1
+    } else {
+        Write-Log "=============================================" "Green"
+        Write-Log "Performans analizi başarıyla tamamlandı!" "Green"
+        Write-Log "=============================================" "Green"
+        Write-Log "Performans izleme önerileri:" "Cyan"
+        Write-Log "  • Bu testi düzenli olarak çalıştırın" "White"
+        Write-Log "  • Yavaş sorguları loglamak için Prisma log ayarlarını kullanın" "White"
+        Write-Log "  • Veritabanı metriklerini izlemek için monitoring araçları kurun" "White"
+        Write-Log "  • Büyük veri setleri için sayfalama kullanın" "White"
+    }
+    
+} catch {
+    Write-Log "HATA: $_" "Red"
+    Write-Log "Performans kontrolü sırasında beklenmeyen bir hata oluştu." "Red"
     exit 1
-} else {
-    Write-Host "Database performance check completed successfully." -ForegroundColor Green
-}
-
-# Provide guidance on performance optimization
-Write-Host "`nPerformance Optimization Tips:" -ForegroundColor Cyan
-Write-Host "1. Add indexes for frequently queried fields."
-Write-Host "2. Use pagination for large tables."
-Write-Host "3. Limit the use of include/join operations in queries."
-Write-Host "4. Monitor slow queries and optimize them."
-Write-Host "5. Consider using query caching for frequently accessed data."
-
-exit 0 
+} 

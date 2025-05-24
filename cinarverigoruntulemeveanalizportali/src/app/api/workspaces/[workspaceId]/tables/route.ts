@@ -5,11 +5,11 @@ import prisma from '@/lib/db';
 // GET: Get all tables for a workspace
 export async function GET(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Correctly access params in Next.js 14
-    const workspaceId = params.workspaceId;
+    // Next.js 15: await params
+    const { workspaceId } = await params;
     console.log(`GET /api/workspaces/${workspaceId}/tables called`);
     
     const currentUser = await getCurrentUser();
@@ -96,11 +96,11 @@ export async function GET(
 // POST: Create a new table
 export async function POST(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Access params correctly
-    const workspaceId = params.workspaceId;
+    // Next.js 15: await params
+    const { workspaceId } = await params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {

@@ -488,7 +488,11 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           pdf.text(`Uygulanan Formüller: ${formulas.map(f => f.name).join(', ')}`, 15, 30);
         }
         
-                 // Prepare table data         const { columns, data } = analysisData.tableData;         const tableData = data.map((row: (string | number | null)[]) => {           return row.map((cell: string | number | null) => cell === null ? '' : String(cell));         });
+        // Prepare table data for PDF
+        const { columns, data } = analysisData.tableData;
+        const tableData = data.map((row: (string | number | null)[]) => {
+          return row.map((cell: string | number | null) => cell === null ? '' : String(cell));
+        });
         
         // Create row tracking for highlights
         const rowIds: string[] = [];

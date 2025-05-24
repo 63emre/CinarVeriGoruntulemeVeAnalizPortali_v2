@@ -80,7 +80,13 @@ export async function GET(
       }
     });
 
-    return NextResponse.json(formulas);
+    return NextResponse.json(formulas, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   } catch (error) {
     console.error('Error fetching formulas:', error);
     return NextResponse.json(

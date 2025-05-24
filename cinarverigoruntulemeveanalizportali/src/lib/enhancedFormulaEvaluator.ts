@@ -199,9 +199,11 @@ export function extractVariables(expression: string): string[] {
   // First, extract variables in square brackets
   const bracketMatches = expression.match(/\[[^\]]+\]/g) || [];
   for (const match of bracketMatches) {
-    const varName = match.slice(1, -1); // Remove brackets
-    if (varName.trim()) {
-      variables.push(varName);
+    const rawVarName = match.slice(1, -1); // Remove brackets
+    // Clean the variable name by removing trailing commas and trimming whitespace
+    const cleanVarName = rawVarName.replace(/,+$/, '').trim();
+    if (cleanVarName) {
+      variables.push(cleanVarName);
     }
   }
   
@@ -223,7 +225,11 @@ export function extractVariables(expression: string): string[] {
     // If it's not a number and not empty, it's probably a variable
     // Allow Unicode characters in variable names (like Turkish: İletkenlik)
     if (trimmed && !/^-?\d+\.?\d*$/.test(trimmed) && trimmed !== '') {
-      variables.push(trimmed);
+      // Clean the variable name by removing trailing commas and trimming whitespace
+      const cleanVarName = trimmed.replace(/,+$/, '').trim();
+      if (cleanVarName) {
+        variables.push(cleanVarName);
+      }
     }
   }
   
@@ -349,13 +355,16 @@ export function evaluateFormulasForTable(
     const variables: Record<string, number> = {};
     
     data.forEach(row => {
-      const varName = row[variableColumnIndex] as string;
+      const rawVarName = row[variableColumnIndex] as string;
       const value = row[dateColIndex];
       
-      if (varName && value !== null && value !== undefined) {
+      if (rawVarName && value !== null && value !== undefined) {
+        // Clean the variable name by removing trailing commas and trimming whitespace
+        const cleanVarName = rawVarName.replace(/,+$/, '').trim();
+        
         const numValue = typeof value === 'number' ? value : parseFloat(String(value));
-        if (!isNaN(numValue)) {
-          variables[varName] = numValue;
+        if (!isNaN(numValue) && cleanVarName) {
+          variables[cleanVarName] = numValue;
         }
       }
     });
@@ -368,12 +377,36 @@ export function evaluateFormulasForTable(
       try {
         const result = evaluateComplexFormula(formula.formula, variables);
         
-        if (!result.isValid && result.failingVariables) {
-          // Highlight cells for failing variables
+        if (!result.isValid) {
+          // Get all variables used in the formula
+          const allFormulaVariables = extractVariables(formula.formula);
+          
+          // Separate variables that exist in data vs those that are missing
+          const existingVariables = allFormulaVariables.filter(varName => 
+            variables.hasOwnProperty(varName) && !isNaN(variables[varName])
+          );
+          const missingVariables = allFormulaVariables.filter(varName => 
+            !variables.hasOwnProperty(varName) || isNaN(variables[varName])
+          );
+          
+          // Only highlight cells for variables that actually exist in the data
+          // This prevents highlighting cells for variables that are missing/replaced with 0
+          const variablesToHighlight = result.failingVariables 
+            ? result.failingVariables.filter(varName => existingVariables.includes(varName))
+            : existingVariables;
+          
+          // Log missing variables for debugging
+          if (missingVariables.length > 0 && process.env.NODE_ENV === 'development') {
+            console.warn(`Formula "${formula.name}" references missing variables:`, missingVariables);
+          }
+          
+          // Highlight cells for variables that exist but are causing the formula to fail
           data.forEach((row, rowIndex) => {
-            const varName = row[variableColumnIndex] as string;
+            const rawVarName = row[variableColumnIndex] as string;
+            // Clean the variable name by removing trailing commas and trimming whitespace
+            const cleanVarName = rawVarName ? rawVarName.replace(/,+$/, '').trim() : '';
             
-            if (varName && result.failingVariables!.includes(varName)) {
+            if (cleanVarName && variablesToHighlight.includes(cleanVarName)) {
               // Check if this cell is already highlighted
               const existingCell = highlightedCells.find(
                 cell => cell.row === `row-${rowIndex}` && cell.col === dateCol
@@ -387,6 +420,15 @@ export function evaluateFormulasForTable(
                 // Blend colors if different
                 if (existingCell.color !== formula.color) {
                   existingCell.color = blendColors([existingCell.color, formula.color]);
+                }
+                
+                // Add formula details
+                if (existingCell.formulaDetails) {
+                  existingCell.formulaDetails.push({
+                    id: formula.id,
+                    name: formula.name,
+                    formula: formula.formula
+                  });
                 }
               } else {
                 // Create new highlight
@@ -408,6 +450,30 @@ export function evaluateFormulasForTable(
         }
       } catch (error) {
         console.error(`Error evaluating formula ${formula.name}:`, error);
+        // For formulas that completely fail to evaluate, we might want to highlight all involved variables
+        // but only if they exist in the data
+        const allFormulaVariables = extractVariables(formula.formula);
+        const existingVariables = allFormulaVariables.filter(varName => 
+          variables.hasOwnProperty(varName) && !isNaN(variables[varName])
+        );
+        
+        data.forEach((row, rowIndex) => {
+          const varName = row[variableColumnIndex] as string;
+          if (varName && existingVariables.includes(varName)) {
+            highlightedCells.push({
+              row: `row-${rowIndex}`,
+              col: dateCol,
+              color: '#ff6b6b', // Red color for evaluation errors
+              message: `${formula.name} (Değerlendirme Hatası)`,
+              formulaIds: [formula.id],
+              formulaDetails: [{
+                id: formula.id,
+                name: formula.name,
+                formula: formula.formula
+              }]
+            });
+          }
+        });
       }
     });
   });

@@ -78,7 +78,13 @@ export async function GET() {
       });
     }
     
-    return NextResponse.json(workspaces);
+    return NextResponse.json(workspaces, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   } catch (error) {
     console.error('Error fetching workspaces:', error);
     return NextResponse.json(

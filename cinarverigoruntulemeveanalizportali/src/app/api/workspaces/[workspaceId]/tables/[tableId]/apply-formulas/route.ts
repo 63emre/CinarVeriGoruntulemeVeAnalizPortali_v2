@@ -8,6 +8,14 @@ interface HighlightedCell {
   col: string;
   color: string;
   message?: string;
+  formulaIds?: string[];
+  formulaDetails?: {
+    id: string;
+    name: string;
+    formula: string;
+    leftResult?: number;
+    rightResult?: number;
+  }[];
 }
 
 interface FormulaRequest {
@@ -83,7 +91,7 @@ export async function POST(
 
     // Get the formulas to apply
     const body = await request.json() as FormulaRequest;
-    const { formulaIds, selectedVariable, formulaType = 'CELL_VALIDATION' } = body; // Provide default formulaType
+    const { formulaIds, formulaType = 'CELL_VALIDATION' } = body; // Provide default formulaType
 
     if (!formulaIds || !Array.isArray(formulaIds) || formulaIds.length === 0) {
       return NextResponse.json(
@@ -131,6 +139,8 @@ export async function POST(
     // Apply each formula to the table
     for (const formula of formulas) {
       try {
+        console.log(`Processing formula: "${formula.name}" - "${formula.formula}"`);
+        
         // Parse the formula to extract variable references
         const variableRegex = /\[([^\]]+)\]/g;
         const formulaVariables: Set<string> = new Set();
@@ -138,78 +148,142 @@ export async function POST(
         
         // Find all variables referenced in the formula
         while ((match = variableRegex.exec(formula.formula)) !== null) {
-          formulaVariables.add(match[1]);
+          // Clean the variable name by removing trailing commas and trimming whitespace
+          const cleanVariableName = match[1].replace(/,+$/, '').trim();
+          if (cleanVariableName) {
+            formulaVariables.add(cleanVariableName);
+          }
         }
         
-        // Filter rows if selectedVariable is specified
-        const rowsToProcess = selectedVariable 
-          ? data.filter(row => row[variableColumnIndex] === selectedVariable)
-          : data;
+        console.log(`Formula variables extracted:`, Array.from(formulaVariables));
+        
+        // Find all date columns (exclude metadata columns)
+        const metadataColumns = ['Variable', 'Data Source', 'Method', 'Unit', 'LOQ'];
+        const dateColumns = columns.filter(col => !metadataColumns.includes(col));
+        
+        console.log(`Processing ${dateColumns.length} date columns:`, dateColumns);
+        
+        // Process each date column
+        dateColumns.forEach(dateCol => {
+          const dateColIndex = columns.findIndex(c => c === dateCol);
+          if (dateColIndex === -1) return;
           
-        // Process each row to evaluate the formula
-        rowsToProcess.forEach((row, rowIndex) => {
-          // Get the actual row index in the full data array for proper highlighting
-          const actualRowIndex = selectedVariable 
-            ? data.findIndex(r => r[variableColumnIndex] === selectedVariable && 
-                JSON.stringify(r) === JSON.stringify(row))
-            : rowIndex;
-            
-          if (actualRowIndex === -1) return; // Skip if row not found
+          // Create variables map for this date column by gathering values from all rows
+          const variables: Record<string, number> = {};
           
-          // Create context from row data for this specific row
-          const context: EvaluationContext = { variables: {} };
-          
-          // Add all column values for this row to the variables context
-          columns.forEach((col, colIndex) => {
-            if (!col || typeof col !== 'string') return;
+          data.forEach(row => {
+            const rawVarName = row[variableColumnIndex] as string;
+            const value = row[dateColIndex];
             
-            const value = row[colIndex];
-            if (typeof value === 'number') {
-              context.variables[col] = value;
-            } else if (typeof value === 'string' && !isNaN(parseFloat(value))) {
-              context.variables[col] = parseFloat(value);
-            }
-          });
-            
-          try {
-            // Evaluate the formula for this specific row
-            const result = evaluateFormula(formula.formula, context);
-            
-            // If formula evaluates to false, highlight only the cells referenced in the formula
-            if (!result.isValid && formula.color) {
-              // If we have specific failing columns from the formula evaluation, use those
-              const columnsToHighlight = result.failingColumns || Array.from(formulaVariables);
+            if (rawVarName && value !== null && value !== undefined) {
+              // Clean the variable name by removing trailing commas and trimming whitespace
+              const cleanVarName = rawVarName.replace(/,+$/, '').trim();
               
-              // Add only the cells that are actually used in the formula condition
-              for (const varName of columnsToHighlight) {
-                const colIndex = columns.findIndex(c => c === varName);
-                if (colIndex !== -1) {
-                  // Add the specific cell to highlight with consistent row ID format
-                  const highlightCell = {
-                    row: `row-${actualRowIndex + 1}`, // Use 1-based indexing to match table components
-                    col: varName, // Use the variable name as column identifier
-                    color: formula.color || '#ff0000',
-                    message: `${formula.name}: ${result.message || 'Koşul sağlanmadı'}`
-                  };
-                  
-                  // Add to highlighted cells array if not already added
-                  if (!highlightedCells.some(cell => 
-                    cell.row === highlightCell.row && cell.col === highlightCell.col
-                  )) {
-                    highlightedCells.push(highlightCell);
-                  }
-                }
+              const numValue = typeof value === 'number' ? value : parseFloat(String(value));
+              if (!isNaN(numValue) && cleanVarName) {
+                variables[cleanVarName] = numValue;
               }
             }
+          });
+          
+          console.log(`Variables available in column "${dateCol}":`, Object.keys(variables));
+          
+          // Check if all required variables for this formula are available
+          const missingVariables = Array.from(formulaVariables).filter(varName => 
+            variables[varName] === undefined
+          );
+          
+          if (missingVariables.length > 0) {
+            console.log(`Missing variables for formula "${formula.name}" in column "${dateCol}":`, missingVariables);
+            return; // Skip this date column if variables are missing
+          }
+          
+          console.log(`All variables found for formula "${formula.name}" in column "${dateCol}". Evaluating...`);
+          
+          // Create context for formula evaluation
+          const context: EvaluationContext = { variables };
+          
+          try {
+            // Clean the formula by removing trailing commas from variable names
+            const cleanFormula = formula.formula.replace(/\[([^\]]+),+\]/g, (match, varName) => {
+              return `[${varName.trim()}]`;
+            });
+            
+            console.log(`Original formula: ${formula.formula}`);
+            console.log(`Cleaned formula: ${cleanFormula}`);
+            
+            // Evaluate the formula for this date column
+            const result = evaluateFormula(cleanFormula, context);
+            
+            console.log(`Formula evaluation result:`, result);
+            
+            // If formula condition is NOT met (isValid = false), highlight the cells for validation failures
+            if (!result.isValid && formula.color) {
+              console.log(`Formula condition failed! Highlighting cells for validation...`);
+              
+              // Highlight cells for all variables used in the formula
+              Array.from(formulaVariables).forEach(varName => {
+                // Find the row that contains this variable
+                const varRowIndex = data.findIndex(row => {
+                  const rawVarName = row[variableColumnIndex] as string;
+                  const cleanVarName = rawVarName ? rawVarName.replace(/,+$/, '').trim() : '';
+                  return cleanVarName === varName;
+                });
+                
+                if (varRowIndex !== -1) {
+                  const rowId = `row-${varRowIndex + 1}`;
+                  
+                  // Check if this cell is already highlighted by another formula
+                  const existingCellIndex = highlightedCells.findIndex(cell => 
+                    cell.row === rowId && cell.col === dateCol
+                  );
+                  
+                  if (existingCellIndex !== -1) {
+                    // Merge with existing highlight
+                    const existingCell = highlightedCells[existingCellIndex];
+                    existingCell.formulaIds = [...(existingCell.formulaIds || []), formula.id];
+                    existingCell.message = `${existingCell.message}, ${formula.name}`;
+                    existingCell.formulaDetails = [
+                      ...(existingCell.formulaDetails || []),
+                      {
+                        id: formula.id,
+                        name: formula.name,
+                        formula: formula.formula
+                      }
+                    ];
+                  } else {
+                    // Create new highlighted cell
+                    const highlightCell: HighlightedCell = {
+                      row: rowId,
+                      col: dateCol,
+                      color: formula.color || '#ff0000',
+                      message: `${formula.name}: Doğrulama başarısız (${varName} = ${variables[varName]})`,
+                      formulaIds: [formula.id],
+                      formulaDetails: [{
+                        id: formula.id,
+                        name: formula.name,
+                        formula: formula.formula
+                      }]
+                    };
+                    
+                    highlightedCells.push(highlightCell);
+                    console.log(`Added highlight cell:`, highlightCell);
+                  }
+                }
+              });
+            } else {
+              console.log(`Formula condition met or no color specified.`);
+            }
           } catch (err) {
-            console.error(`Error evaluating formula for row ${rowIndex}:`, err);
+            console.error(`Error evaluating formula "${formula.name}" for column "${dateCol}":`, err);
           }
         });
         
         formulaResults.push({
           formulaId: formula.id,
           formulaName: formula.name,
-          appliedRows: rowsToProcess.length
+          appliedRows: data.length,
+          processedColumns: dateColumns.length
         });
       } catch (error) {
         formulaResults.push({
@@ -246,6 +320,12 @@ export async function POST(
       highlightedCells,
       tableData: tableRows,  // Add tableData for frontend compatibility
       columns: tableColumns   // Add columns for frontend compatibility
+    }, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     });
   } catch (error) {
     console.error('Error applying formulas:', error);

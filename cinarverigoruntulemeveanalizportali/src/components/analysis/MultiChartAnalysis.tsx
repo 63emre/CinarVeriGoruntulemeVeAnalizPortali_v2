@@ -416,11 +416,46 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
             pdf.setFontSize(14);
             pdf.text(`Grafik ${i + 1}: ${chart.title}`, 15, 20);
             
-            // Capture chart as image
+            // Capture chart as image with enhanced configuration for modern CSS
             const canvas = await html2canvas(chartElement, {
               backgroundColor: '#ffffff',
               scale: 2,
-              logging: false
+              logging: false,
+              useCORS: true,
+              allowTaint: true,
+              foreignObjectRendering: true,
+              // Ignore problematic CSS functions
+              ignoreElements: (element) => {
+                const style = window.getComputedStyle(element);
+                // Skip elements with problematic color functions
+                if (style.color && (style.color.includes('oklch') || style.color.includes('lch') || style.color.includes('lab'))) {
+                  return true;
+                }
+                if (style.backgroundColor && (style.backgroundColor.includes('oklch') || style.backgroundColor.includes('lch') || style.backgroundColor.includes('lab'))) {
+                  return true;
+                }
+                return false;
+              },
+              // Override problematic styles
+              onclone: (clonedDoc) => {
+                // Remove any problematic CSS that might contain oklch or other modern color functions
+                const allElements = clonedDoc.querySelectorAll('*');
+                allElements.forEach((el) => {
+                  const element = el as HTMLElement;
+                  const computedStyle = window.getComputedStyle(element);
+                  
+                  // Convert modern color functions to fallback colors
+                  if (computedStyle.color && (computedStyle.color.includes('oklch') || computedStyle.color.includes('lch'))) {
+                    element.style.color = '#333333'; // Fallback to dark gray
+                  }
+                  if (computedStyle.backgroundColor && (computedStyle.backgroundColor.includes('oklch') || computedStyle.backgroundColor.includes('lch'))) {
+                    element.style.backgroundColor = '#ffffff'; // Fallback to white
+                  }
+                  if (computedStyle.borderColor && (computedStyle.borderColor.includes('oklch') || computedStyle.borderColor.includes('lch'))) {
+                    element.style.borderColor = '#cccccc'; // Fallback to light gray
+                  }
+                });
+              }
             });
             
             const imgData = canvas.toDataURL('image/png');

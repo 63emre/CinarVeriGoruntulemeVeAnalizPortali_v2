@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/auth';
 import prisma from '@/lib/db';
-import PDFDocument from 'pdfkit';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export async function POST(
   request: NextRequest,
@@ -77,79 +78,74 @@ export async function POST(
     }
 
     // Create PDF document
-    const doc = new PDFDocument({ margin: 50 });
-    const chunks: Buffer[] = [];
-
-    doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-    
-    const pdfPromise = new Promise<Buffer>((resolve) => {
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-    });
+    const pdf = new jsPDF('portrait', 'mm', 'a4');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
 
     // Add company logo and header
-    doc.fontSize(20)
-       .text('Çınar Çevre Laboratuvarı', 50, 50)
-       .fontSize(16)
-       .text('Veri Analiz Raporu', 50, 80);
+    pdf.setFontSize(20);
+    pdf.text('Çınar Çevre Laboratuvarı', pageWidth / 2, 20, { align: 'center' });
+    pdf.setFontSize(16);
+    pdf.text('Veri Analiz Raporu', pageWidth / 2, 30, { align: 'center' });
 
     // Add analysis details
-    doc.fontSize(12)
-       .text(`Tablo: ${table.name}`, 50, 120)
-       .text(`Değişken: ${variable}`, 50, 140)
-       .text(`Analiz Dönemi: ${startDate} - ${endDate}`, 50, 160)
-       .text(`Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, 50, 180);
+    pdf.setFontSize(12);
+    pdf.text(`Tablo: ${table.name}`, 15, 50);
+    pdf.text(`Değişken: ${variable}`, 15, 60);
+    pdf.text(`Analiz Dönemi: ${startDate} - ${endDate}`, 15, 70);
+    pdf.text(`Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, 15, 80);
 
-    // Add data table
-    let yPosition = 220;
-    doc.fontSize(14)
-       .text('Analiz Verileri', 50, yPosition);
+    // Prepare data for table
+    const tableData: string[][] = [];
     
-    yPosition += 30;
-    
-    // Table headers
-    doc.fontSize(10)
-       .text('Tarih', 50, yPosition)
-       .text('Değer', 200, yPosition)
-       .text('Durum', 350, yPosition);
-    
-    yPosition += 20;
-    
-    // Add line under headers
-    doc.moveTo(50, yPosition)
-       .lineTo(500, yPosition)
-       .stroke();
-    
-    yPosition += 10;
-
-    // Add data rows
     if (analysisData.labels && analysisData.values) {
       for (let i = 0; i < analysisData.labels.length; i++) {
         const label = analysisData.labels[i];
         const value = analysisData.values[i];
         
-        doc.text(label, 50, yPosition)
-           .text(value?.toString() || '-', 200, yPosition)
-           .text(value && value > 0 ? 'Normal' : 'Veri Yok', 350, yPosition);
-        
-        yPosition += 20;
-        
-        // Add new page if needed
-        if (yPosition > 700) {
-          doc.addPage();
-          yPosition = 50;
-        }
+        tableData.push([
+          label,
+          value?.toString() || '-',
+          value && value > 0 ? 'Normal' : 'Veri Yok'
+        ]);
       }
     }
 
+    // Add data table using autoTable
+    autoTable(pdf, {
+      head: [['Tarih', 'Değer', 'Durum']],
+      body: tableData,
+      startY: 100,
+      styles: {
+        fontSize: 10,
+        cellPadding: 3,
+      },
+      headStyles: {
+        fillColor: [41, 128, 185],
+        textColor: 255,
+        fontStyle: 'bold',
+      },
+      alternateRowStyles: {
+        fillColor: [240, 240, 240],
+      },
+    });
+
     // Add footer
-    doc.fontSize(8)
-       .text('Bu rapor Çınar Veri Görüntüleme ve Analiz Portalı tarafından otomatik olarak oluşturulmuştur.', 
-             50, doc.page.height - 50);
+    const finalY = (pdf as any).lastAutoTable?.finalY || 100;
+    
+    if (finalY < pageHeight - 30) {
+      pdf.setFontSize(8);
+      pdf.text(
+        'Bu rapor Çınar Veri Görüntüleme ve Analiz Portalı tarafından otomatik olarak oluşturulmuştur.',
+        pageWidth / 2,
+        pageHeight - 20,
+        { align: 'center' }
+      );
+    }
 
-    // Finalize the PDF
-    doc.end();
-
-    const pdfBuffer = await pdfPromise;
+    // Get PDF as buffer
+    const pdfOutput = pdf.output('arraybuffer');
+    const pdfBuffer = Buffer.from(pdfOutput);
 
     // Return PDF as response
     return new NextResponse(pdfBuffer, {

@@ -182,11 +182,15 @@ export async function POST(
               const numValue = typeof value === 'number' ? value : parseFloat(String(value));
               if (!isNaN(numValue) && cleanVarName) {
                 variables[cleanVarName] = numValue;
+                // Also store with original name if different
+                if (cleanVarName !== rawVarName.trim()) {
+                  variables[rawVarName.trim()] = numValue;
+                }
               }
             }
           });
           
-          console.log(`Variables available in column "${dateCol}":`, Object.keys(variables));
+          console.log(`Variables available in column "${dateCol}":`, variables);
           
           // Check if all required variables for this formula are available
           const missingVariables = Array.from(formulaVariables).filter(varName => 
@@ -217,11 +221,13 @@ export async function POST(
             
             console.log(`Formula evaluation result:`, result);
             
-            // If formula condition is NOT met (isValid = false), highlight the cells for validation failures
-            if (!result.isValid && formula.color) {
-              console.log(`Formula condition failed! Highlighting cells for validation...`);
+            // If formula condition IS met (isValid = true), highlight the cells for validation failures
+            // This means the condition like "İletkenlik < 322" is TRUE (value is less than 322)
+            // So we highlight cells where the condition is satisfied
+            if (result.isValid && formula.color) {
+              console.log(`Formula condition met! Highlighting cells...`);
               
-              // Highlight cells for all variables used in the formula
+              // Highlight cells for all variables used in the formula that satisfy the condition
               Array.from(formulaVariables).forEach(varName => {
                 // Find the row that contains this variable
                 const varRowIndex = data.findIndex(row => {
@@ -232,6 +238,7 @@ export async function POST(
                 
                 if (varRowIndex !== -1) {
                   const rowId = `row-${varRowIndex + 1}`;
+                  const cellValue = variables[varName];
                   
                   // Check if this cell is already highlighted by another formula
                   const existingCellIndex = highlightedCells.findIndex(cell => 
@@ -257,7 +264,7 @@ export async function POST(
                       row: rowId,
                       col: dateCol,
                       color: formula.color || '#ff0000',
-                      message: `${formula.name}: Doğrulama başarısız (${varName} = ${variables[varName]})`,
+                      message: `${formula.name}: Koşul sağlandı (${varName} = ${cellValue})`,
                       formulaIds: [formula.id],
                       formulaDetails: [{
                         id: formula.id,
@@ -272,7 +279,7 @@ export async function POST(
                 }
               });
             } else {
-              console.log(`Formula condition met or no color specified.`);
+              console.log(`Formula condition not met or no color specified.`);
             }
           } catch (err) {
             console.error(`Error evaluating formula "${formula.name}" for column "${dateCol}":`, err);
@@ -306,7 +313,7 @@ export async function POST(
     
     const tableRows = data.map((row, rowIndex) => {
       const rowData: { [key: string]: string | number | null, id: string } = { 
-        id: `row-${rowIndex + 1}` 
+        id: `row-${rowIndex + 1}` // Keep 1-based indexing for consistency
       };
       columns.forEach((col, colIndex) => {
         rowData[col] = row[colIndex];

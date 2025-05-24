@@ -154,6 +154,9 @@ export default function FormulaSelector({ workspaceId, onSelectionChange }: Form
       {selectedFormulas.length > 0 && (
         <div className="mt-4 text-sm text-blue-600 bg-blue-50 p-2 rounded-md border border-blue-200">
           <strong>{selectedFormulas.length}</strong> formül seçildi
+          <div className="text-xs text-blue-500 mt-1">
+            💡 Seçili formülleri uygulamak için üstteki &ldquo;Formülleri Uygula&rdquo; butonunu kullanın
+          </div>
         </div>
       )}
     </div>

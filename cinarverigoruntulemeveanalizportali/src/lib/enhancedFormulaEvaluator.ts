@@ -377,7 +377,7 @@ export function evaluateFormulasForTable(
       try {
         const result = evaluateComplexFormula(formula.formula, variables);
         
-        if (!result.isValid) {
+        if (result.isValid) {
           // Get all variables used in the formula
           const allFormulaVariables = extractVariables(formula.formula);
           
@@ -400,7 +400,7 @@ export function evaluateFormulasForTable(
             console.warn(`Formula "${formula.name}" references missing variables:`, missingVariables);
           }
           
-          // Highlight cells for variables that exist but are causing the formula to fail
+          // Highlight cells for variables that exist and are causing the formula to pass
           data.forEach((row, rowIndex) => {
             const rawVarName = row[variableColumnIndex] as string;
             // Clean the variable name by removing trailing commas and trimming whitespace

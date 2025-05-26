@@ -24,3 +24,29 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+h1, h2, h3, h4, h5, h6 {
+  color: #222831; /* Daha koyu başlık rengi */
+  font-weight: 600;
+}
+
+label, legend, th {
+  color: #222831;
+}
+
+.text-gray-400, .text-gray-500, .text-gray-600 {
+  color: #222831 !important; /* Tailwind'in açık gri renklerini override et */
+}
+
+input,
+textarea,
+select {
+  color: #222831 !important; /* Yazı rengini koyulaştır */
+  background-color: #fff;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #b0b0b0 !important; /* Placeholder rengini de belirgin yap */
+  opacity: 1;
+}

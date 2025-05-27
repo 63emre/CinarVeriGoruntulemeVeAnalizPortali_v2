@@ -93,86 +93,37 @@ export default function TableCell({
       return style;
     }
 
-    // Multiple highlights - use base style for the cell
+    // Multiple highlights - create pizza slice effect using conic-gradient
+    const totalFormulas = cellHighlights.length;
+    const sliceAngle = 360 / totalFormulas;
+    
+    const gradientStops: string[] = [];
+    cellHighlights.forEach((highlight, index) => {
+      const startAngle = index * sliceAngle;
+      const endAngle = (index + 1) * sliceAngle;
+      gradientStops.push(`${highlight.color} ${startAngle}deg ${endAngle}deg`);
+    });
+    
+    const conicGradient = `conic-gradient(from 0deg, ${gradientStops.join(', ')})`;
+    
     const style = {
       position: 'relative' as const,
-      backgroundColor: '#f8f9fa', // Light background for multi-formula cells
+      background: conicGradient,
       border: '2px solid #333',
       fontWeight: 'bold' as const,
-      transition: 'all 0.2s ease-in-out'
+      transition: 'all 0.2s ease-in-out',
+      color: '#000', // Ensure text is visible
+      textShadow: '1px 1px 2px rgba(255,255,255,0.8)' // Add text shadow for better readability
     };
-    console.log(`🌈 Multi-highlight base style for [${rowId}, ${colId}]:`, style);
+    
+    console.log(`🍕 Pizza slice style for [${rowId}, ${colId}] with ${totalFormulas} formulas:`, style);
     return style;
   };
 
-  // Render cell layers for multiple formulas
+  // Render cell layers for multiple formulas - now simplified since we use conic-gradient
   const renderCellLayers = () => {
-    if (cellHighlights.length <= 1) return null;
-
-    const layers = cellHighlights.map((highlight, index) => {
-      const totalFormulas = cellHighlights.length;
-      let layerStyle: React.CSSProperties = {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        pointerEvents: 'none',
-        zIndex: index + 1
-      };
-
-      // Calculate division based on number of formulas
-      if (totalFormulas === 2) {
-        // Vertical split
-        layerStyle = {
-          ...layerStyle,
-          left: index === 0 ? '0%' : '50%',
-          right: index === 0 ? '50%' : '0%',
-          backgroundColor: highlight.color,
-          opacity: 0.7
-        };
-      } else if (totalFormulas === 3) {
-        // Horizontal thirds
-        layerStyle = {
-          ...layerStyle,
-          top: `${(index * 100) / 3}%`,
-          bottom: `${((2 - index) * 100) / 3}%`,
-          backgroundColor: highlight.color,
-          opacity: 0.7
-        };
-      } else if (totalFormulas === 4) {
-        // Quadrants
-        const isTop = index < 2;
-        const isLeft = index % 2 === 0;
-        layerStyle = {
-          ...layerStyle,
-          top: isTop ? '0%' : '50%',
-          bottom: isTop ? '50%' : '0%',
-          left: isLeft ? '0%' : '50%',
-          right: isLeft ? '50%' : '0%',
-          backgroundColor: highlight.color,
-          opacity: 0.7
-        };
-      } else {
-        // For more than 4 formulas, use diagonal stripes
-        const angle = (index * 180) / totalFormulas;
-        layerStyle = {
-          ...layerStyle,
-          background: `linear-gradient(${angle}deg, transparent 40%, ${highlight.color} 45%, ${highlight.color} 55%, transparent 60%)`,
-          opacity: 0.8
-        };
-      }
-
-      return (
-        <div
-          key={`layer-${index}`}
-          style={layerStyle}
-          className="formula-layer"
-        />
-      );
-    });
-
-    return <>{layers}</>;
+    // No longer needed since we use CSS conic-gradient for pizza slices
+    return null;
   };
 
   // Handle mouse enter with position tracking

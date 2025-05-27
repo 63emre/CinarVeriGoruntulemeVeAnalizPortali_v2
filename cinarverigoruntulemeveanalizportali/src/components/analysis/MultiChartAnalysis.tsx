@@ -21,6 +21,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { evaluateFormulasForTable } from '@/lib/enhancedFormulaEvaluator';
 import EditableDataTable from '@/components/tables/EditableDataTable';
+import FormulaEditor from '@/components/formulas/FormulaEditor';
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
@@ -105,6 +106,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [highlightedCells, setHighlightedCells] = useState<HighlightedCell[]>([]);
   const [showTable, setShowTable] = useState(true);
+  const [showFormulaManager, setShowFormulaManager] = useState(false);
   const [applyingFormulas, setApplyingFormulas] = useState(false);
   
   // Refs for PDF export
@@ -475,31 +477,50 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       
-      // Set font for better Turkish character support
-      pdf.setFont('helvetica', 'normal');
-      
-      // Helper function to encode Turkish characters for PDF
-      const encodeTurkishText = (text: string): string => {
-        // Use proper UTF-8 encoding instead of replacing characters
-        try {
-          // For PDF compatibility, we'll use a more conservative approach
-          return text
-            .replace(/ğ/g, 'g')
-            .replace(/Ğ/g, 'G')
-            .replace(/ü/g, 'u')
-            .replace(/Ü/g, 'U')
-            .replace(/ş/g, 's')
-            .replace(/Ş/g, 'S')
-            .replace(/ı/g, 'i')
-            .replace(/İ/g, 'I')
-            .replace(/ö/g, 'o')
-            .replace(/Ö/g, 'O')
-            .replace(/ç/g, 'c')
-            .replace(/Ç/g, 'C');
-        } catch (error) {
-          console.warn('Text encoding issue:', error);
-          return text;
+      // Enhanced Turkish character support for PDF
+      try {
+        // Try to use a Unicode-compatible font if available
+        pdf.setFont('helvetica', 'normal');
+        // Set language for better character support
+        if (typeof (pdf as { setLanguage?: (lang: string) => void }).setLanguage === 'function') {
+          (pdf as { setLanguage: (lang: string) => void }).setLanguage('tr');
         }
+      } catch (fontError) {
+        console.warn('Font setting failed, using default:', fontError);
+        pdf.setFont('helvetica', 'normal');
+      }
+      
+      // Enhanced Turkish text encoding with better Unicode support
+      const encodeTurkishText = (text: string): string => {
+        try {
+          // First try to preserve Turkish characters using proper encoding
+          const encoder = new TextEncoder();
+          const decoder = new TextDecoder('utf-8');
+          const encoded = encoder.encode(text);
+          const decoded = decoder.decode(encoded);
+          
+          // If encoding/decoding works, use original text
+          if (decoded === text) {
+            return text;
+          }
+        } catch (error) {
+          console.warn('Unicode encoding failed, using fallback:', error);
+        }
+        
+        // Fallback to character replacement for PDF compatibility
+        return text
+          .replace(/ğ/g, 'g')
+          .replace(/Ğ/g, 'G')
+          .replace(/ü/g, 'u')
+          .replace(/Ü/g, 'U')
+          .replace(/ş/g, 's')
+          .replace(/Ş/g, 'S')
+          .replace(/ı/g, 'i')
+          .replace(/İ/g, 'I')
+          .replace(/ö/g, 'o')
+          .replace(/Ö/g, 'O')
+          .replace(/ç/g, 'c')
+          .replace(/Ç/g, 'C');
       };
       
       // Add title page with proper encoding
@@ -569,96 +590,140 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
             // Wait for chart to be fully rendered
             await new Promise(resolve => setTimeout(resolve, 500));
             
-            // Enhanced chart capture with better settings and CSS compatibility
-            const canvas = await html2canvas(chartElement, {
-              backgroundColor: '#ffffff',
-              scale: 2, // Increased scale for better quality
-              logging: false,
-              useCORS: true,
-              allowTaint: true,
-              foreignObjectRendering: true,
-              width: chartElement.offsetWidth,
-              height: chartElement.offsetHeight,
-              x: 0,
-              y: 0,
-              scrollX: 0,
-              scrollY: 0,
-              windowWidth: window.innerWidth,
-              windowHeight: window.innerHeight,
-              imageTimeout: 15000,
-              // Enhanced CSS handling for modern color functions
-              ignoreElements: (element) => {
-                const style = window.getComputedStyle(element);
-                // Skip elements with problematic CSS functions
-                if (style.color?.includes('oklch') || 
-                    style.color?.includes('lch') || 
-                    style.color?.includes('lab') ||
-                    style.backgroundColor?.includes('oklch') ||
-                    style.backgroundColor?.includes('lch') ||
-                    style.backgroundColor?.includes('lab')) {
-                  return true;
+            // Try Chart.js direct method first (more reliable for charts)
+            let imgData: string | null = null;
+            let captureMethod = 'unknown';
+            
+            try {
+              const chartCanvas = chartElement.querySelector('canvas') as HTMLCanvasElement;
+              if (chartCanvas) {
+                // Try to get Chart.js instance and use toDataURL
+                const chartInstance = ChartJS.getChart(chartCanvas);
+                if (chartInstance) {
+                  imgData = chartCanvas.toDataURL('image/png', 0.95);
+                  captureMethod = 'chartjs-direct';
+                  console.log(`✅ Chart ${i + 1} captured using Chart.js direct method`);
                 }
-                return false;
-              },
-              onclone: (clonedDoc) => {
-                const allElements = clonedDoc.querySelectorAll('*');
-                allElements.forEach((el) => {
-                  const element = el as HTMLElement;
-                  const computedStyle = window.getComputedStyle(element);
-                  
-                  // Convert modern color functions to fallback colors
-                  if (computedStyle.color?.includes('oklch') || 
-                      computedStyle.color?.includes('lch') || 
-                      computedStyle.color?.includes('lab')) {
-                    element.style.color = '#333333'; // Fallback to dark gray
-                  }
-                  if (computedStyle.backgroundColor?.includes('oklch') || 
-                      computedStyle.backgroundColor?.includes('lch') ||
-                      computedStyle.backgroundColor?.includes('lab')) {
-                    element.style.backgroundColor = '#ffffff'; // Fallback to white
-                  }
-                  if (computedStyle.borderColor?.includes('oklch') || 
-                      computedStyle.borderColor?.includes('lch') ||
-                      computedStyle.borderColor?.includes('lab')) {
-                    element.style.borderColor = '#cccccc'; // Fallback to light gray
-                  }
-                  
-                  // Also handle any CSS variables that might contain modern color functions
-                  const cssText = element.style.cssText;
-                  if (cssText.includes('oklch') || cssText.includes('lch') || cssText.includes('lab')) {
-                    // Replace with safe fallback colors
-                    element.style.cssText = cssText
-                      .replace(/oklch\([^)]+\)/g, '#333333')
-                      .replace(/lch\([^)]+\)/g, '#333333')
-                      .replace(/lab\([^)]+\)/g, '#333333');
-                  }
-                });
               }
-            });
+            } catch (directError) {
+              console.warn(`⚠️ Chart.js direct capture failed for chart ${i + 1}:`, directError);
+            }
             
-            console.log(`✅ Chart ${i + 1} captured successfully - ${canvas.width}x${canvas.height}`);
+            // Fallback to html2canvas if direct method failed
+            if (!imgData) {
+              console.log(`📊 Falling back to html2canvas for chart ${i + 1}`);
+              const canvas = await html2canvas(chartElement, {
+                backgroundColor: '#ffffff',
+                scale: 2, // Increased scale for better quality
+                logging: false,
+                useCORS: true,
+                allowTaint: true,
+                foreignObjectRendering: true,
+                width: chartElement.offsetWidth,
+                height: chartElement.offsetHeight,
+                x: 0,
+                y: 0,
+                scrollX: 0,
+                scrollY: 0,
+                windowWidth: window.innerWidth,
+                windowHeight: window.innerHeight,
+                imageTimeout: 15000,
+                // Enhanced CSS handling for modern color functions
+                ignoreElements: (element) => {
+                  const style = window.getComputedStyle(element);
+                  // Skip elements with problematic CSS functions
+                  if (style.color?.includes('oklch') || 
+                      style.color?.includes('lch') || 
+                      style.color?.includes('lab') ||
+                      style.backgroundColor?.includes('oklch') ||
+                      style.backgroundColor?.includes('lch') ||
+                      style.backgroundColor?.includes('lab')) {
+                    return true;
+                  }
+                  return false;
+                },
+                onclone: (clonedDoc) => {
+                  const allElements = clonedDoc.querySelectorAll('*');
+                  allElements.forEach((el) => {
+                    const element = el as HTMLElement;
+                    const computedStyle = window.getComputedStyle(element);
+                    
+                    // Convert modern color functions to fallback colors
+                    if (computedStyle.color?.includes('oklch') || 
+                        computedStyle.color?.includes('lch') || 
+                        computedStyle.color?.includes('lab')) {
+                      element.style.color = '#333333'; // Fallback to dark gray
+                    }
+                    if (computedStyle.backgroundColor?.includes('oklch') || 
+                        computedStyle.backgroundColor?.includes('lch') ||
+                        computedStyle.backgroundColor?.includes('lab')) {
+                      element.style.backgroundColor = '#ffffff'; // Fallback to white
+                    }
+                    if (computedStyle.borderColor?.includes('oklch') || 
+                        computedStyle.borderColor?.includes('lch') ||
+                        computedStyle.borderColor?.includes('lab')) {
+                      element.style.borderColor = '#cccccc'; // Fallback to light gray
+                    }
+                    
+                    // Also handle any CSS variables that might contain modern color functions
+                    const cssText = element.style.cssText;
+                    if (cssText.includes('oklch') || cssText.includes('lch') || cssText.includes('lab')) {
+                      // Replace with safe fallback colors
+                      element.style.cssText = cssText
+                        .replace(/oklch\([^)]+\)/g, '#333333')
+                        .replace(/lch\([^)]+\)/g, '#333333')
+                        .replace(/lab\([^)]+\)/g, '#333333');
+                    }
+                  });
+                }
+              });
+              
+              console.log(`✅ Chart ${i + 1} captured successfully with html2canvas - ${canvas.width}x${canvas.height}`);
+              imgData = canvas.toDataURL('image/png', 0.95);
+              captureMethod = 'html2canvas';
+            }
             
-            const imgData = canvas.toDataURL('image/png', 0.95);
-            const imgWidth = pageWidth - 30;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            // Process the captured image
+            if (imgData) {
+              // Create a temporary image to get dimensions
+              const tempImg = new Image();
+              tempImg.src = imgData;
+              
+              // Calculate image dimensions for PDF
+              const imgWidth = pageWidth - 30;
+              const imgHeight = (tempImg.height * imgWidth) / tempImg.width || 150; // fallback height
+              
+              // Ensure image fits on page
+              const maxHeight = pageHeight - 80;
+              const finalHeight = Math.min(imgHeight, maxHeight);
+              const finalWidth = (tempImg.width * finalHeight) / tempImg.height || imgWidth;
             
-            // Ensure image fits on page
-            const maxHeight = pageHeight - 80;
-            const finalHeight = Math.min(imgHeight, maxHeight);
-            const finalWidth = (canvas.width * finalHeight) / canvas.height;
-            
-            // Add chart to PDF
-            pdf.addImage(imgData, 'PNG', 15, 30, finalWidth, finalHeight);
-            
-            // Add chart details with proper encoding
-            pdf.setFontSize(10);
-            pdf.text(encodeTurkishText(`Değişken: ${chart.variable}`), 15, pageHeight - 30);
-            pdf.text(`Tarih Aralığı: ${chart.startDate} - ${chart.endDate}`, 15, pageHeight - 20);
-            pdf.text(encodeTurkishText(`Grafik Türü: ${chart.type === 'line' ? 'Çizgi' : 'Sütun'} Grafik`), 15, pageHeight - 10);
-            
-            chartsAdded++;
-            console.log(`📄 Chart ${i + 1} added to PDF successfully`);
-            
+                          // Add chart to PDF
+              pdf.addImage(imgData, 'PNG', 15, 30, finalWidth, finalHeight);
+              
+              // Add chart details with proper encoding
+              pdf.setFontSize(10);
+              pdf.text(encodeTurkishText(`Değişken: ${chart.variable}`), 15, pageHeight - 30);
+              pdf.text(`Tarih Aralığı: ${chart.startDate} - ${chart.endDate}`, 15, pageHeight - 20);
+              pdf.text(encodeTurkishText(`Grafik Türü: ${chart.type === 'line' ? 'Çizgi' : 'Sütun'} Grafik`), 15, pageHeight - 10);
+              
+              chartsAdded++;
+              console.log(`📄 Chart ${i + 1} added to PDF successfully using ${captureMethod}`);
+            } else {
+              console.warn(`⚠️ Failed to capture chart ${i + 1}: chart-${chart.id}`);
+              
+              // Add new page and error message
+              if (currentPage > 1) pdf.addPage();
+              currentPage++;
+              
+              pdf.setFontSize(14);
+              pdf.text(encodeTurkishText(`Grafik ${i + 1}: ${chart.title}`), 15, 20);
+              pdf.setFontSize(12);
+              pdf.setTextColor(255, 140, 0); // Orange color for warnings
+              pdf.text(encodeTurkishText('Grafik yakalama başarısız'), 15, 50);
+              pdf.text(`Grafik ID: chart-${chart.id}`, 15, 65);
+              pdf.setTextColor(0, 0, 0);
+            }
           } else {
             console.warn(`⚠️ Chart element not found for chart ${i + 1}: chart-${chart.id}`);
             
@@ -999,6 +1064,19 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
               Yeni Grafik Ekle
             </button>
 
+            <button
+              onClick={() => setShowFormulaManager(!showFormulaManager)}
+              disabled={!selectedTable}
+              className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                !selectedTable
+                  ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg'
+              }`}
+            >
+              <FcRules className="mr-2 h-4 w-4" />
+              {showFormulaManager ? 'Formül Yönetimini Gizle' : 'Formül Yönetimi'}
+            </button>
+
             <label className="flex items-center bg-gray-50 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">
               <input
                 type="checkbox"
@@ -1055,6 +1133,50 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Formula Management Section */}
+      {showFormulaManager && selectedTable && (
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold flex items-center">
+              <FcRules className="mr-2 h-6 w-6" />
+              Formül Yönetimi
+            </h2>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">
+                Tablo: {tables.find(t => t.id === selectedTable)?.name}
+              </span>
+              <button
+                onClick={applyFormulasToTable}
+                disabled={applyingFormulas || formulas.length === 0}
+                className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                  applyingFormulas || formulas.length === 0
+                    ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                    : 'bg-green-600 hover:bg-green-700 text-white shadow-md'
+                }`}
+              >
+                {applyingFormulas ? 'Uygulanıyor...' : 'Formülleri Uygula'}
+              </button>
+            </div>
+          </div>
+          
+          <FormulaEditor
+            workspaceId={selectedWorkspace}
+            tableId={selectedTable}
+            onFormulaAdded={(newFormula) => {
+              const formulaWithDefaults: Formula = {
+                ...newFormula,
+                active: newFormula.active ?? true
+              };
+              setFormulas(prev => [...prev, formulaWithDefaults]);
+              // Auto-apply formulas when a new one is added
+              setTimeout(() => {
+                applyFormulasToTable();
+              }, 500);
+            }}
+          />
         </div>
       )}
 

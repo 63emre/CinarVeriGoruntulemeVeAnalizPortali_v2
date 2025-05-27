@@ -492,12 +492,8 @@ export default function FormulaEditor({ workspaceId, tableId, onFormulaAdded }: 
     setError('');
     setSuccess('');
     
-    // Ensure we have a selected table
-    if (!selectedTableId) {
-      setError('Formül oluşturmak için bir tablo seçmelisiniz');
-      setLoading(false);
-      return;
-    }
+    // Table selection is optional - if no table is selected, formula applies to entire workspace
+    // If tableId prop is provided, use it; otherwise use selectedTableId (which can be null for workspace-wide formulas)
     
     try {
       const response = await fetch(`/api/workspaces/${workspaceId}/formulas`, {
@@ -510,7 +506,7 @@ export default function FormulaEditor({ workspaceId, tableId, onFormulaAdded }: 
           description: formulaData.description,
           expression: formulaData.formula,
           color: formulaData.color,
-          tableId: selectedTableId,  // Link the formula to the selected table
+          tableId: tableId || selectedTableId,  // Use provided tableId or selected table (null for workspace-wide)
           type: formulaData.type === 'cellValidation' ? 'CELL_VALIDATION' : 'RELATIONAL',
           active: true // Set formula as active by default
         }),

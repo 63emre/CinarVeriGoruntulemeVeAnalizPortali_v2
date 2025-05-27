@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams, useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { FcBarChart, FcBullish, FcLineChart, FcCalendar } from 'react-icons/fc';
+import { FcBarChart, FcBullish, FcCalendar, FcAreaChart, FcRules } from 'react-icons/fc';
+import FormulaManagementPage from '@/components/formulas/FormulaManagementPage';
 
 // Register ChartJS components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
@@ -22,94 +23,53 @@ export default function AnalysisPage() {
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tableName, setTableName] = useState('');
   const [variables, setVariables] = useState<string[]>([]);
-  const [selectedVariable, setSelectedVariable] = useState<string>('');
   const [dateColumns, setDateColumns] = useState<string[]>([]);
+  const [selectedVariable, setSelectedVariable] = useState<string>('');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
+  const [showFormulaModal, setShowFormulaModal] = useState(false);
   
   // Fetch table data and extract variables
   useEffect(() => {
     if (!tableId || !workspaceId) {
-      setError('Tablo ID veya Çalışma Alanı ID eksik');
-      setLoading(false);
+      setError('Tablo ID veya çalışma alanı ID eksik');
       return;
     }
-    
+
     async function fetchTableData() {
       try {
         setLoading(true);
-        const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}`);
+        setError(null);
+        
+        const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/analysis`);
         
         if (!response.ok) {
           throw new Error('Tablo verileri yüklenirken hata oluştu');
         }
         
         const data = await response.json();
-        console.log('API response:', data); // Debug log
         
-        // Check if data has correct structure - it should be directly accessible, not nested in a data property
-        if (!data || !Array.isArray(data.columns) || !Array.isArray(data.data)) {
-          console.error('Unexpected data structure:', data);
-          throw new Error('Geçersiz tablo verisi yapısı');
-        }
+        setVariables(data.variables || []);
+        setDateColumns(data.dateColumns || []);
         
-        // Set table name
-        setTableName(data.name || 'Analiz');
-        
-        // Extract variables (typically in a column called 'Variable')
-        const variableColumnIndex = data.columns.findIndex((col: string) => col === 'Variable');
-        
-        if (variableColumnIndex !== -1) {
-          // Extract unique variables from the Variable column
-          const uniqueVars = new Set<string>();
-          
-          data.data.forEach((row: (string | number | null)[]) => {
-            const varValue = row[variableColumnIndex];
-            if (varValue && typeof varValue === 'string' && varValue.trim() !== '') {
-              uniqueVars.add(varValue);
-            }
-          });
-          
-          const varArray = Array.from(uniqueVars);
-          setVariables(varArray);
-          
-          // Set first variable as default if available
-          if (varArray.length > 0) {
-            setSelectedVariable(varArray[0]);
-          }
-        } else {
-          console.warn('Variable column not found in table data');
-        }
-        
-        // Identify date columns (any column that is not one of the standard columns)
-        const standardColumns = ['id', 'Variable', 'Data Source', 'Method', 'Unit', 'LOQ'];
-        const dateColumnsArray = data.columns.filter(
-          (col: string) => !standardColumns.includes(col)
-        );
-        
-        setDateColumns(dateColumnsArray);
-        
-        // Set default date range if date columns available
-        if (dateColumnsArray.length > 0) {
-          setStartDate(dateColumnsArray[0]);
-          setEndDate(dateColumnsArray[dateColumnsArray.length - 1]);
-        } else {
-          console.warn('No date columns found in table data');
+        // Set default dates if available
+        if (data.dateColumns && data.dateColumns.length > 0) {
+          setStartDate(data.dateColumns[0]);
+          setEndDate(data.dateColumns[data.dateColumns.length - 1]);
         }
         
       } catch (err) {
-        console.error('Table data fetch error:', err);
+        console.error('Error fetching table data:', err);
         setError((err as Error).message);
       } finally {
         setLoading(false);
       }
     }
-    
+
     fetchTableData();
-  }, [workspaceId, tableId]);
+  }, [tableId, workspaceId]);
   
   // Generate analysis data when parameters change
   useEffect(() => {
@@ -285,10 +245,21 @@ export default function AnalysisPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6 flex items-center">
-          <FcLineChart className="mr-3 h-7 w-7" />
-          {tableName || 'Tablo'} Analizi
-        </h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-semibold text-black flex items-center">
+            <FcAreaChart className="mr-3 h-8 w-8" />
+            Veri Analizi
+          </h1>
+          
+          {/* Formula Management Button */}
+          <button
+            onClick={() => setShowFormulaModal(true)}
+            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md flex items-center transition-colors"
+          >
+            <FcRules className="mr-2" />
+            Formül Yönetimi
+          </button>
+        </div>
         
         {error && (
           <div className="bg-red-100 border-l-4 border-red-500 p-4 mb-4">
@@ -484,6 +455,30 @@ export default function AnalysisPage() {
           </div>
         )}
       </div>
+
+      {/* Formula Management Modal */}
+      {showFormulaModal && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full max-h-screen overflow-y-auto">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-xl font-bold flex items-center">
+                <FcRules className="mr-2" />
+                Formül Yönetimi
+              </h2>
+              <button
+                onClick={() => setShowFormulaModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <FormulaManagementPage workspaceId={workspaceId} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 } 

@@ -2,15 +2,20 @@ import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import autoTable from 'jspdf-autotable';
 
+// Add Turkish character support by importing a font that supports Unicode
+// Note: For production, you might want to add a proper Turkish font
+// For now, we'll use built-in fonts and handle encoding properly
+
 // Define a custom DataTable interface since it's not exported from Prisma client
 export interface DataTable {
   id: string;
   name: string;
-  sheetName: string;
+  sheetName?: string;
   workspaceId: string;
   uploadedAt: Date;
   updatedAt: Date;
-    columns: string[];  data: (string | number | null)[][];
+  columns: string[];
+  data: (string | number | null)[][];
   workspace?: {
     name: string;
     description?: string | null;
@@ -21,15 +26,25 @@ export interface HighlightedCell {
   row: string;
   col: string;
   color: string;
-  message?: string;
+  message: string;
+  formulaIds?: string[];
+  formulaDetails?: {
+    id: string;
+    name: string;
+    formula: string;
+    leftResult?: number;
+    rightResult?: number;
+  }[];
 }
 
 interface Formula {
   id: string;
   name: string;
-  description: string | null;
+  description?: string | null;
   formula: string;
-  color: string | null;
+  color: string;
+  type: 'CELL_VALIDATION' | 'RELATIONAL';
+  active: boolean;
 }
 
 interface PdfExportOptions {
@@ -40,21 +55,50 @@ interface PdfExportOptions {
   logo?: string;
   includeDate?: boolean;
   userName?: string;
+  orientation?: 'portrait' | 'landscape';
+}
+
+interface PDFGenerationOptions {
+  title?: string;
+  subtitle?: string;
+  includeDateTime?: boolean;
+  orientation?: 'portrait' | 'landscape';
+  userName?: string;
+  includeDate?: boolean;
+}
+
+// Helper function to properly encode Turkish characters
+function encodeTurkishText(text: string): string {
+  // Replace Turkish characters with their closest ASCII equivalents for better PDF compatibility
+  const turkishMap: { [key: string]: string } = {
+    'ç': 'c', 'Ç': 'C',
+    'ğ': 'g', 'Ğ': 'G', 
+    'ı': 'i', 'İ': 'I',
+    'ö': 'o', 'Ö': 'O',
+    'ş': 's', 'Ş': 'S',
+    'ü': 'u', 'Ü': 'U'
+  };
+  
+  return text.replace(/[çÇğĞıİöÖşŞüÜ]/g, (match) => turkishMap[match] || match);
 }
 
 /**
  * Converts HEX color to RGB values
  */
 function hexToRgb(hex: string): { r: number, g: number, b: number } | null {
-  // Default to black if no color provided
-  if (!hex) return { r: 0, g: 0, b: 0 };
+  if (!hex) return null;
   
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result ? {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16)
-  } : null;
+  const cleaned = hex.replace('#', '');
+  if (cleaned.length !== 6) return null;
+  
+  const bigint = parseInt(cleaned, 16);
+  if (isNaN(bigint)) return null;
+  
+  return {
+    r: (bigint >> 16) & 255,
+    g: (bigint >> 8) & 255,
+    b: bigint & 255
+  };
 }
 
 /**
@@ -67,14 +111,17 @@ export async function exportTableToPdf(
   options: PdfExportOptions = {}
 ): Promise<Buffer> {
   const doc = new jsPDF({
-    orientation: 'landscape',
+    orientation: options.orientation || 'landscape',
     unit: 'mm',
     format: 'a4'
   });
   
-  // Add title
-  const title = options.title || `${table.name} - ${table.sheetName}`;
-  const subtitle = options.subtitle || 'Çınar Çevre Laboratuvarı';
+  // Set font for better Turkish character support
+  doc.setFont('helvetica', 'normal');
+  
+  // Add title with proper encoding
+  const title = encodeTurkishText(options.title || `${table.name} - ${table.sheetName || ''}`);
+  const subtitle = encodeTurkishText(options.subtitle || 'Cinar Cevre Laboraturvari');
   const date = new Date().toLocaleDateString('tr-TR');
   const time = new Date().toLocaleTimeString('tr-TR');
   
@@ -329,15 +376,6 @@ export async function exportTableToPdf(
   
   // Return the PDF as buffer (not blob, for server environment)
   return Buffer.from(doc.output('arraybuffer'));
-}
-
-export interface PDFGenerationOptions {
-  title?: string;
-  subtitle?: string;
-  includeDateTime?: boolean;
-  orientation?: 'portrait' | 'landscape';
-  userName?: string;
-  includeDate?: boolean;
 }
 
 /**

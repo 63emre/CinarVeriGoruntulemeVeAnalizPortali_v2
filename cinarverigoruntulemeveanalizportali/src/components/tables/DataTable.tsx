@@ -165,22 +165,61 @@ export default function DataTable({
 
   // Evaluate formulas whenever data or formulas change
   useEffect(() => {
+    console.log('🔄 DataTable: Formulas or data changed, re-evaluating...');
+    console.log('📊 Current data:', data.length, 'rows');
+    console.log('📝 Current formulas:', formulas.length, 'formulas');
+    console.log('📋 Current columns:', columns.map(col => col.id));
+    
     if (data.length > 0 && columns.length > 0 && formulas.length > 0) {
       // Only evaluate active formulas
       const activeFormulas = formulas.filter(f => f.active !== false);
+      console.log('✅ Active formulas:', activeFormulas.length);
+      
       if (activeFormulas.length > 0) {
         try {
+          console.log('🚀 Starting formula evaluation...');
           const highlights = evaluateFormulas(
             activeFormulas,
             data,
             columns.map(col => col.id)
           );
+          console.log('✨ Formula evaluation completed, highlights:', highlights.length);
           setCalculatedHighlights(highlights);
+          
+          // Show user feedback with more detailed information
+          if (highlights.length === 0) {
+            console.log('ℹ️ No cells matched the formula criteria');
+            setError(`ℹ️ ${activeFormulas.length} formül(ler)i uygulandı ancak hiçbir hücre belirtilen kriterleri karşılamadı. Bu normal bir durumdur.`);
+            // Clear error message after 5 seconds
+            setTimeout(() => setError(null), 5000);
+          } else {
+            console.log(`🎯 ${highlights.length} cells highlighted by formulas`);
+            setError(`✅ ${highlights.length} hücre ${activeFormulas.length} formül tarafından vurgulandı.`);
+            // Clear success message after 3 seconds
+            setTimeout(() => setError(null), 3000);
+          }
         } catch (err) {
-          console.error('Formül değerlendirme hatası:', err);
+          console.error('❌ Formula evaluation error:', err);
+          setCalculatedHighlights([]);
+          setError(`❌ Formül değerlendirme hatası: ${(err as Error).message}`);
         }
       } else {
+        console.log('⚠️ No active formulas found');
         setCalculatedHighlights([]);
+        setError('⚠️ Aktif formül bulunamadı. Formülleri kontrol edin.');
+        setTimeout(() => setError(null), 3000);
+      }
+    } else {
+      console.log('⚠️ Missing data, columns, or formulas for evaluation');
+      setCalculatedHighlights([]);
+      
+      // Provide specific feedback about what's missing
+      if (data.length === 0) {
+        setError('⚠️ Tablo verisi yüklenmedi.');
+      } else if (columns.length === 0) {
+        setError('⚠️ Tablo sütunları yüklenmedi.');
+      } else if (formulas.length === 0) {
+        setError('ℹ️ Bu tablo için tanımlanmış formül bulunmuyor.');
       }
     }
   }, [data, columns, formulas]);

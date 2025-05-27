@@ -42,6 +42,11 @@ export default function TableCell({
     h => h.row === rowId && h.col === colId
   );
   
+  // Debug logging for cell highlights
+  if (cellHighlights.length > 0) {
+    console.log(`🎨 Cell [${rowId}, ${colId}] has ${cellHighlights.length} highlights:`, cellHighlights);
+  }
+  
   // Function to format the cell value
   const formatCellValue = (val: string | number | null): string => {
     if (val === null) return '';
@@ -75,28 +80,99 @@ export default function TableCell({
     if (cellHighlights.length === 1) {
       // Single highlight
       const highlight = cellHighlights[0];
-      return {
+      const style = {
         backgroundColor: highlight.color,
         color: '#000',
-        fontWeight: 'bold',
+        fontWeight: 'bold' as const,
         border: `2px solid ${highlight.color}`,
         boxShadow: `0 0 4px ${highlight.color}40`,
-        position: 'relative'
+        position: 'relative' as const,
+        transition: 'all 0.2s ease-in-out'
       };
+      console.log(`🎨 Single highlight style for [${rowId}, ${colId}]:`, style);
+      return style;
     }
 
-    // Multiple highlights - create gradient effect
-    const colors = cellHighlights.map(h => h.color);
-    const gradientColors = colors.join(', ');
-    
-    return {
-      background: `linear-gradient(45deg, ${gradientColors})`,
-      color: '#000',
-      fontWeight: 'bold',
+    // Multiple highlights - use base style for the cell
+    const style = {
+      position: 'relative' as const,
+      backgroundColor: '#f8f9fa', // Light background for multi-formula cells
       border: '2px solid #333',
-      boxShadow: '0 0 6px rgba(0,0,0,0.3)',
-      position: 'relative'
+      fontWeight: 'bold' as const,
+      transition: 'all 0.2s ease-in-out'
     };
+    console.log(`🌈 Multi-highlight base style for [${rowId}, ${colId}]:`, style);
+    return style;
+  };
+
+  // Render cell layers for multiple formulas
+  const renderCellLayers = () => {
+    if (cellHighlights.length <= 1) return null;
+
+    const layers = cellHighlights.map((highlight, index) => {
+      const totalFormulas = cellHighlights.length;
+      let layerStyle: React.CSSProperties = {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        pointerEvents: 'none',
+        zIndex: index + 1
+      };
+
+      // Calculate division based on number of formulas
+      if (totalFormulas === 2) {
+        // Vertical split
+        layerStyle = {
+          ...layerStyle,
+          left: index === 0 ? '0%' : '50%',
+          right: index === 0 ? '50%' : '0%',
+          backgroundColor: highlight.color,
+          opacity: 0.7
+        };
+      } else if (totalFormulas === 3) {
+        // Horizontal thirds
+        layerStyle = {
+          ...layerStyle,
+          top: `${(index * 100) / 3}%`,
+          bottom: `${((2 - index) * 100) / 3}%`,
+          backgroundColor: highlight.color,
+          opacity: 0.7
+        };
+      } else if (totalFormulas === 4) {
+        // Quadrants
+        const isTop = index < 2;
+        const isLeft = index % 2 === 0;
+        layerStyle = {
+          ...layerStyle,
+          top: isTop ? '0%' : '50%',
+          bottom: isTop ? '50%' : '0%',
+          left: isLeft ? '0%' : '50%',
+          right: isLeft ? '50%' : '0%',
+          backgroundColor: highlight.color,
+          opacity: 0.7
+        };
+      } else {
+        // For more than 4 formulas, use diagonal stripes
+        const angle = (index * 180) / totalFormulas;
+        layerStyle = {
+          ...layerStyle,
+          background: `linear-gradient(${angle}deg, transparent 40%, ${highlight.color} 45%, ${highlight.color} 55%, transparent 60%)`,
+          opacity: 0.8
+        };
+      }
+
+      return (
+        <div
+          key={`layer-${index}`}
+          style={layerStyle}
+          className="formula-layer"
+        />
+      );
+    });
+
+    return <>{layers}</>;
   };
 
   // Handle mouse enter with position tracking
@@ -192,24 +268,59 @@ export default function TableCell({
   
   return (
     <>
+      {/* Add CSS for animations */}
+      <style jsx>{`
+        @keyframes pulse {
+          0% { box-shadow: 0 0 8px rgba(0,0,0,0.4); }
+          50% { box-shadow: 0 0 12px rgba(0,0,0,0.6); }
+          100% { box-shadow: 0 0 8px rgba(0,0,0,0.4); }
+        }
+        
+        .multi-formula-cell {
+          animation: pulse 2s infinite;
+        }
+        
+        .highlighted-cell:hover {
+          transform: scale(1.02);
+          z-index: 10;
+        }
+      `}</style>
+      
       <td
-        className="px-4 py-2 border-b border-gray-200 relative cursor-pointer hover:bg-gray-50 transition-colors"
+        className={`px-4 py-2 border-b border-gray-200 relative cursor-pointer hover:bg-gray-50 transition-colors ${
+          cellHighlights.length > 0 ? 'highlighted-cell' : ''
+        } ${cellHighlights.length > 1 ? 'multi-formula-cell' : ''}`}
         style={getCellStyle()}
         onClick={() => onClick && onClick(rowId, colId, value)}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        <span className={isSelected ? 'font-medium' : ''}>
+        {/* Render cell layers for multiple formulas */}
+        {renderCellLayers()}
+        
+        <span className={isSelected ? 'font-medium' : ''} style={{ position: 'relative', zIndex: 10 }}>
           {formatCellValue(value)}
         </span>
         
-        {/* Multi-formula indicator */}
+        {/* Enhanced multi-formula indicator */}
         {cellHighlights.length > 1 && (
-          <div className="absolute top-1 right-1 w-2 h-2 bg-yellow-400 rounded-full border border-white shadow-sm"></div>
+          <div className="absolute top-1 right-1 flex items-center space-x-1" style={{ zIndex: 15 }}>
+            <div className="w-2 h-2 bg-yellow-400 rounded-full border border-white shadow-sm animate-bounce"></div>
+            <span className="text-xs font-bold text-white bg-red-500 rounded-full px-1 min-w-[16px] h-4 flex items-center justify-center shadow-sm">
+              {cellHighlights.length}
+            </span>
+          </div>
+        )}
+        
+        {/* Single formula indicator */}
+        {cellHighlights.length === 1 && (
+          <div className="absolute top-1 right-1" style={{ zIndex: 15 }}>
+            <div className="w-2 h-2 bg-green-400 rounded-full border border-white shadow-sm"></div>
+          </div>
         )}
       </td>
       
-      {/* Tooltip portal */}
+      {/* Enhanced tooltip portal */}
       {showTooltip && cellHighlights.length > 0 && getTooltipContent()}
     </>
   );

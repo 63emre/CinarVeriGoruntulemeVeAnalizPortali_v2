@@ -238,14 +238,16 @@ function escapeRegExp(string: string): string {
 }
 
 /**
- * Evaluate a complex formula with multiple conditions
- * FIXED: Now properly returns whether condition is TRUE (should highlight) or FALSE
+ * Enhanced formula evaluation with better condition checking
  */
 export function evaluateComplexFormula(
   formula: string, 
   variables: Record<string, number>
 ): EvaluationResult {
   try {
+    console.log(`Evaluating formula: ${formula}`);
+    console.log(`Available variables:`, variables);
+    
     const conditions = parseComplexFormula(formula);
     
     if (conditions.length === 0) {
@@ -255,7 +257,7 @@ export function evaluateComplexFormula(
         message: 'No valid conditions found in formula'
       };
     }
-
+    
     const conditionResults: boolean[] = [];
     let leftResult: number | undefined;
     let rightResult: number | undefined;
@@ -265,25 +267,26 @@ export function evaluateComplexFormula(
       try {
         const leftValue = evaluateArithmeticExpression(condition.leftExpression, variables);
         const rightValue = evaluateArithmeticExpression(condition.rightExpression, variables);
-        const result = applyComparison(leftValue, condition.operator, rightValue);
         
         // Store results for the first condition (for tooltip display)
-        if (conditionResults.length === 0) {
-          leftResult = leftValue;
-          rightResult = rightValue;
-        }
+        if (leftResult === undefined) leftResult = leftValue;
+        if (rightResult === undefined) rightResult = rightValue;
         
-        conditionResults.push(result);
+        const conditionResult = applyComparison(leftValue, condition.operator, rightValue);
+        conditionResults.push(conditionResult);
+        
+        console.log(`Condition: ${leftValue} ${condition.operator} ${rightValue} = ${conditionResult}`);
       } catch (error) {
-        console.error('Error evaluating condition:', condition, error);
+        console.error(`Error evaluating condition:`, error);
         conditionResults.push(false);
       }
     }
     
-    // Apply logical operators
-    let finalResult = conditionResults[0];
+    // Apply logical operators between conditions
+    let finalResult = conditionResults[0] || false;
+    
     for (let i = 1; i < conditionResults.length; i++) {
-      const logicalOp = conditions[i - 1].logicalOperator;
+      const logicalOp = conditions[i-1].logicalOperator;
       if (logicalOp === 'AND') {
         finalResult = finalResult && conditionResults[i];
       } else if (logicalOp === 'OR') {
@@ -291,21 +294,22 @@ export function evaluateComplexFormula(
       }
     }
     
+    console.log(`Final result: ${finalResult}`);
+    
     return {
       isValid: true,
-      result: finalResult, // TRUE means condition is met (should highlight)
+      result: finalResult,
       message: finalResult ? 'Condition met' : 'Condition not met',
       conditionResults,
       leftResult,
       rightResult
     };
-    
   } catch (error) {
-    console.error('Error evaluating complex formula:', error);
+    console.error('Error in evaluateComplexFormula:', error);
     return {
       isValid: false,
       result: false,
-      message: `Evaluation error: ${(error as Error).message}`
+      message: `Error: ${(error as Error).message}`
     };
   }
 }

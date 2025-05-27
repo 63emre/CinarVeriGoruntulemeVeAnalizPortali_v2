@@ -223,10 +223,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <li>
                 <button 
                   onClick={handleLogout}
-                  className="flex items-center w-full px-3 py-3 rounded-lg text-sm font-medium text-gray-700 hover:bg-red-50 hover:text-red-700 transition-all duration-200"
+                  className="flex items-center w-full px-3 py-3 rounded-lg text-sm font-medium bg-red-100 text-black hover:bg-red-200 hover:text-red-900 transition-all duration-200 border border-red-200"
                 >
                   <FcExport className="w-6 h-6" />
-                  {isSidebarOpen && <span className="ml-3 text-gray-900">Çıkış Yap</span>}
+                  {isSidebarOpen && <span className="ml-3 font-semibold">Çıkış Yap</span>}
                 </button>
               </li>
             </ul>

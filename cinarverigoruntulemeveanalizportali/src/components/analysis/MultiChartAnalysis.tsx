@@ -12,17 +12,18 @@ import {
   Title,
   Tooltip,
   Legend,
+  Filler
 } from 'chart.js';
-import { FcAreaChart, FcApproval, FcRules, FcPrint, FcPlus, FcCancel } from 'react-icons/fc';
-import { MdDragIndicator, MdDelete } from 'react-icons/md';
+import { FcAreaChart, FcRules, FcApproval, FcPlus, FcPrint } from 'react-icons/fc';
+import { MdDelete, MdDragIndicator } from 'react-icons/md';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import autoTable, { CellHookData } from 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 import { evaluateFormulasForTable } from '@/lib/enhancedFormulaEvaluator';
 import EditableDataTable from '@/components/tables/EditableDataTable';
 
 // Register Chart.js components
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
 
 interface Workspace {
   id: string;
@@ -82,35 +83,6 @@ interface AnalysisData {
 interface MultiChartAnalysisProps {
   workspaceId: string;
   tableId?: string;
-}
-
-// Type definitions for autoTable
-interface AutoTableCell {
-  styles: {
-    fillColor: number[];
-    textColor: number[];
-    fontStyle: string;
-    lineWidth: number;
-    lineColor: number[];
-  };
-}
-
-interface AutoTableData {
-  section: string;
-  row: { index: number };
-  column: { index: number };
-  cell: AutoTableCell;
-}
-
-// Type for Chart.js instance
-interface ChartInstance {
-  toBase64Image?: () => string;
-}
-
-interface WindowWithChart extends Window {
-  Chart?: {
-    getChart?: (canvas: HTMLCanvasElement) => ChartInstance;
-  };
 }
 
 export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartAnalysisProps) {
@@ -398,55 +370,35 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
     
     for (let i = actualStartIndex; i <= actualEndIndex; i++) {
       const dateColumn = availableDateColumns[i];
-      const colIndex = columns.indexOf(dateColumn);
+      if (!dateColumn) continue;
       
-      if (colIndex === -1) {
-        console.log(`Date column ${dateColumn} not found in table columns`);
-        continue;
-      }
-      
-      // Use the first matching row for this variable
-      const rawValue = variableRows[0][colIndex];
-      let numValue: number | null = null;
-      
-      if (rawValue !== null && rawValue !== undefined) {
-        if (typeof rawValue === 'number') {
-          numValue = rawValue;
-        } else if (typeof rawValue === 'string') {
-          // Handle various string formats
-          let cleanValue = rawValue.trim();
-          
-          // Handle values that start with '<', '>', '≤', '≥', etc.
-          cleanValue = cleanValue.replace(/^[<>≤≥]+/, '').trim();
-          
-          // Handle comma decimal separators
-          cleanValue = cleanValue.replace(',', '.');
-          
-          const parsed = parseFloat(cleanValue);
-          if (!isNaN(parsed)) {
-            numValue = parsed;
-          } else {
-            console.log(`Could not parse value: "${rawValue}" for date ${dateColumn}`);
-          }
-        }
-      }
+      const dateColumnIndex = columns.findIndex(col => col === dateColumn);
+      if (dateColumnIndex === -1) continue;
       
       labels.push(dateColumn);
-      values.push(numValue);
+      
+      // Get value for this date from the first matching row
+      const value = variableRows[0][dateColumnIndex];
+      if (value !== null && value !== undefined && !isNaN(Number(value))) {
+        values.push(Number(value));
+      } else {
+        values.push(null);
+      }
     }
     
-    console.log(`Chart data for ${chartConfig.variable}:`, { 
-      labels: labels.slice(0, 5), // Show first 5 for brevity
-      values: values.slice(0, 5),
-      totalPoints: values.length,
-      validPoints: values.filter(v => v !== null).length
-    });
+    console.log('Chart data prepared:', { labels: labels.length, values: values.length });
+    console.log('Sample data:', { labels: labels.slice(0, 3), values: values.slice(0, 3) });
     
-    // Ensure we have some valid data
-    const validDataCount = values.filter(v => v !== null).length;
-    if (validDataCount === 0) {
-      console.log('No valid numeric data found for chart');
-      return { labels: [], datasets: [] };
+    // Create gradient for the chart
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    let gradient = null;
+    
+    if (ctx) {
+      gradient = ctx.createLinearGradient(0, 0, 0, 400);
+      gradient.addColorStop(0, chartConfig.color);
+      gradient.addColorStop(0.5, chartConfig.color + '80'); // 50% opacity
+      gradient.addColorStop(1, chartConfig.color + '20'); // 12.5% opacity
     }
     
     return {
@@ -456,13 +408,19 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           label: chartConfig.variable,
           data: values,
           borderColor: chartConfig.color,
-          backgroundColor: chartConfig.color + '20',
+          backgroundColor: gradient || (chartConfig.color + '20'),
           tension: 0.1,
           pointRadius: 4,
           pointHoverRadius: 6,
           fill: chartConfig.type === 'line',
           connectNulls: false, // Don't connect null values
           spanGaps: false, // Don't span gaps
+          pointBackgroundColor: chartConfig.color,
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 2,
+          pointHoverBackgroundColor: chartConfig.color,
+          pointHoverBorderColor: '#ffffff',
+          pointHoverBorderWidth: 3,
         }
       ]
     };
@@ -517,35 +475,59 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       
-      // Set Turkish character support
+      // Set font for better Turkish character support
       pdf.setFont('helvetica', 'normal');
       
-      // Add title page
+      // Helper function to encode Turkish characters for PDF
+      const encodeTurkishText = (text: string): string => {
+        // Use proper UTF-8 encoding instead of replacing characters
+        try {
+          // For PDF compatibility, we'll use a more conservative approach
+          return text
+            .replace(/ğ/g, 'g')
+            .replace(/Ğ/g, 'G')
+            .replace(/ü/g, 'u')
+            .replace(/Ü/g, 'U')
+            .replace(/ş/g, 's')
+            .replace(/Ş/g, 'S')
+            .replace(/ı/g, 'i')
+            .replace(/İ/g, 'I')
+            .replace(/ö/g, 'o')
+            .replace(/Ö/g, 'O')
+            .replace(/ç/g, 'c')
+            .replace(/Ç/g, 'C');
+        } catch (error) {
+          console.warn('Text encoding issue:', error);
+          return text;
+        }
+      };
+      
+      // Add title page with proper encoding
       pdf.setFontSize(20);
-      pdf.text('Çınar Çevre Laboratuvarı', pageWidth / 2, 30, { align: 'center' });
+      pdf.text(encodeTurkishText('Çınar Çevre Laboratuvarı'), pageWidth / 2, 30, { align: 'center' });
       pdf.setFontSize(16);
-      pdf.text('Kapsamlı Analiz Raporu', pageWidth / 2, 45, { align: 'center' });
+      pdf.text(encodeTurkishText('Kapsamlı Analiz Raporu'), pageWidth / 2, 45, { align: 'center' });
       
       const selectedTableName = tables.find(t => t.id === selectedTable)?.name || 'Bilinmeyen Tablo';
       pdf.setFontSize(12);
-      pdf.text(`Tablo: ${selectedTableName}`, pageWidth / 2, 60, { align: 'center' });
+      pdf.text(encodeTurkishText(`Tablo: ${selectedTableName}`), pageWidth / 2, 60, { align: 'center' });
       pdf.text(`Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, pageWidth / 2, 70, { align: 'center' });
       
       // Add formulas applied section
       if (formulas.length > 0) {
         pdf.setFontSize(14);
-        pdf.text('Uygulanan Formüller:', 15, 90);
+        pdf.text(encodeTurkishText('Uygulanan Formüller:'), 15, 90);
         
         const formulaTableData = formulas.map((formula, index) => [
           (index + 1).toString(),
-          formula.name,
-          formula.formula,
-          formula.active ? 'Aktif' : 'Pasif'
+          encodeTurkishText(formula.name),
+          encodeTurkishText(formula.formula),
+          encodeTurkishText(formula.active ? 'Aktif' : 'Pasif')
         ]);
         
         autoTable(pdf, {
           startY: 100,
-          head: [['#', 'Formül Adı', 'Formül', 'Durum']],
+          head: [[encodeTurkishText('#'), encodeTurkishText('Formül Adı'), encodeTurkishText('Formül'), encodeTurkishText('Durum')]],
           body: formulaTableData,
           styles: { 
             fontSize: 8,
@@ -563,177 +545,167 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       let currentPage = 1;
       let chartsAdded = 0;
       
-      // Add charts with improved capture
-      if (charts.length > 0) {
-        for (let i = 0; i < charts.length; i++) {
-          const chart = charts[i];
+      // Process each chart with enhanced error handling
+      for (let i = 0; i < charts.length; i++) {
+        const chart = charts[i];
+        
+        try {
+          console.log(`📊 Processing chart ${i + 1}: ${chart.title}`);
           
-          try {
-            // Wait for DOM to be ready
-            await new Promise(resolve => setTimeout(resolve, 300));
+          // Find the chart element
+          const chartElement = document.getElementById(`chart-${chart.id}`);
+          
+          if (chartElement) {
+            // Add new page for each chart
+            if (currentPage > 1) pdf.addPage();
+            currentPage++;
             
-            // Try multiple selectors to find the chart element
-            let chartElement = document.getElementById(`chart-${chart.id}`);
-            if (!chartElement) {
-              chartElement = document.querySelector(`[data-chart-id="${chart.id}"]`) as HTMLElement;
-            }
-            if (!chartElement) {
-              chartElement = document.querySelector(`.chart-container-${chart.id}`) as HTMLElement;
-            }
-            if (!chartElement) {
-              // Try to find any canvas element in the charts container
-              const chartsContainer = document.querySelector('.charts-container');
-              if (chartsContainer) {
-                const canvasElements = chartsContainer.querySelectorAll('canvas');
-                if (canvasElements[i]) {
-                  chartElement = canvasElements[i].closest('div') as HTMLElement;
+            // Add page header
+            pdf.setFontSize(14);
+            pdf.text(encodeTurkishText(`Grafik ${i + 1}: ${chart.title}`), 15, 20);
+            
+            console.log(`📊 Capturing chart ${i + 1}: ${chart.title}`);
+            
+            // Wait for chart to be fully rendered
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Enhanced chart capture with better settings and CSS compatibility
+            const canvas = await html2canvas(chartElement, {
+              backgroundColor: '#ffffff',
+              scale: 2, // Increased scale for better quality
+              logging: false,
+              useCORS: true,
+              allowTaint: true,
+              foreignObjectRendering: true,
+              width: chartElement.offsetWidth,
+              height: chartElement.offsetHeight,
+              x: 0,
+              y: 0,
+              scrollX: 0,
+              scrollY: 0,
+              windowWidth: window.innerWidth,
+              windowHeight: window.innerHeight,
+              imageTimeout: 15000,
+              // Enhanced CSS handling for modern color functions
+              ignoreElements: (element) => {
+                const style = window.getComputedStyle(element);
+                // Skip elements with problematic CSS functions
+                if (style.color?.includes('oklch') || 
+                    style.color?.includes('lch') || 
+                    style.color?.includes('lab') ||
+                    style.backgroundColor?.includes('oklch') ||
+                    style.backgroundColor?.includes('lch') ||
+                    style.backgroundColor?.includes('lab')) {
+                  return true;
                 }
-              }
-            }
-            
-            if (chartElement) {
-              // Add new page for each chart
-              if (currentPage > 1) pdf.addPage();
-              currentPage++;
-              
-              // Add page header
-              pdf.setFontSize(14);
-              pdf.text(`Grafik ${i + 1}: ${chart.title}`, 15, 20);
-              
-              console.log(`📊 Capturing chart ${i + 1}: ${chart.title}`);
-              
-              // Wait for chart to be fully rendered
-              await new Promise(resolve => setTimeout(resolve, 500));
-              
-              // Enhanced chart capture with better settings
-              const canvas = await html2canvas(chartElement, {
-                backgroundColor: '#ffffff',
-                scale: 1.2,
-                logging: false,
-                useCORS: true,
-                allowTaint: true,
-                foreignObjectRendering: true,
-                width: chartElement.offsetWidth,
-                height: chartElement.offsetHeight,
-                x: 0,
-                y: 0,
-                scrollX: 0,
-                scrollY: 0,
-                windowWidth: window.innerWidth,
-                windowHeight: window.innerHeight,
-                imageTimeout: 15000,
-                onclone: (clonedDoc) => {
-                  const allElements = clonedDoc.querySelectorAll('*');
-                  allElements.forEach((el) => {
-                    const element = el as HTMLElement;
-                    
-                    // Fix any CSS color issues
-                    const computedStyle = window.getComputedStyle(element);
-                    if (computedStyle.color && (computedStyle.color.includes('oklch') || computedStyle.color.includes('lch'))) {
-                      element.style.color = '#333333';
-                    }
-                    if (computedStyle.backgroundColor && (computedStyle.backgroundColor.includes('oklch') || computedStyle.backgroundColor.includes('lch'))) {
-                      element.style.backgroundColor = '#ffffff';
-                    }
-                    
-                    // Remove problematic CSS properties
-                    element.style.transform = 'none';
-                    element.style.filter = 'none';
-                    element.style.backdropFilter = 'none';
-                    element.style.transition = 'none';
-                    element.style.animation = 'none';
-                    
-                    // Ensure visibility
-                    if (element.style.visibility === 'hidden') {
-                      element.style.visibility = 'visible';
-                    }
-                    if (element.style.display === 'none') {
-                      element.style.display = 'block';
-                    }
-                  });
+                return false;
+              },
+              onclone: (clonedDoc) => {
+                const allElements = clonedDoc.querySelectorAll('*');
+                allElements.forEach((el) => {
+                  const element = el as HTMLElement;
+                  const computedStyle = window.getComputedStyle(element);
                   
-                  // Force redraw of canvas elements
-                  const canvasElements = clonedDoc.querySelectorAll('canvas');
-                  canvasElements.forEach((canvas) => {
-                    canvas.style.display = 'block';
-                    canvas.style.width = '100%';
-                    canvas.style.height = '100%';
-                    canvas.style.visibility = 'visible';
-                  });
-                }
-              });
-              
-              console.log(`✅ Chart ${i + 1} captured successfully - ${canvas.width}x${canvas.height}`);
-              
-              const imgData = canvas.toDataURL('image/png', 0.95);
-              const imgWidth = pageWidth - 30;
-              const imgHeight = (canvas.height * imgWidth) / canvas.width;
-              
-              // Ensure image fits on page
-              const maxHeight = pageHeight - 80;
-              const finalHeight = Math.min(imgHeight, maxHeight);
-              const finalWidth = (canvas.width * finalHeight) / canvas.height;
-              
-              // Add chart to PDF
-              pdf.addImage(imgData, 'PNG', 15, 30, finalWidth, finalHeight);
-              
-              // Add chart details
-              pdf.setFontSize(10);
-              pdf.text(`Değişken: ${chart.variable}`, 15, pageHeight - 30);
-              pdf.text(`Tarih Aralığı: ${chart.startDate} - ${chart.endDate}`, 15, pageHeight - 20);
-              pdf.text(`Grafik Türü: ${chart.type === 'line' ? 'Çizgi' : 'Sütun'} Grafik`, 15, pageHeight - 10);
-              
-              chartsAdded++;
-              console.log(`📄 Chart ${i + 1} added to PDF successfully`);
-              
-            } else {
-              console.warn(`⚠️ Chart element not found for chart ${i + 1}: chart-${chart.id}`);
-              
-              // Add new page and error message
-              if (currentPage > 1) pdf.addPage();
-              currentPage++;
-              
-              pdf.setFontSize(14);
-              pdf.text(`Grafik ${i + 1}: ${chart.title}`, 15, 20);
-              pdf.setFontSize(12);
-              pdf.setTextColor(255, 140, 0); // Orange color for warnings
-              pdf.text(`Grafik bulunamadı veya yüklenemedi`, 15, 50);
-              pdf.text(`Grafik ID: chart-${chart.id}`, 15, 65);
-              pdf.setTextColor(0, 0, 0);
-            }
+                  // Convert modern color functions to fallback colors
+                  if (computedStyle.color?.includes('oklch') || 
+                      computedStyle.color?.includes('lch') || 
+                      computedStyle.color?.includes('lab')) {
+                    element.style.color = '#333333'; // Fallback to dark gray
+                  }
+                  if (computedStyle.backgroundColor?.includes('oklch') || 
+                      computedStyle.backgroundColor?.includes('lch') ||
+                      computedStyle.backgroundColor?.includes('lab')) {
+                    element.style.backgroundColor = '#ffffff'; // Fallback to white
+                  }
+                  if (computedStyle.borderColor?.includes('oklch') || 
+                      computedStyle.borderColor?.includes('lch') ||
+                      computedStyle.borderColor?.includes('lab')) {
+                    element.style.borderColor = '#cccccc'; // Fallback to light gray
+                  }
+                  
+                  // Also handle any CSS variables that might contain modern color functions
+                  const cssText = element.style.cssText;
+                  if (cssText.includes('oklch') || cssText.includes('lch') || cssText.includes('lab')) {
+                    // Replace with safe fallback colors
+                    element.style.cssText = cssText
+                      .replace(/oklch\([^)]+\)/g, '#333333')
+                      .replace(/lch\([^)]+\)/g, '#333333')
+                      .replace(/lab\([^)]+\)/g, '#333333');
+                  }
+                });
+              }
+            });
             
-          } catch (chartError) {
-            console.error(`❌ Error capturing chart ${i + 1}:`, chartError);
+            console.log(`✅ Chart ${i + 1} captured successfully - ${canvas.width}x${canvas.height}`);
+            
+            const imgData = canvas.toDataURL('image/png', 0.95);
+            const imgWidth = pageWidth - 30;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            
+            // Ensure image fits on page
+            const maxHeight = pageHeight - 80;
+            const finalHeight = Math.min(imgHeight, maxHeight);
+            const finalWidth = (canvas.width * finalHeight) / canvas.height;
+            
+            // Add chart to PDF
+            pdf.addImage(imgData, 'PNG', 15, 30, finalWidth, finalHeight);
+            
+            // Add chart details with proper encoding
+            pdf.setFontSize(10);
+            pdf.text(encodeTurkishText(`Değişken: ${chart.variable}`), 15, pageHeight - 30);
+            pdf.text(`Tarih Aralığı: ${chart.startDate} - ${chart.endDate}`, 15, pageHeight - 20);
+            pdf.text(encodeTurkishText(`Grafik Türü: ${chart.type === 'line' ? 'Çizgi' : 'Sütun'} Grafik`), 15, pageHeight - 10);
+            
+            chartsAdded++;
+            console.log(`📄 Chart ${i + 1} added to PDF successfully`);
+            
+          } else {
+            console.warn(`⚠️ Chart element not found for chart ${i + 1}: chart-${chart.id}`);
             
             // Add new page and error message
             if (currentPage > 1) pdf.addPage();
             currentPage++;
             
             pdf.setFontSize(14);
-            pdf.text(`Grafik ${i + 1}: ${chart.title}`, 15, 20);
+            pdf.text(encodeTurkishText(`Grafik ${i + 1}: ${chart.title}`), 15, 20);
             pdf.setFontSize(12);
-            pdf.setTextColor(255, 0, 0);
-            pdf.text(`Grafik yakalama hatası: ${(chartError as Error).message}`, 15, 50);
+            pdf.setTextColor(255, 140, 0); // Orange color for warnings
+            pdf.text(encodeTurkishText('Grafik bulunamadı veya yüklenemedi'), 15, 50);
+            pdf.text(`Grafik ID: chart-${chart.id}`, 15, 65);
             pdf.setTextColor(0, 0, 0);
-            
-            // Try alternative capture method using Chart.js toBase64Image if available
-            try {
-              const chartCanvas = document.querySelector(`#chart-${chart.id} canvas`) as HTMLCanvasElement;
-              if (chartCanvas) {
-                const chartInstance = (window as any).Chart?.getChart?.(chartCanvas);
-                if (chartInstance && typeof chartInstance.toBase64Image === 'function') {
-                  const imgData = chartInstance.toBase64Image();
-                  pdf.addImage(imgData, 'PNG', 15, 70, pageWidth - 30, 150);
-                  pdf.setTextColor(0, 128, 0);
-                  pdf.text(`Grafik alternatif yöntemle eklendi`, 15, 65);
-                  pdf.setTextColor(0, 0, 0);
-                  chartsAdded++;
-                  console.log(`📄 Chart ${i + 1} added using Chart.js method`);
-                }
+          }
+          
+        } catch (chartError) {
+          console.error(`❌ Error capturing chart ${i + 1}:`, chartError);
+          
+          // Add new page and error message
+          if (currentPage > 1) pdf.addPage();
+          currentPage++;
+          
+          pdf.setFontSize(14);
+          pdf.text(encodeTurkishText(`Grafik ${i + 1}: ${chart.title}`), 15, 20);
+          pdf.setFontSize(12);
+          pdf.setTextColor(255, 0, 0);
+          pdf.text(encodeTurkishText(`Grafik yakalama hatası: ${(chartError as Error).message}`), 15, 50);
+          pdf.setTextColor(0, 0, 0);
+          
+          // Try alternative capture method using Chart.js toBase64Image if available
+          try {
+            const chartCanvas = document.querySelector(`#chart-${chart.id} canvas`) as HTMLCanvasElement;
+            if (chartCanvas) {
+              const chartInstance = (window as { Chart?: { getChart?: (canvas: HTMLCanvasElement) => { toBase64Image?: () => string } } }).Chart?.getChart?.(chartCanvas);
+              if (chartInstance && typeof chartInstance.toBase64Image === 'function') {
+                const imgData = chartInstance.toBase64Image();
+                pdf.addImage(imgData, 'PNG', 15, 70, pageWidth - 30, 150);
+                pdf.setTextColor(0, 128, 0);
+                pdf.text(encodeTurkishText('Grafik alternatif yöntemle eklendi'), 15, 65);
+                pdf.setTextColor(0, 0, 0);
+                chartsAdded++;
+                console.log(`📄 Chart ${i + 1} added using Chart.js method`);
               }
-            } catch (fallbackError) {
-              console.error(`❌ Fallback capture also failed:`, fallbackError);
             }
+          } catch (fallbackError) {
+            console.error(`❌ Fallback capture also failed:`, fallbackError);
           }
         }
       }
@@ -768,49 +740,27 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           rowIds.push(`row-${rowIndex}`);
         });
         
-        // Add table with highlighting
+        // Add table with highlighting support
         autoTable(pdf, {
+          startY: 40,
           head: [columns],
           body: tableData,
-          startY: 40,
-          styles: {
+          styles: { 
             fontSize: 8,
-            cellPadding: 2,
+            font: 'helvetica'
           },
-          headStyles: {
+          headStyles: { 
             fillColor: [41, 128, 185],
-            textColor: 255,
-            fontStyle: 'bold',
+            font: 'helvetica',
+            fontStyle: 'bold'
           },
-          alternateRowStyles: {
-            fillColor: [248, 249, 250],
-          },
-          didParseCell: function(data: any) {
-            if (data.section === 'body') {
-              const rowId = `row-${data.row.index}`;
-              const colId = columns[data.column.index];
-              
-              const highlight = highlightedCells.find(
-                cell => cell.row === rowId && cell.col === colId
-              );
-              
-              if (highlight) {
-                const rgb = hexToRgb(highlight.color);
-                if (rgb) {
-                  data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b];
-                  data.cell.styles.textColor = [0, 0, 0];
-                  data.cell.styles.fontStyle = 'bold';
-                  data.cell.styles.lineWidth = 1;
-                  data.cell.styles.lineColor = [Math.max(0, rgb.r - 50), Math.max(0, rgb.g - 50), Math.max(0, rgb.b - 50)];
-                }
-              }
-            }
-          }
+          margin: { left: 15, right: 15 }
         });
+        
+        const lastTableY = (pdf as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 40;
         
         // Add legend for highlighted cells
         if (highlightedCells.length > 0) {
-          const lastTableY = (pdf as any).lastAutoTable?.finalY || 40;
           let yPos = lastTableY + 15;
           
           // Check if we need a new page for the legend
@@ -1034,41 +984,41 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         </div>
 
         {/* Analysis Controls */}
-        <div className="flex flex-wrap justify-between items-center mt-6 gap-4">
-          <div className="flex items-center space-x-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between space-y-4 sm:space-y-0">
+          <div className="flex flex-wrap items-center gap-4">
             <button
               onClick={addChart}
               disabled={!analysisData?.variables.length}
-              className={`flex items-center px-4 py-2 rounded-md ${
+              className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
                 !analysisData?.variables.length
                   ? 'bg-gray-300 cursor-not-allowed text-gray-500'
-                  : 'bg-green-600 hover:bg-green-700 text-white'
+                  : 'bg-green-600 hover:bg-green-700 text-white shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
               }`}
             >
-              <FcPlus className="mr-2" />
-              Grafik Ekle
+              <FcPlus className="mr-2 h-5 w-5" />
+              Yeni Grafik Ekle
             </button>
 
-            <label className="flex items-center">
+            <label className="flex items-center bg-gray-50 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors">
               <input
                 type="checkbox"
                 checked={showTable}
                 onChange={(e) => setShowTable(e.target.checked)}
                 className="mr-2 rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
               />
-              <span className="text-sm font-medium text-gray-700">Tabloyu Göster</span>
+              <span className="text-sm font-medium text-gray-700">Veri Tablosunu Göster</span>
             </label>
           </div>
 
-          <div className="flex items-center space-x-4">
+          <div className="flex flex-wrap items-center gap-4">
             {formulas.length > 0 && (
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2 bg-blue-50 px-3 py-2 rounded-lg">
                 <FcRules className="h-5 w-5" />
-                <span className="text-sm text-gray-600">
+                <span className="text-sm text-blue-700 font-medium">
                   {formulas.length} formül aktif
                 </span>
                 {highlightedCells.length > 0 && (
-                  <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs">
+                  <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-medium">
                     {highlightedCells.length} hücre vurgulandı
                   </span>
                 )}
@@ -1078,13 +1028,13 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
             <button
               onClick={exportComprehensivePDF}
               disabled={(!charts.length && !showTable) || loading}
-              className={`flex items-center px-4 py-2 rounded-md ${
+              className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
                 (!charts.length && !showTable) || loading
                   ? 'bg-gray-300 cursor-not-allowed text-gray-500'
-                  : 'bg-purple-600 hover:bg-purple-700 text-white'
+                  : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
               }`}
             >
-              <FcPrint className="mr-2" />
+              <FcPrint className="mr-2 h-5 w-5" />
               {loading ? 'PDF Oluşturuluyor...' : 'Kapsamlı PDF İndir'}
             </button>
           </div>
@@ -1113,134 +1063,139 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         {charts.length === 0 && selectedTable ? (
           <div className="bg-blue-50 border-l-4 border-blue-400 p-4">
             <p className="text-blue-800">
-              &ldquo;Grafik Ekle&rdquo; butonuna tıklayarak analiz grafiklerinizi oluşturmaya başlayın.
+              &ldquo;Yeni Grafik Ekle&rdquo; butonuna tıklayarak analiz grafiklerinizi oluşturmaya başlayın.
             </p>
           </div>
         ) : null}
 
-        {charts.map((chart, index) => (
-          <div key={chart.id} id={`chart-${chart.id}`} className="bg-white rounded-lg shadow-md p-6">
-            {/* Chart Header */}
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center">
-                <MdDragIndicator className="text-gray-400 mr-2" />
-                <h3 className="text-lg font-semibold">Grafik {index + 1}</h3>
-              </div>
-              <button
-                onClick={() => removeChart(chart.id)}
-                className="text-red-500 hover:text-red-700 p-1"
-              >
-                <MdDelete className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Chart Configuration */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Grafik Türü
-                </label>
-                <select
-                  value={chart.type}
-                  onChange={(e) => updateChart(chart.id, { type: e.target.value as 'line' | 'bar' })}
-                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 text-sm"
+        {/* Responsive Grid Layout for Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 gap-6">
+          {charts.map((chart, index) => (
+            <div key={chart.id} id={`chart-${chart.id}`} className="bg-white rounded-lg shadow-md p-6 min-h-[600px]">
+              {/* Chart Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center">
+                  <MdDragIndicator className="text-gray-400 mr-2" />
+                  <h3 className="text-lg font-semibold">Grafik {index + 1}</h3>
+                </div>
+                <button
+                  onClick={() => removeChart(chart.id)}
+                  className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-50 transition-colors"
+                  title="Grafiği Sil"
                 >
-                  <option value="line">Çizgi Grafik</option>
-                  <option value="bar">Sütun Grafik</option>
-                </select>
+                  <MdDelete className="h-5 w-5" />
+                </button>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Değişken
-                </label>
-                <select
-                  value={chart.variable}
-                  onChange={(e) => updateChart(chart.id, { 
-                    variable: e.target.value,
-                    title: `${e.target.value} Trend Grafiği`
-                  })}
-                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 text-sm"
-                >
-                  {analysisData?.variables.map((variable) => (
-                    <option key={variable} value={variable}>
-                      {variable}
-                    </option>
-                  ))}
-                </select>
+              {/* Chart Configuration */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Grafik Türü
+                  </label>
+                  <select
+                    value={chart.type}
+                    onChange={(e) => updateChart(chart.id, { type: e.target.value as 'line' | 'bar' })}
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 text-sm"
+                  >
+                    <option value="line">Çizgi Grafik</option>
+                    <option value="bar">Sütun Grafik</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Değişken
+                  </label>
+                  <select
+                    value={chart.variable}
+                    onChange={(e) => updateChart(chart.id, { 
+                      variable: e.target.value,
+                      title: `${e.target.value} Trend Grafiği`
+                    })}
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 text-sm"
+                  >
+                    {analysisData?.variables.map((variable) => (
+                      <option key={variable} value={variable}>
+                        {variable}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Başlangıç
+                  </label>
+                  <select
+                    value={chart.startDate}
+                    onChange={(e) => updateChart(chart.id, { startDate: e.target.value })}
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 text-sm"
+                  >
+                    {analysisData?.dateColumns.map((date) => (
+                      <option key={date} value={date}>
+                        {date}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Bitiş
+                  </label>
+                  <select
+                    value={chart.endDate}
+                    onChange={(e) => updateChart(chart.id, { endDate: e.target.value })}
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 text-sm"
+                  >
+                    {analysisData?.dateColumns.map((date) => (
+                      <option key={date} value={date}>
+                        {date}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Başlangıç Tarihi
-                </label>
-                <select
-                  value={chart.startDate}
-                  onChange={(e) => updateChart(chart.id, { startDate: e.target.value })}
-                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 text-sm"
-                >
-                  {analysisData?.dateColumns.map((date) => (
-                    <option key={date} value={date}>
-                      {date}
-                    </option>
-                  ))}
-                </select>
+              {/* Chart Title and Color */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
+                <div className="sm:col-span-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Grafik Başlığı
+                  </label>
+                  <input
+                    type="text"
+                    value={chart.title}
+                    onChange={(e) => updateChart(chart.id, { title: e.target.value })}
+                    className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 text-sm"
+                    placeholder="Grafik başlığını girin"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Renk
+                  </label>
+                  <input
+                    type="color"
+                    value={chart.color}
+                    onChange={(e) => updateChart(chart.id, { color: e.target.value })}
+                    className="w-full h-10 border-gray-300 rounded-md"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Bitiş Tarihi
-                </label>
-                <select
-                  value={chart.endDate}
-                  onChange={(e) => updateChart(chart.id, { endDate: e.target.value })}
-                  className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 text-sm"
-                >
-                  {analysisData?.dateColumns.map((date) => (
-                    <option key={date} value={date}>
-                      {date}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Renk
-                </label>
-                <input
-                  type="color"
-                  value={chart.color}
-                  onChange={(e) => updateChart(chart.id, { color: e.target.value })}
-                  className="w-full h-10 border-gray-300 rounded-md"
-                />
+              {/* Chart Display */}
+              <div className="h-80">
+                {chart.type === 'line' ? (
+                  <Line data={getChartData(chart)} options={getChartOptions(chart)} />
+                ) : (
+                  <Bar data={getChartData(chart)} options={getChartOptions(chart)} />
+                )}
               </div>
             </div>
-
-            {/* Chart Title Input */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Grafik Başlığı
-              </label>
-              <input
-                type="text"
-                value={chart.title}
-                onChange={(e) => updateChart(chart.id, { title: e.target.value })}
-                className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
-                placeholder="Grafik başlığını girin"
-              />
-            </div>
-
-            {/* Chart Display */}
-            <div className="h-[400px]">
-              {chart.type === 'line' ? (
-                <Line data={getChartData(chart)} options={getChartOptions(chart)} />
-              ) : (
-                <Bar data={getChartData(chart)} options={getChartOptions(chart)} />
-              )}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
 
       {/* Table Container */}

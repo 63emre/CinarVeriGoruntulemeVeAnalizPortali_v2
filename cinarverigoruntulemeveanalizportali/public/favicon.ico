@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Tree trunk -->
+  <rect x="90" y="120" width="20" height="60" fill="#8B4513" />
+  
+  <!-- Tree leaves (layered circles) -->
+  <circle cx="100" cy="70" r="50" fill="#2E7D32" />
+  <circle cx="70" cy="90" r="35" fill="#388E3C" />
+  <circle cx="130" cy="90" r="35" fill="#388E3C" />
+  <circle cx="100" cy="40" r="30" fill="#43A047" />
+  
+  <!-- Small decorative elements -->
+  <circle cx="110" cy="65" r="5" fill="#FFFFFF" opacity="0.2" />
+  <circle cx="85" cy="80" r="3" fill="#FFFFFF" opacity="0.2" />
+  <circle cx="120" cy="95" r="4" fill="#FFFFFF" opacity="0.2" />
+  <circle cx="95" cy="55" r="3" fill="#FFFFFF" opacity="0.2" />
+</svg>

@@ -36,6 +36,7 @@
 - Node.js 18.0 veya üzeri
 - PostgreSQL veritabanı
 - Git
+- PowerShell (Windows)
 
 ### Kurulum Adımları
 
@@ -50,6 +51,50 @@
    npm install
    ```
 
+3. **Kolay Kurulum (Önerilen)**: PowerShell script'ini kullanın:
+   ```powershell
+   # Proje dizininde:
+   .\init-db.ps1
+   
+   # Veya ana dizinden:
+   .\run-init-db.ps1
+   ```
+
+4. **Manuel Kurulum**: Adım adım kurulum:
+   ```bash
+   # .env dosyasını oluşturun ve veritabanı bağlantısını yapılandırın
+   cp .env.example .env
+   
+   # Veritabanı migrasyonlarını uygulayın
+   npx prisma migrate deploy
+   
+   # Prisma client'ı oluşturun
+   npx prisma generate
+   
+   # Başlangıç verilerini yükleyin (opsiyonel)
+   npm run prisma:seed
+   ```
+
+5. Uygulamayı başlatın:
+   ```bash
+   npm run dev
+   ```
+
+### 🚀 Hızlı Başlangıç
+
+Projeyi hızlıca başlatmak için otomatik script'leri kullanabilirsiniz:
+
+```powershell
+# Proje dizininde - Tam otomatik kurulum ve başlatma:
+.\start-project.ps1
+
+# Sadece veritabanı kurulumu:
+.\init-db.ps1
+
+# Ana dizinden çalıştırmak için:
+.\run-init-db.ps1
+```
+
 3. `.env` dosyasını oluşturun:
    ```
    DATABASE_URL="postgresql://username:password@localhost:5432/cinar_portal"
@@ -57,22 +102,41 @@
    NEXT_PUBLIC_APP_URL="http://localhost:3000"
    ```
 
-4. Veritabanını oluşturun:
+4. Veritabanını kurma seçenekleri:
+   
+   **A. Otomatik kurulum**:
    ```bash
-   npx prisma db push
+   npm run db:setup
+   ```
+   
+   Bu komut, migrationları uygular, Prisma istemcisini oluşturur ve örnek verileri ekler.
+   
+   **B. Manuel kurulum adımları**:
+   - Migrationları uygulama: `npm run prisma:migrate`
+   - Prisma istemcisini oluşturma: `npm run prisma:generate`
+   - Örnek verileri yükleme (opsiyonel): `npm run prisma:seed`
+   
+   **C. PowerShell script ile kurulum (Windows)**:
+   ```bash
+   ./init-db.ps1
+   ```
+   
+   **Veritabanını sıfırlama (tüm veriler silinir)**:
+   ```bash
+   npm run db:reset
+   ```
+   
+   **Prisma Studio ile veritabanını görüntüleme**:
+   ```bash
+   npm run prisma:studio
    ```
 
-5. (Opsiyonel) Örnek verileri yükleyin:
-   ```bash
-   npm run seed
-   ```
-
-6. Geliştirme modunda çalıştırın:
+5. Geliştirme modunda çalıştırın:
    ```bash
    npm run dev
    ```
 
-7. Uygulamaya `http://localhost:3000` adresinden erişebilirsiniz
+6. Uygulamaya `http://localhost:3000` adresinden erişebilirsiniz
 
 ### Üretim Ortamına Dağıtım
 

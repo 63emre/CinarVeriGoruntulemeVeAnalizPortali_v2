@@ -1,244 +1,246 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
 
-// Get a specific table
+// GET: Get a specific table
 export async function GET(
-  request: Request,
-  { params }: { params: { workspaceId: string, tableId: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ workspaceId: string; tableId: string }> }
 ) {
   try {
-    console.log(`GET /api/workspaces/${params.workspaceId}/tables/${params.tableId} called`);
-    
+    // Next.js 15: await params
+    const { workspaceId, tableId } = await params;
+
+    console.log(`GET /api/workspaces/${workspaceId}/tables/${tableId} called`);
+
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json(
-        { message: 'Yetkilendirme hatası' },
+        { message: 'Unauthorized' },
         { status: 401 }
       );
     }
-    
-    const { workspaceId, tableId } = params;
-    
+
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId }
     });
-    
+
     if (!workspace) {
       return NextResponse.json(
-        { message: 'Çalışma alanı bulunamadı' },
+        { message: 'Workspace not found' },
         { status: 404 }
       );
     }
+
+    // Check if user has access to this workspace
+    const isAdmin = currentUser.role === 'ADMIN';
+    const isCreator = workspace.createdBy === currentUser.id;
     
-    // Check access if not admin
-    if (currentUser.role !== 'ADMIN') {
-      const hasAccess = await prisma.workspaceUser.findFirst({
+    if (!isAdmin && !isCreator) {
+      const userWorkspace = await prisma.workspaceUser.findFirst({
         where: {
           userId: currentUser.id,
           workspaceId,
         },
       });
       
-      if (!hasAccess) {
+      if (!userWorkspace) {
         return NextResponse.json(
-          { message: 'Bu çalışma alanına erişim izniniz yok' },
+          { message: 'You do not have access to this workspace' },
           { status: 403 }
         );
       }
     }
 
-    // Get the table
+    // Check if table exists
     const table = await prisma.dataTable.findUnique({
-      where: {
+      where: { 
         id: tableId,
-        workspaceId,
-      },
+        workspaceId
+      }
     });
-    
+
     if (!table) {
       return NextResponse.json(
-        { message: 'Tablo bulunamadı' },
+        { message: 'Table not found' },
         { status: 404 }
       );
     }
-    
-    return NextResponse.json(table);
 
+    return NextResponse.json(table, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   } catch (error) {
-    console.error('Error getting table:', error);
+    console.error('Error fetching table:', error);
     return NextResponse.json(
-      { message: 'Tablo yüklenirken bir hata oluştu' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }
 }
 
-// Update a table
+// PUT: Update a table
 export async function PUT(
-  request: Request,
-  { params }: { params: { workspaceId: string, tableId: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ workspaceId: string; tableId: string }> }
 ) {
   try {
-    console.log(`PUT /api/workspaces/${params.workspaceId}/tables/${params.tableId} called`);
+    // Next.js 15: await params
+    const { workspaceId, tableId } = await params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json(
-        { message: 'Yetkilendirme hatası' },
+        { message: 'Unauthorized' },
         { status: 401 }
       );
     }
-    
-    const { workspaceId, tableId } = params;
-    
-    // Check if workspace exists
+
+    // Check if workspace exists and user has access
     const workspace = await prisma.workspace.findUnique({
-      where: { id: workspaceId }
+      where: { id: workspaceId },
+      include: {
+        users: {
+          where: {
+            userId: currentUser.id
+          }
+        }
+      }
     });
-    
+
     if (!workspace) {
       return NextResponse.json(
-        { message: 'Çalışma alanı bulunamadı' },
+        { message: 'Workspace not found' },
         { status: 404 }
       );
     }
+
+    // Check permissions
+    const isAdmin = currentUser.role === 'ADMIN';
+    const isCreator = workspace.createdBy === currentUser.id;
+    const hasAccess = workspace.users.length > 0;
     
-    // Check access if not admin
-    if (currentUser.role !== 'ADMIN') {
-      const hasAccess = await prisma.workspaceUser.findFirst({
-        where: {
-          userId: currentUser.id,
-          workspaceId,
-        },
-      });
-      
-      if (!hasAccess) {
-        return NextResponse.json(
-          { message: 'Bu çalışma alanına erişim izniniz yok' },
-          { status: 403 }
-        );
-      }
+    if (!isAdmin && !isCreator && !hasAccess) {
+      return NextResponse.json(
+        { message: 'You do not have permission to update this table' },
+        { status: 403 }
+      );
     }
 
-    // Check if table exists and belongs to this workspace
+    // Get the existing table
     const existingTable = await prisma.dataTable.findUnique({
-      where: {
+      where: { 
         id: tableId,
-        workspaceId,
-      },
+        workspaceId: workspaceId
+      }
     });
-    
+
     if (!existingTable) {
       return NextResponse.json(
-        { message: 'Tablo bulunamadı' },
+        { message: 'Table not found' },
         { status: 404 }
       );
     }
 
-    const body = await request.json();
-    const { name, sheetName, columns, data } = body;
+    // Parse request body
+    const data = await request.json();
     
     // Update the table
     const updatedTable = await prisma.dataTable.update({
-      where: {
-        id: tableId,
-      },
+      where: { id: tableId },
       data: {
-        name: name !== undefined ? name : undefined,
-        sheetName: sheetName !== undefined ? sheetName : undefined,
-        columns: columns !== undefined ? columns : undefined,
-        data: data !== undefined ? data : undefined,
-      },
+        name: data.name || existingTable.name,
+        columns: data.columns || existingTable.columns,
+        data: data.data || existingTable.data,
+        updatedAt: new Date()
+      }
     });
-    
-    return NextResponse.json(updatedTable);
 
+    return NextResponse.json({
+      message: 'Table updated successfully',
+      table: updatedTable
+    });
   } catch (error) {
     console.error('Error updating table:', error);
     return NextResponse.json(
-      { message: 'Tablo güncellenirken bir hata oluştu' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }
 }
 
-// Delete a table
+// DELETE: Delete a table
 export async function DELETE(
-  request: Request,
-  { params }: { params: { workspaceId: string, tableId: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ workspaceId: string; tableId: string }> }
 ) {
   try {
-    console.log(`DELETE /api/workspaces/${params.workspaceId}/tables/${params.tableId} called`);
-    
+    // Next.js 15: await params
+    const { workspaceId, tableId } = await params;
+
     const currentUser = await getCurrentUser();
     if (!currentUser) {
       return NextResponse.json(
-        { message: 'Yetkilendirme hatası' },
+        { message: 'Unauthorized' },
         { status: 401 }
       );
     }
-    
-    const { workspaceId, tableId } = params;
-    
+
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId }
     });
-    
+
     if (!workspace) {
       return NextResponse.json(
-        { message: 'Çalışma alanı bulunamadı' },
+        { message: 'Workspace not found' },
         { status: 404 }
       );
     }
+
+    // Check if user has access to this workspace
+    const isAdmin = currentUser.role === 'ADMIN';
+    const isCreator = workspace.createdBy === currentUser.id;
     
-    // Only admin or workspace owner can delete tables
-    if (currentUser.role !== 'ADMIN') {
-      const hasAccess = await prisma.workspaceUser.findFirst({
-        where: {
-          userId: currentUser.id,
-          workspaceId,
-        },
-      });
-      
-      if (!hasAccess) {
-        return NextResponse.json(
-          { message: 'Bu işlem için yetkiniz yok' },
-          { status: 403 }
-        );
-      }
+    if (!isAdmin && !isCreator) {
+      return NextResponse.json(
+        { message: 'You do not have permission to delete this table' },
+        { status: 403 }
+      );
     }
 
-    // Check if table exists and belongs to this workspace
-    const existingTable = await prisma.dataTable.findUnique({
-      where: {
+    // Check if table exists
+    const table = await prisma.dataTable.findUnique({
+      where: { 
         id: tableId,
-        workspaceId,
-      },
+        workspaceId
+      }
     });
-    
-    if (!existingTable) {
+
+    if (!table) {
       return NextResponse.json(
-        { message: 'Tablo bulunamadı' },
+        { message: 'Table not found' },
         { status: 404 }
       );
     }
 
     // Delete the table
     await prisma.dataTable.delete({
-      where: {
-        id: tableId,
-      },
+      where: { id: tableId }
     });
-    
-    return NextResponse.json({ message: 'Tablo başarıyla silindi' });
 
+    return NextResponse.json({
+      message: 'Table deleted successfully'
+    });
   } catch (error) {
     console.error('Error deleting table:', error);
     return NextResponse.json(
-      { message: 'Tablo silinirken bir hata oluştu' },
+      { message: 'Server error', error: (error as Error).message },
       { status: 500 }
     );
   }

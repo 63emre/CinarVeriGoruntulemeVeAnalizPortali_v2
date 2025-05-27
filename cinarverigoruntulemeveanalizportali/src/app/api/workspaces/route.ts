@@ -1,137 +1,160 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
-import { Prisma } from '@/generated/prisma';
 
-// GET: Get all workspaces
+// GET: Get all workspaces for the current user
 export async function GET() {
   try {
-    const user = await getCurrentUser();
+    const currentUser = await getCurrentUser();
     
-    if (!user) {
+    if (!currentUser) {
       return NextResponse.json(
-        { message: 'Yetkilendirme hatası' },
+        { message: 'Unauthorized' },
         { status: 401 }
       );
     }
 
-    // If user is admin, get all workspaces
-    // If user is not admin, get only workspaces assigned to them
-    const workspaces = user.role === 'ADMIN' 
-      ? await prisma.workspace.findMany({
-          include: {
-            _count: {
-              select: { tables: true, formulas: true }
-            }
-          }
-        })
-      : await prisma.workspace.findMany({
-          where: {
-            users: {
-              some: {
-                userId: user.id
+    let workspaces;
+    
+    if (currentUser.role === 'ADMIN') {
+      // Admins can see all workspaces
+      workspaces = await prisma.workspace.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: {
+          users: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
               }
             }
           },
-          include: {
-            _count: {
-              select: { tables: true, formulas: true }
+          _count: {
+            select: {
+              tables: true,
+              formulas: true
             }
           }
-        });
-
-    return NextResponse.json(workspaces);
+        }
+      });
+    } else {
+      // Regular users can only see workspaces they created or are part of
+      workspaces = await prisma.workspace.findMany({
+        where: {
+          OR: [
+            { createdBy: currentUser.id },
+            {
+              users: {
+                some: {
+                  userId: currentUser.id
+                }
+              }
+            }
+          ]
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          users: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          },
+          _count: {
+            select: {
+              tables: true,
+              formulas: true
+            }
+          }
+        }
+      });
+    }
+    
+    return NextResponse.json(workspaces, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   } catch (error) {
     console.error('Error fetching workspaces:', error);
     return NextResponse.json(
-      { message: 'Sunucu hatası' },
+      { message: 'Server error' },
       { status: 500 }
     );
   }
 }
 
 // POST: Create a new workspace
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser();
+    const currentUser = await getCurrentUser();
     
-    if (!user) {
+    if (!currentUser) {
       return NextResponse.json(
-        { message: 'Yetkilendirme hatası' },
+        { message: 'Unauthorized' },
         { status: 401 }
       );
     }
-
-    // Only admins can create workspaces
-    if (user.role !== 'ADMIN') {
-      return NextResponse.json(
-        { message: 'Bu işlem için admin yetkisi gereklidir' },
-        { status: 403 }
-      );
-    }
-
+    
+    // Parse request body
     const body = await request.json();
-    const { name, description, userIds = [] } = body;
-
+    const { name, description } = body;
+    
     if (!name) {
       return NextResponse.json(
-        { message: 'Çalışma alanı adı gereklidir' },
+        { message: 'Name is required' },
         { status: 400 }
       );
     }
-
-    // Define interface for user connection
-    interface UserConnection {
-      userId: string;
-      workspaceId: string;
-    }
-
-    // Create the workspace in a transaction to ensure all related data is created
-    const workspace = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      // First create the workspace
-      const newWorkspace = await tx.workspace.create({
-        data: {
-          name,
-          description,
-          createdBy: user.id,
+    
+    // Create workspace
+    const workspace = await prisma.workspace.create({
+      data: {
+        name,
+        description,
+        createdBy: currentUser.id,
+        users: {
+          create: {
+            userId: currentUser.id,
+          }
+        }
+      },
+      include: {
+        users: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
+          }
         },
-      });
-
-      // Then create the workspace-user relationships
-      const userConnections = userIds.map((userId: string) => ({
-        userId,
-        workspaceId: newWorkspace.id,
-      }));
-
-      // Always add the creator (admin) to the workspace
-      userConnections.push({
-        userId: user.id,
-        workspaceId: newWorkspace.id,
-      });
-
-      // Create unique user connections (to avoid duplicates)
-      const uniqueUserConnections = userConnections.filter(
-        (connection: UserConnection, index: number, self: UserConnection[]) =>
-          index === self.findIndex((c: UserConnection) => c.userId === connection.userId)
-      );
-
-      // Create workspace-user relationships
-      await tx.workspaceUser.createMany({
-        data: uniqueUserConnections,
-        skipDuplicates: true,
-      });
-
-      return newWorkspace;
+        _count: {
+          select: {
+            tables: true,
+            formulas: true
+          }
+        }
+      }
     });
-
-    return NextResponse.json({
-      message: 'Çalışma alanı başarıyla oluşturuldu',
-      workspace,
-    });
+    
+    return NextResponse.json(workspace);
   } catch (error) {
     console.error('Error creating workspace:', error);
     return NextResponse.json(
-      { message: 'Sunucu hatası' },
+      { message: 'Server error' },
       { status: 500 }
     );
   }

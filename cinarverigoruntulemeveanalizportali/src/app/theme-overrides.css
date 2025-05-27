@@ -1,0 +1,61 @@
+/* 
+ * Contrast improvement overrides
+ * These styles improve accessibility by ensuring text has sufficient contrast
+ * against its background according to WCAG standards (minimum 4.5:1 for normal text)
+ */
+
+/* Base text colors with improved contrast */
+.text-gray-500 {
+  color: #5a5a5a !important; /* Darker than default gray-500 for better contrast */
+}
+
+.text-gray-600 {
+  color: #4a4a4a !important; /* Darker than default gray-600 for better contrast */
+}
+
+/* Table cell styles with improved contrast */
+td, th {
+  color: #1f1f1f !important; /* Much darker text for all table cells */
+}
+
+/* Special column styling - ensure high contrast */
+.bg-gray-50 {
+  background-color: #f5f5f5 !important; /* Slightly darker background */
+}
+
+.bg-gray-100 {
+  background-color: #eaeaea !important; /* Slightly darker background */
+}
+
+/* Button text for better readability */
+button, 
+a.btn,
+.btn {
+  color: #ffffff !important; /* Ensure button text is white for maximum contrast */
+}
+
+/* Ensure alerts and notifications have sufficient contrast */
+.text-red-600 {
+  color: #b91c1c !important; /* Darker red that meets contrast requirements */
+}
+
+.text-green-600 {
+  color: #15803d !important; /* Darker green that meets contrast requirements */
+}
+
+.text-blue-600 {
+  color: #1e40af !important; /* Darker blue that meets contrast requirements */
+}
+
+/* Form fields and labels */
+label {
+  color: #1f1f1f !important; /* Very dark gray for labels */
+}
+
+/* Form input focus styles */
+input:focus, 
+select:focus, 
+textarea:focus {
+  border-color: #1e40af !important; /* Darker blue border on focus */
+  box-shadow: 0 0 0 2px rgba(30, 64, 175, 0.25) !important; /* Visible focus indicator */
+}

@@ -1,121 +1,337 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCurrentUser } from '@/lib/auth';
-import * as z from 'zod';
+import { getCurrentUser } from '@/lib/auth/auth';
 import prisma from '@/lib/db';
-import { applyFormulaToTable } from '@/lib/formula/formula-service';
+import { evaluateFormula, EvaluationContext } from '@/lib/formula/formula-service';
 
-// Schema for formula application request
-const ApplyFormulasSchema = z.object({
-  formulaType: z.enum(['CELL_VALIDATION', 'RELATIONAL']),
-  formulaIds: z.array(z.string()).optional(),
-});
+interface HighlightedCell {
+  row: string;
+  col: string;
+  color: string;
+  message?: string;
+  formulaIds?: string[];
+  formulaDetails?: {
+    id: string;
+    name: string;
+    formula: string;
+    leftResult?: number;
+    rightResult?: number;
+  }[];
+}
+
+interface FormulaRequest {
+  formulaIds: string[];
+  selectedVariable?: string;
+  formulaType?: string; // Add formulaType to prevent Zod validation issues
+}
 
 // POST /api/workspaces/[workspaceId]/tables/[tableId]/apply-formulas
 export async function POST(
   request: NextRequest,
-  { params }: { params: { workspaceId: string, tableId: string } }
+  { params }: { params: Promise<{ workspaceId: string; tableId: string }> }
 ) {
   try {
-    const user = await getCurrentUser();
+    // Await params in Next.js 15
+    const { workspaceId, tableId } = await params;
 
-    if (!user) {
-      return new NextResponse('Unauthorized', { status: 401 });
+    // Get current user for authorization
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
+      return NextResponse.json(
+        { message: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
-    const { workspaceId, tableId } = params;
-
-    // Check if user has access to this workspace
-    const workspaceUser = await prisma.workspaceUser.findFirst({
-      where: {
-        workspaceId,
-        userId: user.id,
-      },
+    // Check if workspace exists
+    const workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId }
     });
 
-    if (!workspaceUser) {
-      return new NextResponse('Forbidden', { status: 403 });
+    if (!workspace) {
+      return NextResponse.json(
+        { message: 'Workspace not found' },
+        { status: 404 }
+      );
     }
 
-    const body = await request.json();
-    const { formulaType, formulaIds } = ApplyFormulasSchema.parse(body);
+    // Check if user has access to this workspace
+    const isAdmin = currentUser.role === 'ADMIN';
+    const isCreator = workspace.createdBy === currentUser.id;
+    
+    if (!isAdmin && !isCreator) {
+      const userWorkspace = await prisma.workspaceUser.findFirst({
+        where: {
+          userId: currentUser.id,
+          workspaceId,
+        },
+      });
+      
+      if (!userWorkspace) {
+        return NextResponse.json(
+          { message: 'You do not have access to this workspace' },
+          { status: 403 }
+        );
+      }
+    }
 
-    // Get the table data
+    // Get table data
     const table = await prisma.dataTable.findUnique({
-      where: {
+      where: { 
         id: tableId,
-        workspaceId,
-      },
+        workspaceId
+      }
     });
 
     if (!table) {
-      return new NextResponse('Table not found', { status: 404 });
+      return NextResponse.json(
+        { message: 'Table not found' },
+        { status: 404 }
+      );
     }
 
-    // Get formulas to apply
-    const formulasQuery = {
+    // Get the formulas to apply
+    const body = await request.json() as FormulaRequest;
+    const { formulaIds, formulaType = 'CELL_VALIDATION' } = body; // Provide default formulaType
+
+    if (!formulaIds || !Array.isArray(formulaIds) || formulaIds.length === 0) {
+      return NextResponse.json(
+        { message: 'At least one formula ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Get formulas for the workspace with optional type filter
+    const formulas = await prisma.formula.findMany({
       where: {
+        id: { in: formulaIds },
         workspaceId,
-        type: formulaType,
-        active: true,
-      },
-      select: {
-        id: true,
-        name: true,
-        formula: true,
-        type: true,
-        color: true,
-      },
-    };
-
-    // If specific formulaIds are provided, filter by them
-    if (formulaIds && formulaIds.length > 0) {
-      formulasQuery.where = {
-        ...formulasQuery.where,
-        id: {
-          in: formulaIds,
-        },
-      };
-    }
-
-    const formulas = await prisma.formula.findMany(formulasQuery);
+        ...(formulaType && { type: formulaType as 'CELL_VALIDATION' | 'RELATIONAL' })
+      }
+    });
 
     if (formulas.length === 0) {
-      return new NextResponse('No active formulas found', { status: 404 });
+      return NextResponse.json(
+        { message: 'No valid formulas found' },
+        { status: 404 }
+      );
     }
 
-    // Evaluate each formula against the table
-    const evaluationResults = [];
+    // Initialize array to hold results
+    const formulaResults = [];
+    const highlightedCells: HighlightedCell[] = [];
 
+    // Extract columns and data for processing
+    const columns = table.columns as string[];
+    const data = table.data as (string | number | null)[][];
+    
+    // Find the variable column
+    const variableColumnIndex = columns.findIndex(
+      col => col && typeof col === 'string' && col.toLowerCase() === 'variable'
+    );
+    
+    if (variableColumnIndex === -1) {
+      return NextResponse.json(
+        { message: 'Variable column not found in table' },
+        { status: 400 }
+      );
+    }
+
+    // Apply each formula to the table
     for (const formula of formulas) {
       try {
-        const results = applyFormulaToTable(formula, {
-          columns: table.columns as string[],
-          data: table.data as (string | number | null)[][],
+        console.log(`Processing formula: "${formula.name}" - "${formula.formula}"`);
+        
+        // Parse the formula to extract variable references
+        const variableRegex = /\[([^\]]+)\]/g;
+        const formulaVariables: Set<string> = new Set();
+        let match;
+        
+        // Find all variables referenced in the formula
+        while ((match = variableRegex.exec(formula.formula)) !== null) {
+          // Clean the variable name by removing trailing commas and trimming whitespace
+          const cleanVariableName = match[1].replace(/,+$/, '').trim();
+          if (cleanVariableName) {
+            formulaVariables.add(cleanVariableName);
+          }
+        }
+        
+        console.log(`Formula variables extracted:`, Array.from(formulaVariables));
+        
+        // Find all date columns (exclude metadata columns)
+        const metadataColumns = ['Variable', 'Data Source', 'Method', 'Unit', 'LOQ'];
+        const dateColumns = columns.filter(col => !metadataColumns.includes(col));
+        
+        console.log(`Processing ${dateColumns.length} date columns:`, dateColumns);
+        
+        // Process each date column
+        dateColumns.forEach(dateCol => {
+          const dateColIndex = columns.findIndex(c => c === dateCol);
+          if (dateColIndex === -1) return;
+          
+          // Create variables map for this date column by gathering values from all rows
+          const variables: Record<string, number> = {};
+          
+          data.forEach(row => {
+            const rawVarName = row[variableColumnIndex] as string;
+            const value = row[dateColIndex];
+            
+            if (rawVarName && value !== null && value !== undefined) {
+              // Clean the variable name by removing trailing commas and trimming whitespace
+              const cleanVarName = rawVarName.replace(/,+$/, '').trim();
+              
+              const numValue = typeof value === 'number' ? value : parseFloat(String(value));
+              if (!isNaN(numValue) && cleanVarName) {
+                variables[cleanVarName] = numValue;
+              }
+            }
+          });
+          
+          console.log(`Variables available in column "${dateCol}":`, Object.keys(variables));
+          
+          // Check if all required variables for this formula are available
+          const missingVariables = Array.from(formulaVariables).filter(varName => 
+            variables[varName] === undefined
+          );
+          
+          if (missingVariables.length > 0) {
+            console.log(`Missing variables for formula "${formula.name}" in column "${dateCol}":`, missingVariables);
+            return; // Skip this date column if variables are missing
+          }
+          
+          console.log(`All variables found for formula "${formula.name}" in column "${dateCol}". Evaluating...`);
+          
+          // Create context for formula evaluation
+          const context: EvaluationContext = { variables };
+          
+          try {
+            // Clean the formula by removing trailing commas from variable names
+            const cleanFormula = formula.formula.replace(/\[([^\]]+),+\]/g, (match, varName) => {
+              return `[${varName.trim()}]`;
+            });
+            
+            console.log(`Original formula: ${formula.formula}`);
+            console.log(`Cleaned formula: ${cleanFormula}`);
+            
+            // Evaluate the formula for this date column
+            const result = evaluateFormula(cleanFormula, context);
+            
+            console.log(`Formula evaluation result:`, result);
+            
+            // If formula condition is NOT met (isValid = false), highlight the cells for validation failures
+            if (!result.isValid && formula.color) {
+              console.log(`Formula condition failed! Highlighting cells for validation...`);
+              
+              // Highlight cells for all variables used in the formula
+              Array.from(formulaVariables).forEach(varName => {
+                // Find the row that contains this variable
+                const varRowIndex = data.findIndex(row => {
+                  const rawVarName = row[variableColumnIndex] as string;
+                  const cleanVarName = rawVarName ? rawVarName.replace(/,+$/, '').trim() : '';
+                  return cleanVarName === varName;
+                });
+                
+                if (varRowIndex !== -1) {
+                  const rowId = `row-${varRowIndex + 1}`;
+                  
+                  // Check if this cell is already highlighted by another formula
+                  const existingCellIndex = highlightedCells.findIndex(cell => 
+                    cell.row === rowId && cell.col === dateCol
+                  );
+                  
+                  if (existingCellIndex !== -1) {
+                    // Merge with existing highlight
+                    const existingCell = highlightedCells[existingCellIndex];
+                    existingCell.formulaIds = [...(existingCell.formulaIds || []), formula.id];
+                    existingCell.message = `${existingCell.message}, ${formula.name}`;
+                    existingCell.formulaDetails = [
+                      ...(existingCell.formulaDetails || []),
+                      {
+                        id: formula.id,
+                        name: formula.name,
+                        formula: formula.formula
+                      }
+                    ];
+                  } else {
+                    // Create new highlighted cell
+                    const highlightCell: HighlightedCell = {
+                      row: rowId,
+                      col: dateCol,
+                      color: formula.color || '#ff0000',
+                      message: `${formula.name}: Doğrulama başarısız (${varName} = ${variables[varName]})`,
+                      formulaIds: [formula.id],
+                      formulaDetails: [{
+                        id: formula.id,
+                        name: formula.name,
+                        formula: formula.formula
+                      }]
+                    };
+                    
+                    highlightedCells.push(highlightCell);
+                    console.log(`Added highlight cell:`, highlightCell);
+                  }
+                }
+              });
+            } else {
+              console.log(`Formula condition met or no color specified.`);
+            }
+          } catch (err) {
+            console.error(`Error evaluating formula "${formula.name}" for column "${dateCol}":`, err);
+          }
         });
-
-        evaluationResults.push({
-          formula,
-          results,
+        
+        formulaResults.push({
+          formulaId: formula.id,
+          formulaName: formula.name,
+          appliedRows: data.length,
+          processedColumns: dateColumns.length
         });
-      } catch (evalError) {
-        console.error(`Error evaluating formula ${formula.id}:`, evalError);
-        evaluationResults.push({
-          formula,
-          error: (evalError as Error).message,
+      } catch (error) {
+        formulaResults.push({
+          formulaId: formula.id,
+          formulaName: formula.name,
+          error: (error as Error).message
         });
       }
     }
 
+    // Log to verify highlighted cells are populated
+    console.log(`Generated ${highlightedCells.length} highlighted cells`);
+
+    // Prepare table data in the format expected by frontend
+    const tableColumns = columns.map(col => ({
+      id: col,
+      name: col,
+      type: 'string'
+    }));
+    
+    const tableRows = data.map((row, rowIndex) => {
+      const rowData: { [key: string]: string | number | null, id: string } = { 
+        id: `row-${rowIndex + 1}` 
+      };
+      columns.forEach((col, colIndex) => {
+        rowData[col] = row[colIndex];
+      });
+      return rowData;
+    });
+
     return NextResponse.json({
       tableId,
-      evaluationResults,
+      formulaResults,
+      highlightedCells,
+      tableData: tableRows,  // Add tableData for frontend compatibility
+      columns: tableColumns   // Add columns for frontend compatibility
+    }, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     });
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return new NextResponse(JSON.stringify(error.errors), { status: 400 });
-    }
-
     console.error('Error applying formulas:', error);
-    return new NextResponse(`Internal Error: ${(error as Error).message}`, { status: 500 });
+    return NextResponse.json(
+      { message: 'Server error', error: (error as Error).message },
+      { status: 500 }
+    );
   }
-} 
+}

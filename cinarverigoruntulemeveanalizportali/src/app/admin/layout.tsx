@@ -40,12 +40,11 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   };
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Sidebar */}
-      <div className={`bg-white shadow-md z-10 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
+    <div className="flex h-screen bg-gray-100">      {/* Sidebar */}
+      <div className={`bg-blue-900 shadow-md z-10 transition-all duration-300 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center justify-center p-4 border-b">
+          <div className="flex items-center justify-center p-4 border-b border-blue-800">
             <Image 
               src="/cinar-yaprak.svg" 
               alt="Çınar Logo" 
@@ -53,7 +52,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               height={isSidebarOpen ? 50 : 40} 
             />
             {isSidebarOpen && (
-              <h1 className="ml-3 text-xl font-bold text-green-700">Çınar Portal</h1>
+              <h1 className="ml-3 text-xl font-bold text-white">Yönetici Paneli</h1>
             )}
           </div>
           
@@ -63,60 +62,59 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
               <li>
                 <Link 
                   href="/dashboard" 
-                  className="flex items-center px-4 py-3 text-gray-700 hover:bg-green-50 hover:text-green-700"
+                  className="flex items-center px-4 py-3 text-blue-100 hover:bg-blue-800 hover:text-white"
                 >
-                  <FcHome className="w-6 h-6" />
+                  <FcHome className="w-6 h-6 bg-white rounded-sm" />
                   {isSidebarOpen && <span className="ml-3">Ana Sayfa</span>}
                 </Link>
               </li>
               <li>
                 <Link 
                   href="/admin" 
-                  className="flex items-center px-4 py-3 text-blue-700 bg-blue-50"
+                  className="flex items-center px-4 py-3 bg-blue-700 text-white"
                 >
-                  <FcDepartment className="w-6 h-6" />
+                  <FcDepartment className="w-6 h-6 bg-white rounded-sm" />
                   {isSidebarOpen && <span className="ml-3">Admin Paneli</span>}
                 </Link>
               </li>
               <li>
                 <Link 
                   href="/admin/users" 
-                  className="flex items-center px-4 py-3 text-gray-700 hover:bg-green-50 hover:text-green-700"
+                  className="flex items-center px-4 py-3 text-blue-100 hover:bg-blue-800 hover:text-white"
                 >
-                  <FcManager className="w-6 h-6" />
+                  <FcManager className="w-6 h-6 bg-white rounded-sm" />
                   {isSidebarOpen && <span className="ml-3">Kullanıcı Yönetimi</span>}
                 </Link>
               </li>
               <li>
                 <Link 
                   href="/admin/workspaces" 
-                  className="flex items-center px-4 py-3 text-gray-700 hover:bg-green-50 hover:text-green-700"
+                  className="flex items-center px-4 py-3 text-blue-100 hover:bg-blue-800 hover:text-white"
                 >
-                  <FcFolder className="w-6 h-6" />
+                  <FcFolder className="w-6 h-6 bg-white rounded-sm" />
                   {isSidebarOpen && <span className="ml-3">Çalışma Alanları</span>}
                 </Link>
               </li>
             </ul>
           </nav>
-          
-          {/* Bottom section */}
-          <div className="border-t py-4">
+            {/* Bottom section */}
+          <div className="border-t border-blue-800 py-4">
             <ul>
               <li>
                 <Link 
                   href="/dashboard/settings" 
-                  className="flex items-center px-4 py-3 text-gray-700 hover:bg-green-50 hover:text-green-700"
+                  className="flex items-center px-4 py-3 text-blue-100 hover:bg-blue-800 hover:text-white"
                 >
-                  <FcSettings className="w-6 h-6" />
+                  <FcSettings className="w-6 h-6 bg-white rounded-sm" />
                   {isSidebarOpen && <span className="ml-3">Ayarlar</span>}
                 </Link>
               </li>
               <li>
                 <button 
                   onClick={handleLogout}
-                  className="flex items-center w-full px-4 py-3 text-gray-700 hover:bg-green-50 hover:text-green-700"
+                  className="flex items-center w-full px-4 py-3 text-blue-100 hover:bg-blue-800 hover:text-white"
                 >
-                  <FcExport className="w-6 h-6" />
+                  <FcExport className="w-6 h-6 bg-white rounded-sm" />
                   {isSidebarOpen && <span className="ml-3">Çıkış Yap</span>}
                 </button>
               </li>
@@ -134,21 +132,23 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </button>
         </div>
       </div>
-      
-      {/* Main content */}
+        {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="bg-white shadow-sm z-10">
+        <header className="bg-blue-800 shadow-sm z-10">
           <div className="px-6 py-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-800">Admin Paneli</h2>
+            <h2 className="text-xl font-semibold text-white flex items-center">
+              <FcManager className="mr-2 bg-white rounded-sm w-6 h-6" />
+              Yönetici Kontrol Paneli
+            </h2>
             <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-600">Çınar Çevre Laboratuvarı</span>
+              <span className="text-sm text-blue-200">Çınar Çevre Laboratuvarı - Yönetici Modu</span>
             </div>
           </div>
         </header>
         
         {/* Content */}
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-6 bg-gray-50">
           {children}
         </main>
       </div>

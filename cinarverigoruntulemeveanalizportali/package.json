@@ -7,15 +7,22 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "prisma:seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
+    "prisma:seed": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "db:reset": "prisma migrate reset --force",
+    "db:init": "prisma migrate deploy && prisma generate",
+    "db:setup": "npm run db:init && npm run prisma:seed"
   },
   "prisma": {
-    "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
+    "seed": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.8.2",
     "bcrypt": "^5.1.1",
     "chart.js": "^4.4.9",
+    "date-fns": "^4.1.0",
     "html2canvas": "^1.4.1",
     "hyperformula": "^3.0.0",
     "jsonwebtoken": "^9.0.2",

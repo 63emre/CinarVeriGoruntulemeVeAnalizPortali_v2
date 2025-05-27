@@ -1,0 +1,256 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth/auth';
+import prisma from '@/lib/db';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
+
+// POST /api/workspaces/[workspaceId]/tables/[tableId]/pdf
+export async function POST(
+  request: NextRequest,
+  context: { params: Promise<{ workspaceId: string; tableId: string }> }
+) {
+  try {
+    // Access the currently logged in user
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
+      return NextResponse.json(
+        { message: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Get the parameters
+    const { workspaceId, tableId } = await context.params;
+
+    // First check if the table exists and if user has access to it
+    const table = await prisma.dataTable.findUnique({
+      where: {
+        id: tableId,
+        workspaceId: workspaceId,
+      },
+      include: {
+        workspace: true,
+      },
+    });
+
+    if (!table) {
+      return NextResponse.json(
+        { message: 'Table not found' },
+        { status: 404 }
+      );
+    }
+
+    // If not admin, check if user has access to the workspace
+    if (currentUser.role !== 'ADMIN') {
+      const hasAccess = await prisma.workspaceUser.findFirst({
+        where: {
+          userId: currentUser.id,
+          workspaceId,
+        },
+      });
+
+      if (!hasAccess) {
+        return NextResponse.json(
+          { message: 'You do not have access to this workspace' },
+          { status: 403 }
+        );
+      }
+    }
+    
+    // Get request body for optional parameters
+    const requestData = await request.json();
+    const { title, subtitle, includeDate, highlightedCells } = requestData;
+    
+    console.log("Generating PDF with highlighted cells:", highlightedCells?.length || 0);
+    
+    // Create a new PDF document
+    const doc = new jsPDF({
+      orientation: 'landscape',
+      unit: 'mm',
+      format: 'a4'
+    });
+    
+    // Add title
+    const pdfTitle = title || table.name;
+    const pdfSubtitle = subtitle || (table.workspace ? table.workspace.name : '');
+    const date = new Date().toLocaleDateString('tr-TR');
+    const time = new Date().toLocaleTimeString('tr-TR');
+    
+    // Add header
+    doc.setFontSize(18);
+    doc.text(pdfTitle, 14, 20);
+    
+    doc.setFontSize(12);
+    doc.text(pdfSubtitle, 14, 30);
+    
+    if (includeDate !== false) {
+      doc.setFontSize(10);
+      doc.text(`Tarih: ${date} Saat: ${time}`, 14, 38);
+    }
+    
+    // Process table data
+    const columns = Array.isArray(table.columns) ? table.columns : Object.values(table.columns as any || {});
+    const rawData = Array.isArray(table.data) ? table.data : Object.values(table.data as any || {});
+    
+    // Convert all data to strings for PDF
+    const tableData = rawData.map((row: any) => {
+      if (Array.isArray(row)) {
+        return row.map((cell: any) => cell === null ? '' : String(cell));
+      }
+      return Object.values(row || {}).map((cell: any) => cell === null ? '' : String(cell));
+    });
+    
+    // Helper function to convert hex color to RGB
+    function hexToRgb(hex: string): { r: number; g: number; b: number } {
+      // Remove # if present
+      hex = hex.replace(/^#/, '');
+      
+      // Parse a 3-digit or 6-digit hex code
+      const bigint = parseInt(hex, 16);
+      const r = (bigint >> 16) & 255;
+      const g = (bigint >> 8) & 255;
+      const b = bigint & 255;
+      
+      return { r, g, b };
+    }
+    
+    // Highlight cell function
+    function isHighlighted(rowIndex: number, colIndex: number): { color: string, message?: string } | null {
+      if (!highlightedCells || !Array.isArray(highlightedCells) || highlightedCells.length === 0) return null;
+      
+      const rowId = `row-${rowIndex}`;
+      const colName = columns[colIndex];
+      
+      if (!colName) return null;
+      
+      // Check with multiple row ID formats
+      const possibleRowIds = [
+        rowId,
+        `row-${rowIndex + 1}`,
+        `${rowIndex}`,
+        `${rowIndex + 1}`
+      ];
+      
+      const highlight = highlightedCells.find((cell: any) => 
+        possibleRowIds.includes(cell.row) && cell.col === colName
+      );
+      
+      return highlight ? { color: highlight.color, message: highlight.message } : null;
+    }
+    
+    // Use autoTable to create the PDF table with highlighted cells
+    autoTable(doc, {
+      head: [columns],
+      body: tableData,
+      startY: 45,
+      margin: { top: 45 },
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+      },
+      headStyles: {
+        fillColor: [41, 128, 185],
+        textColor: 255,
+        fontStyle: 'bold',
+      },
+      alternateRowStyles: {
+        fillColor: [240, 240, 240],
+      },
+      didParseCell: function(data: any) {
+        if (data.section === 'body') {
+          const highlight = isHighlighted(data.row.index, data.column.index);
+          if (highlight) {
+            // Parse color
+            const rgb = hexToRgb(highlight.color);
+            
+            // Apply styling
+            data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b, 0.2];
+            data.cell.styles.textColor = [0, 0, 0];
+            data.cell.styles.fontStyle = 'bold';
+            data.cell.styles.lineWidth = 0.5;
+            data.cell.styles.lineColor = [rgb.r, rgb.g, rgb.b];
+            
+            console.log(`Highlighted cell: row=${data.row.index}, col=${data.column.index}, color=${highlight.color}`);
+          }
+        }
+      }
+    });
+    
+    // Add explanation of highlighted cells if any
+    if (highlightedCells && highlightedCells.length > 0) {
+      // Group by message and color
+      const uniqueHighlights: any[] = [];
+      highlightedCells.forEach((cell: any) => {
+        if (!cell.message) return;
+        if (!uniqueHighlights.find(h => h.color === cell.color && h.message === cell.message)) {
+          uniqueHighlights.push({
+            color: cell.color,
+            message: cell.message
+          });
+        }
+      });
+      
+      if (uniqueHighlights.length > 0) {
+        const lastTableY = (doc as any).lastAutoTable.finalY + 15;
+        let yPos = lastTableY;
+        
+        doc.setFontSize(12);
+        doc.text('Uyarılar ve Açıklamalar:', 14, yPos);
+        yPos += 10;
+        
+        // Add each explanation
+        uniqueHighlights.forEach((highlight, idx) => {
+          // Parse color
+          const rgb = hexToRgb(highlight.color);
+          
+          // Draw colored square
+          doc.setFillColor(rgb.r, rgb.g, rgb.b);
+          doc.rect(14, yPos - 4, 6, 6, 'F');
+          
+          // Add message text
+          doc.setFontSize(9);
+          doc.text(`${idx + 1}. ${highlight.message}`, 24, yPos);
+          yPos += 8;
+        });
+      }
+    }
+    
+    // Add page numbers and footer
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text(
+        'Çınar Çevre Laboratuvarı - Veri Görüntüleme ve Analiz Portalı',
+        14,
+        doc.internal.pageSize.height - 10
+      );
+      
+      doc.text(
+        `Sayfa ${i} / ${pageCount}`,
+        doc.internal.pageSize.width - 30,
+        doc.internal.pageSize.height - 10
+      );
+    }
+    
+    // Convert to buffer for response
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+
+    // Create a new NextResponse with the PDF
+    const response = new NextResponse(pdfBuffer);
+    
+    // Set the appropriate headers
+    response.headers.set('Content-Type', 'application/pdf');
+    response.headers.set('Content-Disposition', `attachment; filename="${String(table.name).replace(/[^a-z0-9]/gi, '_').toLowerCase()}_report.pdf"`);
+    
+    return response;
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    return NextResponse.json(
+      { message: 'Error generating PDF', error: String(error) },
+      { status: 500 }
+    );
+  }
+}

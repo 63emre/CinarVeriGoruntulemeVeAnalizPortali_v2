@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth/auth';
 import prisma from '@/lib/db';
-import { generatePdf } from '@/lib/pdf/pdf-service';
+import { exportTableToPdf } from '@/lib/pdf/pdf-service';
 
 // POST /api/workspaces/[workspaceId]/tables/[tableId]/pdf
 export async function POST(
@@ -55,14 +55,45 @@ export async function POST(
         );
       }
     }
-
-    // Get request body for optional parameters
-    const requestData = await request.json();
-    const { title, subtitle, includeDate } = requestData;
-
-    // Generate PDF from table data
-    const pdfBuffer = await generatePdf(
-      table, 
+      // Get request body for optional parameters
+    let requestData;
+    try {
+      requestData = await request.json();
+    } catch (error) {
+      console.error('Error parsing JSON body:', error);
+      requestData = {}; // Default empty object if JSON parsing fails
+    }
+    
+    const { title, subtitle, includeDate, highlightedCells = [] } = requestData;
+    
+    // Ensure highlightedCells is an array
+    const validHighlightedCells = Array.isArray(highlightedCells) ? highlightedCells : [];
+    
+    // Log for debugging
+    console.log('Received highlighted cells for PDF:', validHighlightedCells.length);
+    if (validHighlightedCells.length > 0) {
+      console.log('First highlighted cell example:', validHighlightedCells[0]);
+    }// Convert Prisma table data to the format expected by PDF generator
+    const formattedTable = {
+      id: table.id,
+      name: table.name,
+      sheetName: table.sheetName,
+      workspaceId: table.workspaceId,
+      uploadedAt: table.uploadedAt,
+      updatedAt: table.updatedAt,
+      columns: Array.isArray(table.columns) ? table.columns : (typeof table.columns === 'object' && table.columns !== null ? Object.values(table.columns as object) : []),
+      data: Array.isArray(table.data) ? table.data : (typeof table.data === 'object' && table.data !== null ? Object.values(table.data as object) : []),
+      workspace: table.workspace
+    };
+    
+    // Log data format for debugging
+    console.log(`Table columns type: ${typeof table.columns}, isArray: ${Array.isArray(table.columns)}`);
+    console.log(`Table data type: ${typeof table.data}, isArray: ${Array.isArray(table.data)}`);
+      // Generate PDF from table data
+    const pdfBuffer = await exportTableToPdf(
+      formattedTable, 
+      validHighlightedCells,
+      [], // formulas array (optional)
       {
         title: title || table.name,
         subtitle: subtitle || table.workspace.name,
@@ -86,4 +117,4 @@ export async function POST(
       { status: 500 }
     );
   }
-} 
+}

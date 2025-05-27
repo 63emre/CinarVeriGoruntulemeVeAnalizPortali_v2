@@ -60,8 +60,11 @@ export default function FormulaSelector({ workspaceId, onSelectionChange }: Form
         newSelection = [...prev, formulaId];
       }
       
-      // Notify parent component
-      onSelectionChange(newSelection);
+      // Notify parent component using setTimeout to avoid React warning
+      // about setState during render
+      setTimeout(() => {
+        onSelectionChange(newSelection);
+      }, 0);
       
       return newSelection;
     });

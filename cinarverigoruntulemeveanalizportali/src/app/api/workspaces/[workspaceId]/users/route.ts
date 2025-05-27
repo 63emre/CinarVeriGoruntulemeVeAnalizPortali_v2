@@ -1,14 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
 
 // GET: Get users for a workspace
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    console.log(`GET /api/workspaces/${params.workspaceId}/users called`);
+    // Use await to properly access params
+    const workspaceId = await params.workspaceId;
+    console.log(`GET /api/workspaces/${workspaceId}/users called`);
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -20,7 +22,7 @@ export async function GET(
     
     // Check if workspace exists and validate permissions
     const workspace = await prisma.workspace.findUnique({
-      where: { id: params.workspaceId }
+      where: { id: workspaceId }
     });
     
     if (!workspace) {
@@ -37,7 +39,7 @@ export async function GET(
                           await prisma.workspaceUser.findFirst({
                             where: {
                               userId: currentUser.id,
-                              workspaceId: params.workspaceId,
+                              workspaceId: workspaceId,
                             }
                           });
     
@@ -51,7 +53,7 @@ export async function GET(
     // Get workspace users
     const workspaceUsers = await prisma.workspaceUser.findMany({
       where: {
-        workspaceId: params.workspaceId,
+        workspaceId: workspaceId,
       },
       include: {
         user: {
@@ -84,11 +86,13 @@ export async function GET(
 
 // POST: Add a user to a workspace
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    console.log(`POST /api/workspaces/${params.workspaceId}/users called`);
+    // Use await to properly access params
+    const workspaceId = await params.workspaceId;
+    console.log(`POST /api/workspaces/${workspaceId}/users called`);
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -100,7 +104,7 @@ export async function POST(
     
     // Only workspace owner or admin can add users
     const workspace = await prisma.workspace.findUnique({
-      where: { id: params.workspaceId }
+      where: { id: workspaceId }
     });
     
     if (!workspace) {
@@ -145,7 +149,7 @@ export async function POST(
       where: {
         userId_workspaceId: {
           userId: userToAdd.id,
-          workspaceId: params.workspaceId,
+          workspaceId: workspaceId,
         }
       }
     });
@@ -161,7 +165,7 @@ export async function POST(
     await prisma.workspaceUser.create({
       data: {
         userId: userToAdd.id,
-        workspaceId: params.workspaceId,
+        workspaceId: workspaceId,
       }
     });
     
@@ -185,11 +189,13 @@ export async function POST(
 
 // DELETE: Remove a user from a workspace
 export async function DELETE(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { workspaceId: string } }
 ) {
   try {
-    console.log(`DELETE /api/workspaces/${params.workspaceId}/users called`);
+    // Use await to properly access params
+    const workspaceId = await params.workspaceId;
+    console.log(`DELETE /api/workspaces/${workspaceId}/users called`);
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -211,7 +217,7 @@ export async function DELETE(
     
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({
-      where: { id: params.workspaceId }
+      where: { id: workspaceId }
     });
     
     if (!workspace) {
@@ -245,7 +251,7 @@ export async function DELETE(
       where: {
         userId_workspaceId: {
           userId: userId,
-          workspaceId: params.workspaceId,
+          workspaceId: workspaceId,
         }
       }
     });

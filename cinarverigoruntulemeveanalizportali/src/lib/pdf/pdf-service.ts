@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 // Define a custom DataTable interface since it's not exported from Prisma client
 export interface DataTable {
@@ -9,12 +10,325 @@ export interface DataTable {
   workspaceId: string;
   uploadedAt: Date;
   updatedAt: Date;
-  columns: string[];
-  data: (string | number)[][];
+    columns: string[];  data: (string | number | null)[][];
   workspace?: {
     name: string;
-    description?: string;
+    description?: string | null;
   };
+}
+
+export interface HighlightedCell {
+  row: string;
+  col: string;
+  color: string;
+  message?: string;
+}
+
+interface Formula {
+  id: string;
+  name: string;
+  description: string | null;
+  formula: string;
+  color: string | null;
+}
+
+interface PdfExportOptions {
+  includeFormulas?: boolean;
+  includeAnalysis?: boolean;
+  title?: string;
+  subtitle?: string;
+  logo?: string;
+  includeDate?: boolean;
+  userName?: string;
+}
+
+/**
+ * Converts HEX color to RGB values
+ */
+function hexToRgb(hex: string): { r: number, g: number, b: number } | null {
+  // Default to black if no color provided
+  if (!hex) return { r: 0, g: 0, b: 0 };
+  
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : null;
+}
+
+/**
+ * Creates a PDF export of a data table with highlighted cells based on formulas
+ */
+export async function exportTableToPdf(
+  table: DataTable,
+  highlightedCells: HighlightedCell[] = [],
+  formulas: Formula[] = [],
+  options: PdfExportOptions = {}
+): Promise<Buffer> {
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4'
+  });
+  
+  // Add title
+  const title = options.title || `${table.name} - ${table.sheetName}`;
+  const subtitle = options.subtitle || 'Çınar Çevre Laboratuvarı';
+  const date = new Date().toLocaleDateString('tr-TR');
+  const time = new Date().toLocaleTimeString('tr-TR');
+  
+  // Add header
+  doc.setFontSize(18);
+  doc.text(title, 14, 20);
+  
+  doc.setFontSize(12);
+  doc.text(subtitle, 14, 30);
+  
+  doc.setFontSize(10);
+  doc.text(`Tarih: ${date} Saat: ${time}`, 14, 38);
+  // Create CellHooks object to handle cell highlighting with enhanced styling
+  const cellHooks = {
+    didParseCell: function(data: any) {
+      // Skip header cells
+      if (data.section === 'head') return;
+      
+      // Get the actual row ID from our tracked rowIds
+      // Body rows start at index 0 in the PDF (since header is separate)
+      const actualRowId = rowIds[data.row.index];
+      
+      // Get column name - make sure it's not undefined
+      const colName = table.columns[data.column.index];
+      
+      if (!colName) {
+        console.log(`Warning: Cannot get column name for index ${data.column.index}`);
+        return;
+      }
+      
+      // Log for debugging with reduced verbosity
+      if (data.row.index === 0 && data.column.index === 0) {
+        console.log(`Processing cells for PDF highlighting, total highlighted cells: ${highlightedCells.length}`);
+      }
+      
+      // Check if this cell is highlighted - support both row ID formats
+      const highlight = highlightedCells.find(cell => 
+        (cell.row === actualRowId || cell.row === `row-${data.row.index + 1}`) && cell.col === colName
+      );
+      
+      if (highlight) {
+        console.log(`Found highlight for row ${highlight.row}, col ${highlight.col}, color ${highlight.color}`);
+        
+        // Get RGB color from HEX
+        const rgb = hexToRgb(highlight.color);
+        
+        // Apply enhanced color styling
+        if (rgb) {
+          // Use a more visible background with appropriate opacity
+          data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b];
+          
+          // Calculate text color for optimal contrast
+          const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+          data.cell.styles.textColor = brightness > 128 ? [0, 0, 0] : [255, 255, 255];
+          
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.lineWidth = 1; // Thicker border for better visibility
+          data.cell.styles.lineColor = [Math.max(0, rgb.r - 50), Math.max(0, rgb.g - 50), Math.max(0, rgb.b - 50)]; // Darker border
+        }
+      }
+    },    willDrawCell: function(data: any) {
+      // Add visual indicators to highlighted cells in PDF
+      if (data.section === 'body') {
+        const actualRowId = rowIds[data.row.index];
+        const colName = table.columns[data.column.index];
+        
+        if (!colName) return;
+        
+        // Support both row ID formats for flexibility
+        const highlight = highlightedCells.find(cell => 
+          (cell.row === actualRowId || cell.row === `row-${data.row.index + 1}`) && cell.col === colName
+        );
+        
+        if (highlight && highlight.message) {
+          // Calculate position for indicator
+          const x = data.cell.x + data.cell.width - 3;
+          const y = data.cell.y + 1;
+          
+          // Draw a triangle indicator in the corner
+          const doc = data.doc;
+          const rgb = hexToRgb(highlight.color);
+          if (rgb) {
+            // Use a contrasting color for the indicator
+            const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+            const indicatorColor = brightness > 128 ? [0, 0, 0] : [255, 255, 255];
+            
+            doc.setFillColor(indicatorColor[0], indicatorColor[1], indicatorColor[2]);
+            doc.triangle(
+              x, y,
+              x - 2, y,
+              x, y + 2,
+              'F'
+            );
+          }
+        }
+      }
+    }
+  };
+    // Parse data for the table and track row IDs for highlighting
+  const rowIds: string[] = [];
+  const tableData = table.data.map((row: any[], rowIndex: number) => {
+    // Store the row ID for highlighting
+    rowIds.push(`row-${rowIndex}`);
+    return row.map((cell: any) => cell === null ? '' : String(cell));
+  });
+  
+  // Generate the table
+  autoTable(doc, {
+    head: [table.columns],
+    body: tableData,
+    startY: 45,
+    margin: { top: 45 },
+    styles: {
+      fontSize: 8,
+      cellPadding: 2,
+    },
+    headStyles: {
+      fillColor: [41, 128, 185],
+      textColor: 255,
+      fontStyle: 'bold',
+    },
+    alternateRowStyles: {
+      fillColor: [240, 240, 240],
+    },
+        // @ts-expect-error - type definition issue with jspdf-autotable    didParseCell: cellHooks.didParseCell,    // @ts-expect-error    willDrawCell: cellHooks.willDrawCell,
+  });
+  
+  // Add explanation of cell highlights if there are any
+  if (highlightedCells.length > 0) {
+    const lastTableY = (doc as any).lastAutoTable.finalY || 45;
+    let yPos = lastTableY + 15;
+    
+    doc.setFontSize(12);
+    doc.text('Formül Sonuçları ve Uyarılar:', 14, yPos);
+    yPos += 10;
+    
+    // Group highlightedCells by color and message
+    const uniqueHighlights = highlightedCells.reduce((acc: any[], cell) => {
+      const existing = acc.find(h => h.color === cell.color && h.message === cell.message);
+      if (!existing) {
+        acc.push({
+          color: cell.color,
+          message: cell.message,
+          count: 1,
+          cells: [{row: cell.row, col: cell.col}]
+        });
+      } else {
+        existing.count++;
+        existing.cells.push({row: cell.row, col: cell.col});
+      }
+      return acc;
+    }, []);
+    
+    // Add each unique highlight message with its color
+    uniqueHighlights.forEach((highlight, index) => {
+      // Check if we need a new page
+      if (yPos > 270) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      const rgb = hexToRgb(highlight.color);
+      
+      // Draw color indicator
+      if (rgb) {
+        doc.setFillColor(rgb.r, rgb.g, rgb.b);
+        doc.rect(14, yPos - 4, 6, 6, 'F');
+      }
+      
+      // Add message with cell count
+      doc.setFontSize(9);
+      doc.text(`${index + 1}. ${highlight.message} (${highlight.count} hücre)`, 24, yPos);
+      
+      // Add cell details if not too many
+      if (highlight.cells.length <= 10) {
+        yPos += 5;
+        doc.setFontSize(8);
+        const cellsText = highlight.cells.map((c: any) => `${c.col}:${c.row}`).join(', ');
+        doc.text(`   Hücreler: ${cellsText}`, 24, yPos);
+      }
+      
+      yPos += 8;
+    });
+    
+    // Add summary statistics
+    yPos += 5;
+    doc.setFontSize(10);
+    doc.text(`Toplam uyarı sayısı: ${highlightedCells.length}`, 14, yPos);
+  }
+  
+  // Add formula explanations if requested
+  if (options.includeFormulas && formulas.length > 0) {
+    const lastTableY = (doc as any).lastAutoTable.finalY || 45;
+    
+    doc.setFontSize(12);
+    doc.text('Formül Açıklamaları:', 14, lastTableY + 15);
+    
+    let yPos = lastTableY + 25;
+    
+    formulas.forEach((formula, index) => {
+      // Check if we need a new page
+      if (yPos > 270) {
+        doc.addPage();
+        yPos = 20;
+      }
+      
+      // Get color for formula
+      const rgb = hexToRgb(formula.color || '#000000');
+      
+      // Draw color indicator
+      if (rgb) {
+        doc.setFillColor(rgb.r, rgb.g, rgb.b);
+        doc.rect(14, yPos - 4, 6, 6, 'F');
+      }
+      
+      // Add formula name and formula text
+      doc.setFontSize(10);
+      doc.text(`${index + 1}. ${formula.name}`, 24, yPos);
+      
+      if (formula.description) {
+        yPos += 6;
+        doc.setFontSize(8);
+        doc.text(`Açıklama: ${formula.description}`, 24, yPos);
+      }
+      
+      yPos += 6;
+      doc.setFontSize(8);
+      doc.text(`Formül: ${formula.formula}`, 24, yPos);
+      
+      yPos += 12;
+    });
+  }
+  
+  // Include company information and footer
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(
+      'Çınar Çevre Laboratuvarı - Veri Görüntüleme ve Analiz Portalı',
+      14,
+      doc.internal.pageSize.height - 10
+    );
+    
+    // Add page numbers
+    doc.text(
+      `Sayfa ${i} / ${pageCount}`,
+      doc.internal.pageSize.width - 30,
+      doc.internal.pageSize.height - 10
+    );  }
+  
+  // Return the PDF as buffer (not blob, for server environment)
+  return Buffer.from(doc.output('arraybuffer'));
 }
 
 export interface PDFGenerationOptions {
@@ -132,4 +446,4 @@ export async function generatePdf(
 
   // Use the base generateTablePDF function
   return generateTablePDF(table, finalOptions);
-} 
+}

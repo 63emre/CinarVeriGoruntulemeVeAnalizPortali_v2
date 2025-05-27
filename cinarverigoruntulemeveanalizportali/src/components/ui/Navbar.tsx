@@ -72,7 +72,7 @@ export default function Navbar() {
                 height={40}
                 className="mr-2"
               />
-              <span className="font-bold text-xl text-gray-800">Çınar Portal</span>
+              <span className="font-bold text-xl text-gray-950">Çınar Portal</span>
             </Link>
           </div>
 
@@ -83,8 +83,8 @@ export default function Navbar() {
                 href="/dashboard"
                 className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${
                   isActive('/dashboard')
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    ? 'bg-blue-50 text-blue-800'
+                    : 'text-gray-800 hover:bg-gray-50 hover:text-gray-950'
                 }`}
               >
                 <FcHome className="mr-1 h-5 w-5" />
@@ -96,8 +96,8 @@ export default function Navbar() {
                   href="/admin"
                   className={`flex items-center px-3 py-2 rounded-md text-sm font-medium ${
                     isActive('/admin')
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      ? 'bg-blue-50 text-blue-800'
+                      : 'text-gray-800 hover:bg-gray-50 hover:text-gray-950'
                   }`}
                 >
                   <FcSettings className="mr-1 h-5 w-5" />
@@ -109,15 +109,15 @@ export default function Navbar() {
                 <div className="flex items-center">
                   <FcManager className="h-8 w-8 rounded-full bg-gray-100 p-1" />
                   <div className="ml-2">
-                    <p className="text-sm font-medium text-gray-700">{user.name || user.email}</p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-sm font-medium text-gray-800">{user.name || user.email}</p>
+                    <p className="text-xs text-gray-700">
                       {user.role === 'ADMIN' ? 'Yönetici' : 'Kullanıcı'}
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="ml-4 px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
+                  className="ml-4 px-3 py-1 text-sm text-gray-800 hover:text-gray-950"
                 >
                   Çıkış
                 </button>
@@ -163,8 +163,8 @@ export default function Navbar() {
               href="/dashboard"
               className={`flex items-center px-3 py-2 text-base font-medium ${
                 isActive('/dashboard')
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'bg-blue-50 text-blue-800'
+                  : 'text-gray-800 hover:bg-gray-50 hover:text-gray-950'
               }`}
             >
               <FcHome className="mr-2 h-5 w-5" />
@@ -176,8 +176,8 @@ export default function Navbar() {
                 href="/admin"
                 className={`flex items-center px-3 py-2 text-base font-medium ${
                   isActive('/admin')
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    ? 'bg-blue-50 text-blue-800'
+                    : 'text-gray-800 hover:bg-gray-50 hover:text-gray-950'
                 }`}
               >
                 <FcSettings className="mr-2 h-5 w-5" />
@@ -191,8 +191,8 @@ export default function Navbar() {
                   <FcManager className="h-10 w-10 rounded-full bg-gray-100 p-1" />
                 </div>
                 <div className="ml-3">
-                  <div className="text-base font-medium text-gray-800">{user.name || user.email}</div>
-                  <div className="text-sm font-medium text-gray-500">
+                  <div className="text-base font-medium text-gray-950">{user.name || user.email}</div>
+                  <div className="text-sm font-medium text-gray-800">
                     {user.role === 'ADMIN' ? 'Yönetici' : 'Kullanıcı'}
                   </div>
                 </div>
@@ -200,7 +200,7 @@ export default function Navbar() {
               <div className="mt-3 space-y-1">
                 <button
                   onClick={handleLogout}
-                  className="block w-full text-left px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                  className="block w-full text-left px-4 py-2 text-base font-medium text-gray-800 hover:text-gray-950 hover:bg-gray-100"
                 >
                   Çıkış
                 </button>

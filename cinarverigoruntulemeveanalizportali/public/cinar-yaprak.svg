@@ -1,18 +1,18 @@
-<?xml version="1.0" standalone="no"?>
-<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 20010904//EN"
- "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
-<svg version="1.0" xmlns="http://www.w3.org/2000/svg"
- width="500.000000pt" height="532.000000pt" viewBox="0 0 500.000000 532.000000"
- preserveAspectRatio="xMidYMid meet">
-
-<g transform="translate(0.000000,532.000000) scale(0.100000,-0.100000)"
-fill="#000000" stroke="none">
-<path d="M2125 4331 c-3 -5 -2 -12 3 -15 5 -3 9 1 9 9 0 17 -3 19 -12 6z"/>
-<path d="M3459 3443 c-13 -16 -12 -17 4 -4 16 13 21 21 13 21 -2 0 -10 -8 -17
--17z"/>
-<path d="M1953 1655 c0 -8 4 -12 9 -9 5 3 6 10 3 15 -9 13 -12 11 -12 -6z"/>
-<path d="M2889 1573 c-13 -16 -12 -17 4 -4 9 7 17 15 17 17 0 8 -8 3 -21 -13z"/>
-<path d="M4040 960 c-9 -6 -10 -10 -3 -10 6 0 15 5 18 10 8 12 4 12 -15 0z"/>
-<path d="M3945 899 c-3 -4 2 -6 10 -5 21 3 28 13 10 13 -9 0 -18 -4 -20 -8z"/>
-</g>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Leaf shape -->
+  <path d="M50 10 C20 10 10 40 10 60 C10 75 25 85 50 85 C75 85 90 75 90 60 C90 40 80 10 50 10 Z" fill="#2E7D32" />
+  
+  <!-- Leaf veins -->
+  <path d="M50 10 L50 85" stroke="#1B5E20" stroke-width="2" stroke-opacity="0.6" />
+  <path d="M50 30 L30 55" stroke="#1B5E20" stroke-width="1.5" stroke-opacity="0.6" />
+  <path d="M50 30 L70 55" stroke="#1B5E20" stroke-width="1.5" stroke-opacity="0.6" />
+  <path d="M50 45 L35 65" stroke="#1B5E20" stroke-width="1" stroke-opacity="0.6" />
+  <path d="M50 45 L65 65" stroke="#1B5E20" stroke-width="1" stroke-opacity="0.6" />
+  
+  <!-- Leaf stem -->
+  <path d="M50 85 L50 95" stroke="#8B4513" stroke-width="3" />
+  
+  <!-- Highlight -->
+  <path d="M30 40 C35 30 45 25 55 30 C65 35 75 45 75 55" stroke="#FFFFFF" stroke-width="2" stroke-opacity="0.3" fill="none" />
 </svg>

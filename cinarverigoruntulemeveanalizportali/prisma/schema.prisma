@@ -11,7 +11,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = "postgresql://postgres:123@localhost:5432/cinar_portal"
+  url      = env("DATABASE_URL")
 }
 
 // User model for authentication and authorization
@@ -67,6 +67,7 @@ model DataTable {
   updatedAt     DateTime  @updatedAt
   columns       Json      // Store column definitions
   data          Json      // Store actual table data
+  csvData       String?   // Store CSV representation for data integrity
 }
 
 enum FormulaType {

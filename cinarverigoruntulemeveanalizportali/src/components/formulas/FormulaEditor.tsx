@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FcAddRow, FcInfo, FcRules } from 'react-icons/fc';
+import { FcInfo, FcRules } from 'react-icons/fc';
+import { MdDelete } from 'react-icons/md';
+import { HiOutlineExclamationCircle } from 'react-icons/hi';
 
 interface FormulaEditorProps {
   workspaceId: string;
+  tableId: string | null;
   onFormulaAdded?: (formula: Formula) => void;
 }
 
@@ -18,6 +21,8 @@ interface Formula {
   createdAt: string;
   updatedAt: string;
   workspaceId: string;
+  type: 'CELL_VALIDATION' | 'RELATIONAL';
+  active?: boolean;
 }
 
 interface Variable {
@@ -46,7 +51,15 @@ interface ComplexFormula {
   logicalOperators: FormulaPart[];
 }
 
-export default function FormulaEditor({ workspaceId, onFormulaAdded }: FormulaEditorProps) {
+interface TableData {
+  id: string;
+  name: string;
+  sheetName: string;
+  columns: string[];
+  data: (string | number | null)[][];
+}
+
+export default function FormulaEditor({ workspaceId, tableId, onFormulaAdded }: FormulaEditorProps) {
   // Shared state
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [loading, setLoading] = useState(false);
@@ -82,66 +95,61 @@ export default function FormulaEditor({ workspaceId, onFormulaAdded }: FormulaEd
   const arithmeticOperators = ['+', '-', '*', '/'];
   const comparisonOperators = ['>', '<', '>=', '<=', '==', '!='];
 
+  // Add with other state values in the component
+  const [tables, setTables] = useState<{ id: string; name: string; sheetName: string }[]>([]);
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(tableId || null);
+  const [tableData, setTableData] = useState<TableData | null>(null);
+  const [showTableData, setShowTableData] = useState(false);
+
+  // If tableId prop changes, update the selected table
+  useEffect(() => {
+    if (tableId) {
+      setSelectedTableId(tableId);
+    }
+  }, [tableId]);
+
   // Load existing formulas and variables when component mounts
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Fetch formulas
-        const formulasResponse = await fetch(`/api/workspaces/${workspaceId}/formulas`);
+        // Fetch formulas specific to this table if tableId is provided
+        // Otherwise fetch all formulas for the workspace
+        const formulasEndpoint = tableId 
+          ? `/api/workspaces/${workspaceId}/tables/${tableId}/formulas`
+          : `/api/workspaces/${workspaceId}/formulas`;
+        
+        const formulasResponse = await fetch(formulasEndpoint);
         if (formulasResponse.ok) {
           const formulasData = await formulasResponse.json();
           setFormulas(formulasData);
         }
         
-        // Fetch variables from tables
+        // Fetch tables
         const tablesResponse = await fetch(`/api/workspaces/${workspaceId}/tables`);
         if (tablesResponse.ok) {
           const tablesData = await tablesResponse.json();
+          setTables(tablesData);
           
+          // If there are tables, get variables from the first one
           if (tablesData && tablesData.length > 0) {
-            // Get first table to extract variables
-            const firstTableId = tablesData[0].id;
-            const tableDataResponse = await fetch(`/api/workspaces/${workspaceId}/tables/${firstTableId}`);
-            
-            if (tableDataResponse.ok) {
-              const tableData = await tableDataResponse.json();
-              
-              // Find the Variable column index
-              const variableColumnIndex = tableData.columns.findIndex(
-                (col: string) => col === 'Variable'
-              );
-              
-              if (variableColumnIndex >= 0) {
-                // Extract unique variable values
-                const uniqueVariables = new Set<string>();
-                tableData.data.forEach((row: Array<string | number>) => {
-                  const varValue = row[variableColumnIndex];
-                  if (varValue && typeof varValue === 'string') {
-                    uniqueVariables.add(varValue);
-                  }
-                });
-                
-                // Create variables array
-                setVariables([
-                  {
-                    name: 'Variable',
-                    values: Array.from(uniqueVariables)
-                  }
-                ]);
-              }
+            if (tableId) {
+              setSelectedTableId(tableId);
+            } else if (!selectedTableId) {
+              setSelectedTableId(tablesData[0].id);
             }
           }
         }
       } catch (err) {
         console.error('Error fetching data:', err);
+        setError('Failed to load formulas or tables. Please try again.');
       } finally {
         setLoading(false);
       }
     };
     
     fetchData();
-  }, [workspaceId]);
+  }, [workspaceId, tableId, selectedTableId]);
 
   const clearBasicForm = () => {
     setName('');
@@ -409,17 +417,26 @@ export default function FormulaEditor({ workspaceId, onFormulaAdded }: FormulaEd
       }
     }).join('');
   };
-
   // Formülün geçerli olup olmadığını kontrol et
   const isFormulaValid = (): boolean => {
+    // Check if we have valid conditions
+    if (!complexFormula.conditions || complexFormula.conditions.length === 0) {
+      return false;
+    }
+    
     return complexFormula.conditions.every(condition => {
-      // En az bir değişken olmalı
+      if (!condition || !condition.leftParts || !condition.rightParts) {
+        return false;
+      }
+      
+      // En az bir geçerli değişken olmalı
       const hasLeftVariable = condition.leftParts.some(part => 
-        part.type === 'variable' && part.value.trim() !== '');
+        part && part.type === 'variable' && part.value !== undefined && part.value !== null && part.value.trim() !== '');
       
       const hasRightVariable = condition.rightParts.some(part => 
-        part.type === 'variable' && part.value.trim() !== '');
+        part && part.type === 'variable' && part.value !== undefined && part.value !== null && part.value.trim() !== '');
       
+      // İki tarafta da geçerli değişkenler veya sabitler olmalı
       return hasLeftVariable && hasRightVariable;
     });
   };
@@ -464,8 +481,7 @@ export default function FormulaEditor({ workspaceId, onFormulaAdded }: FormulaEd
       type: formulaType
     });
   };
-  
-  const saveFormula = async (formulaData: { 
+    const saveFormula = async (formulaData: { 
     name: string; 
     description: string | null; 
     formula: string; 
@@ -475,6 +491,13 @@ export default function FormulaEditor({ workspaceId, onFormulaAdded }: FormulaEd
     setLoading(true);
     setError('');
     setSuccess('');
+    
+    // Ensure we have a selected table
+    if (!selectedTableId) {
+      setError('Formül oluşturmak için bir tablo seçmelisiniz');
+      setLoading(false);
+      return;
+    }
     
     try {
       const response = await fetch(`/api/workspaces/${workspaceId}/formulas`, {
@@ -487,7 +510,9 @@ export default function FormulaEditor({ workspaceId, onFormulaAdded }: FormulaEd
           description: formulaData.description,
           expression: formulaData.formula,
           color: formulaData.color,
-          tableId: null
+          tableId: selectedTableId,  // Link the formula to the selected table
+          type: formulaData.type === 'cellValidation' ? 'CELL_VALIDATION' : 'RELATIONAL',
+          active: true // Set formula as active by default
         }),
       });
       
@@ -554,496 +579,404 @@ export default function FormulaEditor({ workspaceId, onFormulaAdded }: FormulaEd
     }
   };
 
-  return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-6">Formül Yönetimi</h1>
+  const loadTableData = async () => {
+    if (!selectedTableId) return;
+    
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/workspaces/${workspaceId}/tables/${selectedTableId}`);
+      
+      if (!response.ok) {
+        throw new Error('Tablo verisi yüklenemedi');
+      }
+      
+      const data = await response.json();
+      setTableData(data);
+      setShowTableData(true);
+      
+      // Find the Variable column index and update variables state
+      const variableColumnIndex = data.columns.findIndex(
+        (col: string) => col === 'Variable'
+      );
+      
+      if (variableColumnIndex >= 0) {
+        // Extract unique variable values
+        const uniqueVariables = new Set<string>();
+        data.data.forEach((row: Array<string | number>) => {
+          const varValue = row[variableColumnIndex];
+          if (varValue && typeof varValue === 'string') {
+            uniqueVariables.add(varValue);
+          }
+        });
         
-        <div className="mb-6">
-          <label htmlFor="formulaType" className="block text-sm font-medium text-gray-700 mb-1">
-            Formül Tipi:
-          </label>
-          <div className="relative inline-block w-64">
-            <select
-              id="formulaType"
-              value={formulaType}
-              onChange={(e) => setFormulaType(e.target.value as FormulaType)}
-              className="block w-full px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            >
-              <option value="cellValidation">Hücre Doğrulama Kuralları</option>
-              <option value="ratioRelation">İlişkisel Toplam ve Oran Kuralları</option>
-            </select>
+        // Create variables array
+        setVariables([
+          {
+            name: 'Variable',
+            values: Array.from(uniqueVariables)
+          }
+        ]);
+        
+        console.log('Found variables:', Array.from(uniqueVariables));
+      } else {
+        console.log('No Variable column found in data');
+        setVariables([]);
+      }
+    } catch (err) {
+      console.error('Error loading table data:', err);
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load table data automatically when selectedTableId changes
+  useEffect(() => {
+    if (selectedTableId) {
+      loadTableData();
+    }
+  }, [selectedTableId]);
+
+  // after existing state declarations, add a computed state for form availability
+  const isFormAvailable = !!selectedTableId;
+
+  // add this right before rendering the form:
+  const renderNoTableWarning = () => {
+    return (
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+        <div className="flex">
+          <div className="flex-shrink-0">
+            <HiOutlineExclamationCircle className="h-5 w-5 text-yellow-500" />
           </div>
-          
-          <div className="float-right">
-            <button
-              type="button"
-              className="bg-blue-100 text-blue-800 px-4 py-2 rounded-md inline-flex items-center"
-            >
-              <FcInfo className="mr-2" />
-              Formül Yardımı
-            </button>
+          <div className="ml-3">
+            <p className="text-sm text-yellow-700">
+              Formül oluşturmak için önce bir tablo seçmelisiniz. Formüller bir tabloya bağlı olarak çalışır.
+            </p>
           </div>
         </div>
-        
-        {success && (
-          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4">
-            <span className="block sm:inline">{success}</span>
-          </div>
-        )}
-        
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
-            <span className="block sm:inline">{error}</span>
-          </div>
-        )}
       </div>
+    );
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+      <h2 className="text-xl font-semibold text-gray-800 mb-5 flex items-center">
+        <FcRules className="mr-2 h-6 w-6" />
+        Formül Yönetimi
+      </h2>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Sol Kolon - Formül listesi */}
-        <div className="lg:col-span-1 bg-white rounded-lg shadow-md p-4">
-          <h2 className="text-lg font-semibold mb-4 flex items-center border-b pb-2">
-            <FcRules className="mr-2" />
-            {formulaType === 'cellValidation' ? 'Hücre Doğrulama Kuralları' : 'Oran ve Toplam İlişkileri'}
-          </h2>
-          
-          {loading && formulas.length === 0 ? (
-            <div className="flex justify-center py-8">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-500"></div>
+      {formulas.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-lg font-medium text-gray-700 mb-3">Mevcut Formüller</h3>
+          <div className="space-y-3">
+            {formulas.map(formula => (
+              <div
+                key={formula.id}
+                className="p-3 bg-white border rounded-md shadow-sm hover:shadow-md transition-shadow"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-medium text-gray-900">{formula.name}</h4>
+                    {formula.description && (
+                      <p className="text-sm text-gray-600 mt-1">{formula.description}</p>
+                    )}
+                    <div className="mt-1 text-sm">
+                      <code className="bg-gray-100 text-gray-800 px-1 py-0.5 rounded text-xs">
+                        {formula.formula}
+                      </code>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={() => deleteFormula(formula.id)}
+                    className="text-red-500 hover:text-red-700"
+                    title="Formülü sil"
+                  >
+                    <MdDelete size={20} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      {!isFormAvailable && renderNoTableWarning()}
+      
+      <div className={isFormAvailable ? "" : "opacity-50 pointer-events-none"}>
+        <h3 className="text-lg font-medium text-gray-700 mb-3">Yeni Formül Oluştur</h3>
+        <form onSubmit={formulaType === 'cellValidation' ? handleBasicSubmit : handleComplexSubmit}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Formül Adı
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md text-gray-800"
+                placeholder="Formül adı girin"
+                required
+              />
             </div>
-          ) : formulas.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
-              Henüz formül yok. Sağdaki form ile ekleyebilirsiniz.
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Vurgulama Rengi
+              </label>
+              <div className="flex items-center">
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  className="h-10 w-10 border-0 p-0 mr-2"
+                />
+                <span className="text-sm text-gray-600">
+                  Formül geçersiz olduğunda kullanılacak renk
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Açıklama
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3 py-2 border rounded-md text-gray-800"
+              rows={2}
+              placeholder="Formül için açıklama girin (opsiyonel)"
+            />
+          </div>
+          
+          {/* Formula inputs based on type */}
+          {formulaType === 'cellValidation' ? (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Formül İfadesi
+              </label>
+              <div className="p-4 bg-white border rounded-md">
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {variables.length > 0 && variables[0].values.map((varName, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setExpression(prev => prev + ` [${varName}]`)}
+                      className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm hover:bg-blue-200"
+                    >
+                      {varName}
+                    </button>
+                  ))}
+                  {variables.length === 0 && (
+                    <div className="text-amber-600 text-sm">
+                      Değişken bulunamadı. Lütfen önce bir tablo seçin ve yükleyin.
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {['>', '<', '>=', '<=', '==', '!='].map(op => (
+                    <button
+                      key={op}
+                      type="button"
+                      onClick={() => setExpression(prev => prev + ` ${op} `)}
+                      className="bg-purple-100 text-purple-800 px-2 py-1 rounded text-sm hover:bg-purple-200"
+                    >
+                      {op}
+                    </button>
+                  ))}
+                </div>
+                
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {['+', '-', '*', '/'].map(op => (
+                    <button
+                      key={op}
+                      type="button"
+                      onClick={() => setExpression(prev => prev + ` ${op} `)}
+                      className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm hover:bg-green-200"
+                    >
+                      {op}
+                    </button>
+                  ))}
+                  {['&&', '||'].map(op => (
+                    <button
+                      key={op}
+                      type="button"
+                      onClick={() => setExpression(prev => prev + ` ${op} `)}
+                      className="bg-amber-100 text-amber-800 px-2 py-1 rounded text-sm hover:bg-amber-200"
+                    >
+                      {op}
+                    </button>
+                  ))}
+                  {['(', ')'].map(op => (
+                    <button
+                      key={op}
+                      type="button"
+                      onClick={() => setExpression(prev => prev + op)}
+                      className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm hover:bg-gray-200"
+                    >
+                      {op}
+                    </button>
+                  ))}
+                </div>
+                
+                <textarea
+                  value={expression}
+                  onChange={(e) => setExpression(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-md font-mono text-gray-800 bg-gray-50"
+                  rows={3}
+                  placeholder="Örn: [Toplam Fosfor] > [Orto Fosfat] || [pH] < 7"
+                />
+                
+                <div className="mt-2 text-xs text-gray-600">
+                  Değişkenler köşeli parantez içinde yazılmalıdır. Örn: [Değişken Adı]
+                </div>
+              </div>
             </div>
           ) : (
-            <ul className="divide-y divide-gray-200">
-              {formulas
-                .filter(formula => formula.description?.includes(formulaType === 'cellValidation' ? 'Hücre Doğrulama' : 'Oran ve Toplam'))
-                .map(formula => (
-                  <li key={formula.id} className="py-3">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <h3 className="font-medium">{formula.name}</h3>
-                        <p className="text-sm text-gray-600 truncate max-w-[200px]">
-                          {formula.formula}
-                        </p>
-                      </div>
-                      <div className="flex items-center">
-                        <div 
-                          className="w-4 h-4 rounded-full mr-2" 
-                          style={{ backgroundColor: formula.color }}
-                        ></div>
-                        <button
-                          onClick={() => deleteFormula(formula.id)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-            </ul>
-          )}
-        </div>
-        
-        {/* Sağ Kolon - Formül editörü */}
-        <div className="lg:col-span-2">
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-xl font-semibold mb-4 flex items-center">
-              <FcAddRow className="mr-2 h-6 w-6" />
-              Yeni {formulaType === 'cellValidation' ? 'Hücre Doğrulama' : 'Oran ve İlişki'} Formülü Ekle
-            </h2>
-            
-            {/* Formül Adı ve Açıklama alanları */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                  Formül Adı
-                </label>
-                <input
-                  type="text"
-                  id="name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Örn: Fosfor Kontrol"
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-                  Açıklama (İsteğe bağlı)
-                </label>
-                <input
-                  type="text"
-                  id="description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Kısa bir açıklama"
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Karmaşık Formül Oluşturucu
+              </label>
+              <div className="p-4 bg-white border rounded-md">
+                <div className="text-sm text-gray-700 mb-3">
+                  Bu modda karmaşık formüller oluşturabilirsiniz. Her bir koşul için, değişkenler, operatörler ve sabitleri seçin.
+                </div>
+                
+                {/* Demo formula builder for now */}
+                <div className="mb-4 p-3 border border-dashed border-gray-300 rounded-md">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <select 
+                      className="p-2 border rounded text-gray-800"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value) {
+                          setExpression(prev => {
+                            const parts = prev.split(' ');
+                            parts[0] = `[${value}]`;
+                            return parts.join(' ');
+                          });
+                        }
+                      }}
+                    >
+                      <option value="">Değişken Seç</option>
+                      {variables.length > 0 && variables[0].values.map((varName, idx) => (
+                        <option key={idx} value={varName}>{varName}</option>
+                      ))}
+                    </select>
+                    
+                    <select 
+                      className="p-2 border rounded text-gray-800"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value) {
+                          setExpression(prev => {
+                            const parts = prev.split(' ');
+                            parts[1] = value;
+                            return parts.join(' ');
+                          });
+                        }
+                      }}
+                    >
+                      <option value="">Operatör Seç</option>
+                      {['>', '<', '>=', '<=', '==', '!='].map(op => (
+                        <option key={op} value={op}>{op}</option>
+                      ))}
+                    </select>
+                    
+                    <select 
+                      className="p-2 border rounded text-gray-800"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value) {
+                          setExpression(prev => {
+                            const parts = prev.split(' ');
+                            parts[2] = `[${value}]`;
+                            return parts.join(' ');
+                          });
+                        }
+                      }}
+                    >
+                      <option value="">Değişken Seç</option>
+                      {variables.length > 0 && variables[0].values.map((varName, idx) => (
+                        <option key={idx} value={varName}>{varName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="mt-3 flex justify-center">
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="Sabit Değer"
+                      className="p-2 border rounded text-gray-800 w-40"
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value) {
+                          setExpression(prev => {
+                            const parts = prev.split(' ');
+                            parts[2] = value;
+                            return parts.join(' ');
+                          });
+                        }
+                      }}
+                    />
+                  </div>
+                </div>
+                
+                <textarea
+                  value={expression}
+                  onChange={(e) => setExpression(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-md font-mono text-gray-800 bg-gray-50"
+                  rows={3}
+                  placeholder="Yukarıdaki seçimlere göre oluşturulan formül burada görünecek"
                 />
               </div>
             </div>
+          )}
             
-            {/* Temel formül editörü */}
-            {formulaType === 'cellValidation' && (
-              <form onSubmit={handleBasicSubmit}>
-                <div>
-                  <label htmlFor="expression" className="block text-sm font-medium text-gray-700 mb-1">
-                    Formül İfadesi
-                  </label>
-                  <textarea
-                    id="expression"
-                    value={expression}
-                    onChange={(e) => setExpression(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 font-mono"
-                    placeholder="Örn: [Toplam Fosfor] > [Orto Fosfat]"
-                    rows={4}
-                  />
-                  <div className="mt-1 text-sm text-gray-500">
-                    Değişken isimleri köşeli parantez içinde olmalıdır. Örn: [Değişken Adı]
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <label htmlFor="color" className="block text-sm font-medium text-gray-700 mb-1">
-                    Renk
-                  </label>
-                  <div className="flex items-center">
-                    <input
-                      type="color"
-                      id="color"
-                      value={color}
-                      onChange={(e) => setColor(e.target.value)}
-                      className="h-10 w-10 mr-2 border border-gray-300 rounded"
-                    />
-                    <span className="text-sm text-gray-500">
-                      Seçilen renk: {color}
-                    </span>
-                  </div>
-                </div>
-                
-                <div className="flex justify-end space-x-2 mt-6">
-                  <button
-                    type="button"
-                    onClick={clearBasicForm}
-                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                    disabled={loading}
-                  >
-                    Temizle
-                  </button>
-                  
-                  <button
-                    type="submit"
-                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <span className="flex items-center">
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Kaydediliyor...
-                      </span>
-                    ) : (
-                      "Kaydet"
-                    )}
-                  </button>
-                </div>
-              </form>
-            )}
-            
-            {/* Gelişmiş (Dropdown-tabanlı) formül editörü */}
-            {formulaType === 'ratioRelation' && (
-              <form onSubmit={handleComplexSubmit}>
-                {/* Formül Koşulları */}
-                {complexFormula.conditions.map((condition, conditionIndex) => (
-                  <div key={condition.id} className="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className="text-md font-semibold text-gray-700">
-                        {conditionIndex === 0 ? "Koşul" : `Koşul ${conditionIndex + 1}`}
-                      </h3>
-                      
-                      {complexFormula.conditions.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeCondition(condition.id)}
-                          className="text-red-500 hover:text-red-700"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                    
-                    {/* Mantıksal Operatör (AND/OR) */}
-                    {conditionIndex > 0 && (
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Mantıksal Bağlayıcı
-                        </label>
-                        <select
-                          value={complexFormula.logicalOperators[conditionIndex - 1]?.value || 'AND'}
-                          onChange={(e) => updateFormulaPartValue(
-                            condition.id,
-                            complexFormula.logicalOperators[conditionIndex - 1]?.id || '',
-                            e.target.value,
-                            'logicalOperators'
-                          )}
-                          className="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                        >
-                          <option value="AND">VE (AND)</option>
-                          <option value="OR">VEYA (OR)</option>
-                        </select>
-                      </div>
-                    )}
-                    
-                    {/* Sol Taraf - İlk operand ve aritmetik işlemler */}
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Sol Taraf
-                      </label>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {condition.leftParts.map((part) => (
-                          <div key={part.id} className="flex items-center">
-                            {part.type === 'variable' ? (
-                              <select
-                                value={part.value}
-                                onChange={(e) => updateFormulaPartValue(
-                                  condition.id,
-                                  part.id,
-                                  e.target.value,
-                                  'leftParts'
-                                )}
-                                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                              >
-                                <option value="">Değişken Seçin</option>
-                                {variables[0]?.values.map(variable => (
-                                  <option key={variable} value={variable}>{variable}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <select
-                                value={part.value}
-                                onChange={(e) => updateFormulaPartValue(
-                                  condition.id,
-                                  part.id,
-                                  e.target.value,
-                                  'leftParts'
-                                )}
-                                className="w-16 px-2 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                              >
-                                {arithmeticOperators.map(op => (
-                                  <option key={op} value={op}>{op}</option>
-                                ))}
-                              </select>
-                            )}
-                          </div>
-                        ))}
-                        
-                        {/* Değişken Ekle/Çıkar Butonları */}
-                        <div className="ml-2 flex space-x-1">
-                          <button
-                            type="button"
-                            onClick={() => addVariable(condition.id, 'left')}
-                            className="bg-blue-100 text-blue-800 p-2 rounded-md hover:bg-blue-200"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
-                          </button>
-                          {condition.leftParts.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeVariable(condition.id, 'left')}
-                              className="bg-red-100 text-red-800 p-2 rounded-md hover:bg-red-200"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Karşılaştırma Operatörü */}
-                    <div className="mb-4">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Karşılaştırma
-                      </label>
-                      <select
-                        value={condition.comparisonOperator.value}
-                        onChange={(e) => updateFormulaPartValue(
-                          condition.id,
-                          condition.comparisonOperator.id,
-                          e.target.value,
-                          'comparisonOperator'
-                        )}
-                        className="w-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        {comparisonOperators.map(op => (
-                          <option key={op} value={op}>{op}</option>
-                        ))}
-                      </select>
-                    </div>
-                    
-                    {/* Sağ Taraf - İkinci operand ve aritmetik işlemler */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Sağ Taraf
-                      </label>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {condition.rightParts.map((part) => (
-                          <div key={part.id} className="flex items-center">
-                            {part.type === 'variable' ? (
-                              <select
-                                value={part.value}
-                                onChange={(e) => updateFormulaPartValue(
-                                  condition.id,
-                                  part.id,
-                                  e.target.value,
-                                  'rightParts'
-                                )}
-                                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                              >
-                                <option value="">Değişken Seçin</option>
-                                {variables[0]?.values.map(variable => (
-                                  <option key={variable} value={variable}>{variable}</option>
-                                ))}
-                              </select>
-                            ) : (
-                              <select
-                                value={part.value}
-                                onChange={(e) => updateFormulaPartValue(
-                                  condition.id,
-                                  part.id,
-                                  e.target.value,
-                                  'rightParts'
-                                )}
-                                className="w-16 px-2 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                              >
-                                {arithmeticOperators.map(op => (
-                                  <option key={op} value={op}>{op}</option>
-                                ))}
-                              </select>
-                            )}
-                          </div>
-                        ))}
-                        
-                        {/* Değişken Ekle/Çıkar Butonları */}
-                        <div className="ml-2 flex space-x-1">
-                          <button
-                            type="button"
-                            onClick={() => addVariable(condition.id, 'right')}
-                            className="bg-blue-100 text-blue-800 p-2 rounded-md hover:bg-blue-200"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
-                          </button>
-                          {condition.rightParts.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeVariable(condition.id, 'right')}
-                              className="bg-red-100 text-red-800 p-2 rounded-md hover:bg-red-200"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                
-                {/* Yeni Koşul Ekle Butonu */}
-                <div className="mb-6">
-                  <button
-                    type="button"
-                    onClick={addCondition}
-                    className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Koşul Ekle
-                  </button>
-                </div>
-                
-                {/* Formül Önizleme */}
-                <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Formül Önizleme
-                  </label>
-                  <div className="font-mono text-gray-800 bg-white p-3 border border-gray-300 rounded-md min-h-[60px]">
-                    {getFormulaPreview() || 'Formül henüz tamamlanmadı...'}
-                  </div>
-                </div>
-                
-                {/* Renk Seçici */}
-                <div className="mb-6">
-                  <label htmlFor="complexColor" className="block text-sm font-medium text-gray-700 mb-2">
-                    Vurgulama Rengi
-                  </label>
-                  <div className="flex items-center">
-                    <input
-                      type="color"
-                      id="complexColor"
-                      value={color}
-                      onChange={(e) => setColor(e.target.value)}
-                      className="h-10 w-10 mr-2 border border-gray-300 rounded"
-                    />
-                    <span className="text-sm text-gray-500">
-                      Seçilen renk: {color}
-                    </span>
-                  </div>
-                </div>
-                
-                {/* Form Butonları */}
-                <div className="flex justify-end space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      clearBasicForm();
-                      clearComplexForm();
-                    }}
-                    className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                    disabled={loading}
-                  >
-                    Temizle
-                  </button>
-                  
-                  <button
-                    type="submit"
-                    className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <span className="flex items-center">
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Kaydediliyor...
-                      </span>
-                    ) : (
-                      "Formül Oluştur"
-                    )}
-                  </button>
-                </div>
-              </form>
-            )}
+          <div className="bg-yellow-50 p-3 rounded-md border border-yellow-200 mb-4">
+            <div className="flex items-start">
+              <FcInfo className="h-5 w-5 mt-0.5 mr-2 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-yellow-800 font-medium">Formül Önizleme</p>
+                <pre className="mt-2 bg-white p-2 rounded border border-gray-200 text-sm overflow-x-auto text-gray-800">
+                  {expression || 'Formül oluşturulmadı'}
+                </pre>
+              </div>
+            </div>
           </div>
-        </div>
+          
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded mb-4">
+              {error}
+            </div>
+          )}
+          
+          {success && (
+            <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded mb-4">
+              {success}
+            </div>
+          )}
+          
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              disabled={loading || !expression || !name}
+              className={`px-4 py-2 rounded-md ${
+                loading || !expression || !name
+                  ? 'bg-gray-300 cursor-not-allowed' 
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+            >
+              {loading ? 'İşleniyor...' : 'Formülü Kaydet'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
-} 
+}

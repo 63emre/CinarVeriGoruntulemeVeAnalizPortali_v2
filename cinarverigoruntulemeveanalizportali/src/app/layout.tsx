@@ -1,40 +1,30 @@
-import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
+import { Inter } from 'next/font/google';
+import './globals.css';
+import { Metadata } from 'next';
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: "Çınar Çevre Laboratuvarı",
-  description: "Çınar Çevre Laboratuvarı Veri Görüntüleme ve Analiz Portali",
-  keywords: ["çevre laboratuvarı", "veri analizi", "çınar", "laboratuvar portal"],
-  authors: [{ name: "Çınar Çevre Laboratuvarı" }],
-  creator: "Çınar Çevre Laboratuvarı",
+  title: 'Çınar Veri Görüntüleme ve Analiz Portalı',
+  description: 'Çınar Çevre Laboratuvarı veri görüntüleme, işleme ve analiz portalı',
   icons: {
     icon: [
-      {
-        url: "/cinar-yaprak.svg",
-        href: "/cinar-yaprak.svg",
-      },
+      { url: '/favicon.ico' },
+      { url: '/favicon.svg', type: 'image/svg+xml' }
     ],
-  },
-};
-
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
+    apple: '/cinar.svg',
+  }
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="tr" className="h-full">
-      <body className={`${inter.className} h-full`}>
-        <div className="min-h-full">
+      <body className={`${inter.className} min-h-screen`}>
+        <div className="flex flex-col min-h-screen w-full">
           {children}
         </div>
       </body>

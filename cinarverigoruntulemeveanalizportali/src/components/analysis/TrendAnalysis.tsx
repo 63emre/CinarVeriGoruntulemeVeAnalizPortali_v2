@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, TooltipItem } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { FcPrint } from 'react-icons/fc';
+
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
@@ -11,8 +11,11 @@ import { jsPDF } from 'jspdf';
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
 interface TrendAnalysisProps {
-  tableId: string;
+  tableId?: string;
   workspaceId: string;
+  tables?: Array<{ id: string; name: string; sheetName: string }>;
+  selectedTableId?: string;
+  onTableSelect?: (tableId: string) => void;
 }
 
 interface TableData {
@@ -23,21 +26,48 @@ interface TableData {
   data: (string | number | null)[][];
 }
 
-export default function TrendAnalysis({ tableId, workspaceId }: TrendAnalysisProps) {
+export default function TrendAnalysis({ 
+  tableId, 
+  workspaceId, 
+  tables = [], 
+  selectedTableId, 
+  onTableSelect 
+}: TrendAnalysisProps) {
+  const [effectiveTableId, setEffectiveTableId] = useState<string | undefined>(tableId || selectedTableId);
   const [tableData, setTableData] = useState<TableData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [variables, setVariables] = useState<string[]>([]);
   const [selectedVariable, setSelectedVariable] = useState<string>('');
   const [dateColumns, setDateColumns] = useState<string[]>([]);
-  const [startDateColumn, setStartDateColumn] = useState<string>('');
-  const [chartColor, setChartColor] = useState<string>('#3b82f6'); // Default blue color
+  const [startDate, setStartDate] = useState<string>('');
+  const [chartColor] = useState<string>('#3b82f6'); // Default blue color
   const chartRef = useRef<HTMLDivElement>(null);
+
+  // Handle table selection
+  const handleTableChange = (newTableId: string) => {
+    setEffectiveTableId(newTableId);
+    if (onTableSelect) {
+      onTableSelect(newTableId);
+    }
+  };
+
+  useEffect(() => {
+    // Update effective table ID when props change
+    setEffectiveTableId(tableId || selectedTableId);
+  }, [tableId, selectedTableId]);
 
   useEffect(() => {
     async function fetchTableData() {
+      if (!effectiveTableId) {
+        setIsLoading(false);
+        return;
+      }
+
       try {
-        const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}`);
+        setIsLoading(true);
+        setError(''); // Clear previous errors
+        const response = await fetch(`/api/workspaces/${workspaceId}/tables/${effectiveTableId}`);
         if (!response.ok) {
           throw new Error('Tablo verisi yüklenemedi');
         }
@@ -45,33 +75,54 @@ export default function TrendAnalysis({ tableId, workspaceId }: TrendAnalysisPro
         const data = await response.json();
         setTableData(data);
 
+        // Check if table has required structure
+        if (!data.columns || !Array.isArray(data.columns) || data.columns.length === 0) {
+          setError('Tablo yapısı uygun değil. Lütfen uygun formatta bir tablo seçin.');
+          return;
+        }
+
         // Extract variables (from the "Variable" column)
         const variableColumnIndex = data.columns.findIndex(
           (col: string) => col.toLowerCase() === 'variable'
         );
 
-        if (variableColumnIndex !== -1) {
-          const uniqueVariables = Array.from(
-            new Set(
-              data.data
-                .map((row: (string | number | null)[]) => row[variableColumnIndex])
-                .filter((val: string | number | null) => val !== null && val !== '')
-            )
-          ) as string[];
+        if (variableColumnIndex === -1) {
+          setError('Bu tablo analiz için uygun değil. "Variable" sütunu bulunamadı.');
+          setVariables([]);
+          setSelectedVariable('');
+          return;
+        }
 
-          setVariables(uniqueVariables);
-          if (uniqueVariables.length > 0) {
-            setSelectedVariable(uniqueVariables[0]);
-          }
+        const uniqueVariables = Array.from(
+          new Set(
+            data.data
+              .map((row: (string | number | null)[]) => row[variableColumnIndex])
+              .filter((val: string | number | null) => val !== null && val !== '')
+          )
+        ) as string[];
+
+        if (uniqueVariables.length === 0) {
+          setError('Tabloda analiz edilecek değişken bulunamadı.');
+          return;
+        }
+
+        setVariables(uniqueVariables);
+        if (uniqueVariables.length > 0) {
+          setSelectedVariable(uniqueVariables[0]);
         }
 
         // Extract date columns (all columns except standard ones)
         const standardColumns = ['Data Source', 'Variable', 'Method', 'Unit', 'LOQ'];
         const dates = data.columns.filter((col: string) => !standardColumns.includes(col));
         
+        if (dates.length === 0) {
+          setError('Tabloda tarih sütunu bulunamadı. Trend analizi için en az bir tarih sütunu gereklidir.');
+          return;
+        }
+
         setDateColumns(dates);
         if (dates.length > 0) {
-          setStartDateColumn(dates[0]);
+          setStartDate(dates[0]);
         }
       } catch (err) {
         setError((err as Error).message);
@@ -82,7 +133,7 @@ export default function TrendAnalysis({ tableId, workspaceId }: TrendAnalysisPro
     }
 
     fetchTableData();
-  }, [tableId, workspaceId]);
+  }, [effectiveTableId, workspaceId]);
 
   const getChartData = () => {
     if (!tableData || !selectedVariable || dateColumns.length === 0) {
@@ -105,7 +156,7 @@ export default function TrendAnalysis({ tableId, workspaceId }: TrendAnalysisPro
     }
     
     // Get all date columns from the start date onwards
-    const startIdx = dateColumns.indexOf(startDateColumn);
+    const startIdx = dateColumns.indexOf(startDate);
     const relevantDateColumns = dateColumns.slice(startIdx);
     
     // Filter out columns that don't exist in the table
@@ -214,7 +265,7 @@ export default function TrendAnalysis({ tableId, workspaceId }: TrendAnalysisPro
     }
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
       <div className="flex justify-center py-12">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
@@ -222,10 +273,43 @@ export default function TrendAnalysis({ tableId, workspaceId }: TrendAnalysisPro
     );
   }
 
+  if (!effectiveTableId) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-gray-600 mb-4">Lütfen analiz için bir tablo seçin</p>
+        {tables.length > 0 && (
+          <div className="max-w-md mx-auto">
+            <label htmlFor="tableSelect" className="block text-sm font-medium text-gray-700 mb-1">
+              Tablo Seçin
+            </label>
+            <select
+              id="tableSelect"
+              onChange={(e) => handleTableChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">-- Tablo seçin --</option>
+              {tables.map((table) => (
+                <option key={table.id} value={table.id}>
+                  {table.name} - {table.sheetName}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (error) {
     return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
         <p>{error}</p>
+        <button 
+          onClick={() => setError('')}
+          className="mt-2 px-3 py-1 bg-red-200 text-red-800 rounded hover:bg-red-300"
+        >
+          Yeniden Dene
+        </button>
       </div>
     );
   }
@@ -240,74 +324,105 @@ export default function TrendAnalysis({ tableId, workspaceId }: TrendAnalysisPro
 
   return (
     <div>
-      <div className="mb-6">
-        <h2 className="text-xl font-bold">Trend Analizi - {tableData.name}</h2>
-        <p className="text-gray-600">{tableData.sheetName}</p>
-      </div>
-      
-      <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-        <div className="flex flex-wrap gap-4 mb-6">
-          <div className="flex-1 min-w-[200px]">
-            <label htmlFor="variable" className="block text-sm font-medium text-gray-700 mb-1">
-              Değişken Seçin
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold mb-4 text-black">Trend Analizi</h2>
+        
+        {/* Table selection */}
+        {tables && tables.length > 0 && (
+          <div className="mb-4">
+            <label htmlFor="trend-table-select" className="block text-sm font-medium text-gray-800 mb-1">
+              Tablo Seçin
             </label>
             <select
-              id="variable"
-              value={selectedVariable}
-              onChange={(e) => setSelectedVariable(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              id="trend-table-select"
+              value={selectedTableId || ''}
+              onChange={(e) => {
+                const newTableId = e.target.value;
+                handleTableChange(newTableId);
+                // Reset variable selection when table changes
+                setSelectedVariable('');
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
             >
-              {variables.map((variable) => (
-                <option key={variable} value={variable}>
-                  {variable}
+              <option value="">Tablo Seçin</option>
+              {tables.map((table) => (
+                <option key={table.id} value={table.id}>
+                  {table.name} {table.sheetName ? `- ${table.sheetName}` : ''}
                 </option>
               ))}
             </select>
           </div>
-          
-          <div className="flex-1 min-w-[200px]">
-            <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
-              Başlangıç Tarihi
-            </label>
-            <select
-              id="startDate"
-              value={startDateColumn}
-              onChange={(e) => setStartDateColumn(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            >
-              {dateColumns.map((date) => (
-                <option key={date} value={date}>
-                  {date}
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="flex-1 min-w-[200px]">
-            <label htmlFor="chartColor" className="block text-sm font-medium text-gray-700 mb-1">
-              Grafik Rengi
-            </label>
-            <div className="flex items-center">
-              <input
-                id="chartColor"
-                type="color"
-                value={chartColor}
-                onChange={(e) => setChartColor(e.target.value)}
-                className="p-1 border border-gray-300 rounded mr-2"
-              />
-              <span className="text-sm text-gray-600">{chartColor}</span>
+        )}
+
+        {/* No table selected warning */}
+        {!selectedTableId && (
+          <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-700">
+                  Lütfen analiz yapmak için önce bir tablo seçin.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div className="mt-6">
-          <button
-            onClick={exportAsPDF}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition flex items-center"
-          >
-            <FcPrint className="mr-2 bg-white rounded" /> PDF İndir
-          </button>
-        </div>
+        )}
+
+        {selectedTableId && (
+          <>
+            {/* Variable selection */}
+            <div className="mb-4">
+              <label htmlFor="variable-select" className="block text-sm font-medium text-gray-800 mb-1">
+                Değişken Seçin
+              </label>
+              <select
+                id="variable-select"
+                value={selectedVariable || ''}
+                onChange={(e) => setSelectedVariable(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                disabled={!tableData || loading}
+              >
+                <option value="">Değişken Seçin</option>
+                {variables.map((variable) => (
+                  <option key={variable} value={variable}>
+                    {variable}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Date selection */}
+            <div className="mb-4">
+              <label htmlFor="start-date" className="block text-sm font-medium text-gray-800 mb-1">
+                Başlangıç Tarihi
+              </label>
+              <input
+                type="date"
+                id="start-date"
+                value={startDate || ''}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                disabled={!selectedVariable || loading}
+              />
+            </div>
+
+            <button
+              onClick={exportAsPDF}
+              disabled={!selectedVariable || !startDate || loading}
+              className={`w-full py-2 px-4 rounded-md ${
+                !selectedVariable || !startDate || loading
+                  ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+              }`}
+            >
+              {loading ? 'Yükleniyor...' : 'Grafik Oluştur'}
+            </button>
+          </>
+        )}
       </div>
       
       <div className="bg-white p-6 rounded-lg shadow-md">

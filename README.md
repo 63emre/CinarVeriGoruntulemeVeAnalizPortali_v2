@@ -1,7 +1,7 @@
 # Çınar Veri Görüntüleme ve Analiz Portali
 
 <div align="center">
-  <img src="public/company-logo.png" alt="Çınar Çevre Laboratuvarı Logo" width="300"/>
+  <img src="cinarverigoruntulemeveanalizportali/public/company-logo.png" alt="Çınar Çevre Laboratuvarı Logo" width="300"/>
   <p>Modern, güvenli ve kullanıcı dostu çevre analizi verilerini görüntüleme platformu</p>
 </div>
 

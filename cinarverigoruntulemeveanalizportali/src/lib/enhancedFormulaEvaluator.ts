@@ -5,6 +5,8 @@
  * - (Var1 + Var2) > 0.001
  * - (Var1 * Var2) <= (Var3 - Var4) AND Var5 > 10
  * - Variable < 0.001 OR Variable > 1000
+ * 
+ * FIXED: Proper left/right operand evaluation and highlighting logic
  */
 
 interface FormulaCondition {
@@ -16,8 +18,11 @@ interface FormulaCondition {
 
 interface EvaluationResult {
   isValid: boolean;
+  result: boolean; // TRUE means condition is met (should highlight)
   message: string;
   conditionResults?: boolean[];
+  leftResult?: number;
+  rightResult?: number;
   failingVariables?: string[];
 }
 
@@ -199,41 +204,30 @@ export function extractVariables(expression: string): string[] {
   // First, extract variables in square brackets
   const bracketMatches = expression.match(/\[[^\]]+\]/g) || [];
   for (const match of bracketMatches) {
-    const rawVarName = match.slice(1, -1); // Remove brackets
-    // Clean the variable name by removing trailing commas and trimming whitespace
-    const cleanVarName = rawVarName.replace(/,+$/, '').trim();
-    if (cleanVarName) {
-      variables.push(cleanVarName);
+    const varName = match.slice(1, -1); // Remove brackets
+    if (!variables.includes(varName)) {
+      variables.push(varName);
     }
   }
   
-  // Also extract variables without brackets (for backward compatibility)
-  // Remove square bracket variables first to avoid double extraction
-  let cleanExpression = expression;
-  for (const match of bracketMatches) {
-    cleanExpression = cleanExpression.replace(match, ' ');
-  }
+  // Then extract variables without brackets (for backward compatibility)
+  // This is more complex as we need to avoid matching numbers or operators
+  const withoutBrackets = expression.replace(/\[[^\]]+\]/g, ''); // Remove bracketed variables first
+  const wordMatches = withoutBrackets.match(/[a-zA-ZğüşıöçĞÜŞIÖÇ][a-zA-ZğüşıöçĞÜŞIÖÇ0-9\s\-()]+/g) || [];
   
-  // Remove parentheses and operators, split by spaces and operators
-  const cleaned = cleanExpression.replace(/[()]/g, ' ');
-  
-  // Split by mathematical operators but preserve the text between them
-  const parts = cleaned.split(/[\s+\-*/=<>!]+/);
-  
-  for (const part of parts) {
-    const trimmed = part.trim();
-    // If it's not a number and not empty, it's probably a variable
-    // Allow Unicode characters in variable names (like Turkish: İletkenlik)
-    if (trimmed && !/^-?\d+\.?\d*$/.test(trimmed) && trimmed !== '') {
-      // Clean the variable name by removing trailing commas and trimming whitespace
-      const cleanVarName = trimmed.replace(/,+$/, '').trim();
-      if (cleanVarName) {
-        variables.push(cleanVarName);
-      }
+  for (const match of wordMatches) {
+    const cleaned = match.trim();
+    // Skip operators and numbers
+    if (cleaned && 
+        !['AND', 'OR', 'and', 'or'].includes(cleaned) &&
+        !/^[0-9.]+$/.test(cleaned) &&
+        !/^[><=!]+$/.test(cleaned) &&
+        !variables.includes(cleaned)) {
+      variables.push(cleaned);
     }
   }
   
-  return [...new Set(variables)]; // Remove duplicates
+  return variables;
 }
 
 /**
@@ -245,6 +239,7 @@ function escapeRegExp(string: string): string {
 
 /**
  * Evaluate a complex formula with multiple conditions
+ * FIXED: Now properly returns whether condition is TRUE (should highlight) or FALSE
  */
 export function evaluateComplexFormula(
   formula: string, 
@@ -256,43 +251,39 @@ export function evaluateComplexFormula(
     if (conditions.length === 0) {
       return {
         isValid: false,
+        result: false,
         message: 'No valid conditions found in formula'
       };
     }
-    
+
     const conditionResults: boolean[] = [];
-    const failingVariables: string[] = [];
+    let leftResult: number | undefined;
+    let rightResult: number | undefined;
     
     // Evaluate each condition
     for (const condition of conditions) {
       try {
         const leftValue = evaluateArithmeticExpression(condition.leftExpression, variables);
         const rightValue = evaluateArithmeticExpression(condition.rightExpression, variables);
-        
         const result = applyComparison(leftValue, condition.operator, rightValue);
-        conditionResults.push(result);
         
-        if (!result) {
-          // Add variables from this failing condition
-          const leftVars = extractVariables(condition.leftExpression);
-          const rightVars = extractVariables(condition.rightExpression);
-          failingVariables.push(...leftVars, ...rightVars);
+        // Store results for the first condition (for tooltip display)
+        if (conditionResults.length === 0) {
+          leftResult = leftValue;
+          rightResult = rightValue;
         }
-      } catch {
+        
+        conditionResults.push(result);
+      } catch (error) {
+        console.error('Error evaluating condition:', condition, error);
         conditionResults.push(false);
-        // Add all variables from this condition as potentially failing
-        const leftVars = extractVariables(condition.leftExpression);
-        const rightVars = extractVariables(condition.rightExpression);
-        failingVariables.push(...leftVars, ...rightVars);
       }
     }
     
     // Apply logical operators
     let finalResult = conditionResults[0];
-    
-    for (let i = 1; i < conditions.length; i++) {
+    for (let i = 1; i < conditionResults.length; i++) {
       const logicalOp = conditions[i - 1].logicalOperator;
-      
       if (logicalOp === 'AND') {
         finalResult = finalResult && conditionResults[i];
       } else if (logicalOp === 'OR') {
@@ -301,23 +292,54 @@ export function evaluateComplexFormula(
     }
     
     return {
-      isValid: finalResult,
-      message: finalResult ? 'All conditions met' : 'One or more conditions failed',
+      isValid: true,
+      result: finalResult, // TRUE means condition is met (should highlight)
+      message: finalResult ? 'Condition met' : 'Condition not met',
       conditionResults,
-      failingVariables: [...new Set(failingVariables)]
+      leftResult,
+      rightResult
     };
     
   } catch (error) {
+    console.error('Error evaluating complex formula:', error);
     return {
       isValid: false,
-      message: `Formula evaluation error: ${(error as Error).message}`,
-      failingVariables: extractVariables(formula)
+      result: false,
+      message: `Evaluation error: ${(error as Error).message}`
     };
   }
 }
 
 /**
- * Enhanced formula evaluation for table data
+ * Clean and parse a value from table data
+ */
+function cleanAndParseValue(value: string | number | null): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  
+  if (typeof value === 'number') {
+    return isNaN(value) ? null : value;
+  }
+  
+  if (typeof value === 'string') {
+    // Remove common non-numeric characters and trim
+    const cleaned = value.replace(/[^\d.-]/g, '').trim();
+    
+    if (cleaned === '' || cleaned === '-') {
+      return null;
+    }
+    
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? null : parsed;
+  }
+  
+  return null;
+}
+
+/**
+ * FIXED: Main function to evaluate formulas for table highlighting
+ * Now properly highlights cells only when formula conditions are TRUE
  */
 export function evaluateFormulasForTable(
   formulas: Formula[],
@@ -362,8 +384,9 @@ export function evaluateFormulasForTable(
         // Clean the variable name by removing trailing commas and trimming whitespace
         const cleanVarName = rawVarName.replace(/,+$/, '').trim();
         
-        const numValue = typeof value === 'number' ? value : parseFloat(String(value));
-        if (!isNaN(numValue) && cleanVarName) {
+        // Use the new cleaning function to handle special values
+        const numValue = cleanAndParseValue(value);
+        if (numValue !== null && cleanVarName) {
           variables[cleanVarName] = numValue;
         }
       }
@@ -377,36 +400,23 @@ export function evaluateFormulasForTable(
       try {
         const result = evaluateComplexFormula(formula.formula, variables);
         
-        if (result.isValid) {
+        // FIXED: Only highlight when formula condition is TRUE (result.result === true)
+        if (result.isValid && result.result === true) {
           // Get all variables used in the formula
           const allFormulaVariables = extractVariables(formula.formula);
           
-          // Separate variables that exist in data vs those that are missing
+          // Only highlight variables that exist in the data
           const existingVariables = allFormulaVariables.filter(varName => 
             variables.hasOwnProperty(varName) && !isNaN(variables[varName])
           );
-          const missingVariables = allFormulaVariables.filter(varName => 
-            !variables.hasOwnProperty(varName) || isNaN(variables[varName])
-          );
           
-          // Only highlight cells for variables that actually exist in the data
-          // This prevents highlighting cells for variables that are missing/replaced with 0
-          const variablesToHighlight = result.failingVariables 
-            ? result.failingVariables.filter(varName => existingVariables.includes(varName))
-            : existingVariables;
-          
-          // Log missing variables for debugging
-          if (missingVariables.length > 0 && process.env.NODE_ENV === 'development') {
-            console.warn(`Formula "${formula.name}" references missing variables:`, missingVariables);
-          }
-          
-          // Highlight cells for variables that exist and are causing the formula to pass
+          // Highlight cells for variables that are part of the TRUE condition
           data.forEach((row, rowIndex) => {
             const rawVarName = row[variableColumnIndex] as string;
             // Clean the variable name by removing trailing commas and trimming whitespace
             const cleanVarName = rawVarName ? rawVarName.replace(/,+$/, '').trim() : '';
             
-            if (cleanVarName && variablesToHighlight.includes(cleanVarName)) {
+            if (cleanVarName && existingVariables.includes(cleanVarName)) {
               // Check if this cell is already highlighted
               const existingCell = highlightedCells.find(
                 cell => cell.row === `row-${rowIndex}` && cell.col === dateCol
@@ -427,7 +437,9 @@ export function evaluateFormulasForTable(
                   existingCell.formulaDetails.push({
                     id: formula.id,
                     name: formula.name,
-                    formula: formula.formula
+                    formula: formula.formula,
+                    leftResult: result.leftResult,
+                    rightResult: result.rightResult
                   });
                 }
               } else {
@@ -441,7 +453,9 @@ export function evaluateFormulasForTable(
                   formulaDetails: [{
                     id: formula.id,
                     name: formula.name,
-                    formula: formula.formula
+                    formula: formula.formula,
+                    leftResult: result.leftResult,
+                    rightResult: result.rightResult
                   }]
                 });
               }

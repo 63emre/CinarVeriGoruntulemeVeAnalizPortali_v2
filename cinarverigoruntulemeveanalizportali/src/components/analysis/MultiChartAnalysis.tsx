@@ -1,9 +1,19 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, BarElement } from 'chart.js';
+import React, { useState, useEffect, useRef } from 'react';
 import { Line, Bar } from 'react-chartjs-2';
-import { FcLineChart, FcPlus, FcPrint, FcRules, FcApproval } from 'react-icons/fc';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+import { FcAreaChart, FcApproval, FcRules, FcPrint, FcPlus, FcCancel } from 'react-icons/fc';
 import { MdDragIndicator, MdDelete } from 'react-icons/md';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -72,6 +82,35 @@ interface AnalysisData {
 interface MultiChartAnalysisProps {
   workspaceId: string;
   tableId?: string;
+}
+
+// Type definitions for autoTable
+interface AutoTableCell {
+  styles: {
+    fillColor: number[];
+    textColor: number[];
+    fontStyle: string;
+    lineWidth: number;
+    lineColor: number[];
+  };
+}
+
+interface AutoTableData {
+  section: string;
+  row: { index: number };
+  column: { index: number };
+  cell: AutoTableCell;
+}
+
+// Type for Chart.js instance
+interface ChartInstance {
+  toBase64Image?: () => string;
+}
+
+interface WindowWithChart extends Window {
+  Chart?: {
+    getChart?: (canvas: HTMLCanvasElement) => ChartInstance;
+  };
 }
 
 export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartAnalysisProps) {
@@ -472,6 +511,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
     
     try {
       setLoading(true);
+      setError(null);
       
       const pdf = new jsPDF('landscape', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -479,13 +519,12 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       
       // Set Turkish character support
       pdf.setFont('helvetica', 'normal');
-      pdf.setLanguage('tr');
       
       // Add title page
       pdf.setFontSize(20);
-      pdf.text('Cinar Cevre Laboratuvari', pageWidth / 2, 30, { align: 'center' });
+      pdf.text('Çınar Çevre Laboratuvarı', pageWidth / 2, 30, { align: 'center' });
       pdf.setFontSize(16);
-      pdf.text('Kapsamli Analiz Raporu', pageWidth / 2, 45, { align: 'center' });
+      pdf.text('Kapsamlı Analiz Raporu', pageWidth / 2, 45, { align: 'center' });
       
       const selectedTableName = tables.find(t => t.id === selectedTable)?.name || 'Bilinmeyen Tablo';
       pdf.setFontSize(12);
@@ -495,7 +534,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       // Add formulas applied section
       if (formulas.length > 0) {
         pdf.setFontSize(14);
-        pdf.text('Uygulanan Formuller:', 15, 90);
+        pdf.text('Uygulanan Formüller:', 15, 90);
         
         const formulaTableData = formulas.map((formula, index) => [
           (index + 1).toString(),
@@ -506,7 +545,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         
         autoTable(pdf, {
           startY: 100,
-          head: [['#', 'Formul Adi', 'Formul', 'Durum']],
+          head: [['#', 'Formül Adı', 'Formül', 'Durum']],
           body: formulaTableData,
           styles: { 
             fontSize: 8,
@@ -522,33 +561,58 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       }
       
       let currentPage = 1;
+      let chartsAdded = 0;
       
       // Add charts with improved capture
       if (charts.length > 0) {
         for (let i = 0; i < charts.length; i++) {
           const chart = charts[i];
-          const chartElement = document.getElementById(`chart-${chart.id}`);
           
-          if (chartElement) {
-            // Add new page for each chart
-            if (currentPage > 1) pdf.addPage();
-            currentPage++;
+          try {
+            // Wait for DOM to be ready
+            await new Promise(resolve => setTimeout(resolve, 300));
             
-            // Add page header
-            pdf.setFontSize(14);
-            pdf.text(`Grafik ${i + 1}: ${chart.title}`, 15, 20);
+            // Try multiple selectors to find the chart element
+            let chartElement = document.getElementById(`chart-${chart.id}`);
+            if (!chartElement) {
+              chartElement = document.querySelector(`[data-chart-id="${chart.id}"]`) as HTMLElement;
+            }
+            if (!chartElement) {
+              chartElement = document.querySelector(`.chart-container-${chart.id}`) as HTMLElement;
+            }
+            if (!chartElement) {
+              // Try to find any canvas element in the charts container
+              const chartsContainer = document.querySelector('.charts-container');
+              if (chartsContainer) {
+                const canvasElements = chartsContainer.querySelectorAll('canvas');
+                if (canvasElements[i]) {
+                  chartElement = canvasElements[i].closest('div') as HTMLElement;
+                }
+              }
+            }
             
-            try {
+            if (chartElement) {
+              // Add new page for each chart
+              if (currentPage > 1) pdf.addPage();
+              currentPage++;
+              
+              // Add page header
+              pdf.setFontSize(14);
+              pdf.text(`Grafik ${i + 1}: ${chart.title}`, 15, 20);
+              
               console.log(`📊 Capturing chart ${i + 1}: ${chart.title}`);
+              
+              // Wait for chart to be fully rendered
+              await new Promise(resolve => setTimeout(resolve, 500));
               
               // Enhanced chart capture with better settings
               const canvas = await html2canvas(chartElement, {
                 backgroundColor: '#ffffff',
-                scale: 2,
+                scale: 1.2,
                 logging: false,
                 useCORS: true,
-                allowTaint: false,
-                foreignObjectRendering: false,
+                allowTaint: true,
+                foreignObjectRendering: true,
                 width: chartElement.offsetWidth,
                 height: chartElement.offsetHeight,
                 x: 0,
@@ -557,23 +621,35 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
                 scrollY: 0,
                 windowWidth: window.innerWidth,
                 windowHeight: window.innerHeight,
-                // Remove problematic CSS handling
+                imageTimeout: 15000,
                 onclone: (clonedDoc) => {
                   const allElements = clonedDoc.querySelectorAll('*');
                   allElements.forEach((el) => {
                     const element = el as HTMLElement;
                     
                     // Fix any CSS color issues
-                    if (element.style.color && element.style.color.includes('oklch')) {
+                    const computedStyle = window.getComputedStyle(element);
+                    if (computedStyle.color && (computedStyle.color.includes('oklch') || computedStyle.color.includes('lch'))) {
                       element.style.color = '#333333';
                     }
-                    if (element.style.backgroundColor && element.style.backgroundColor.includes('oklch')) {
+                    if (computedStyle.backgroundColor && (computedStyle.backgroundColor.includes('oklch') || computedStyle.backgroundColor.includes('lch'))) {
                       element.style.backgroundColor = '#ffffff';
                     }
                     
-                    // Remove any transforms that might cause issues
+                    // Remove problematic CSS properties
                     element.style.transform = 'none';
                     element.style.filter = 'none';
+                    element.style.backdropFilter = 'none';
+                    element.style.transition = 'none';
+                    element.style.animation = 'none';
+                    
+                    // Ensure visibility
+                    if (element.style.visibility === 'hidden') {
+                      element.style.visibility = 'visible';
+                    }
+                    if (element.style.display === 'none') {
+                      element.style.display = 'block';
+                    }
                   });
                   
                   // Force redraw of canvas elements
@@ -582,13 +658,14 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
                     canvas.style.display = 'block';
                     canvas.style.width = '100%';
                     canvas.style.height = '100%';
+                    canvas.style.visibility = 'visible';
                   });
                 }
               });
               
               console.log(`✅ Chart ${i + 1} captured successfully - ${canvas.width}x${canvas.height}`);
               
-              const imgData = canvas.toDataURL('image/png', 1.0);
+              const imgData = canvas.toDataURL('image/png', 0.95);
               const imgWidth = pageWidth - 30;
               const imgHeight = (canvas.height * imgWidth) / canvas.width;
               
@@ -600,25 +677,63 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
               // Add chart to PDF
               pdf.addImage(imgData, 'PNG', 15, 30, finalWidth, finalHeight);
               
+              // Add chart details
+              pdf.setFontSize(10);
+              pdf.text(`Değişken: ${chart.variable}`, 15, pageHeight - 30);
+              pdf.text(`Tarih Aralığı: ${chart.startDate} - ${chart.endDate}`, 15, pageHeight - 20);
+              pdf.text(`Grafik Türü: ${chart.type === 'line' ? 'Çizgi' : 'Sütun'} Grafik`, 15, pageHeight - 10);
+              
+              chartsAdded++;
               console.log(`📄 Chart ${i + 1} added to PDF successfully`);
               
-            } catch (chartError) {
-              console.error(`❌ Error capturing chart ${i + 1}:`, chartError);
+            } else {
+              console.warn(`⚠️ Chart element not found for chart ${i + 1}: chart-${chart.id}`);
               
-              // Add error message to PDF
+              // Add new page and error message
+              if (currentPage > 1) pdf.addPage();
+              currentPage++;
+              
+              pdf.setFontSize(14);
+              pdf.text(`Grafik ${i + 1}: ${chart.title}`, 15, 20);
               pdf.setFontSize(12);
-              pdf.setTextColor(255, 0, 0);
-              pdf.text(`Grafik yakalama hatasi: ${(chartError as Error).message}`, 15, 50);
+              pdf.setTextColor(255, 140, 0); // Orange color for warnings
+              pdf.text(`Grafik bulunamadı veya yüklenemedi`, 15, 50);
+              pdf.text(`Grafik ID: chart-${chart.id}`, 15, 65);
               pdf.setTextColor(0, 0, 0);
             }
             
-            // Add chart details
-            pdf.setFontSize(10);
-            pdf.text(`Degisken: ${chart.variable}`, 15, pageHeight - 30);
-            pdf.text(`Tarih Araligi: ${chart.startDate} - ${chart.endDate}`, 15, pageHeight - 20);
-            pdf.text(`Grafik Turu: ${chart.type === 'line' ? 'Cizgi' : 'Sutun'} Grafik`, 15, pageHeight - 10);
-          } else {
-            console.error(`❌ Chart element not found: chart-${chart.id}`);
+          } catch (chartError) {
+            console.error(`❌ Error capturing chart ${i + 1}:`, chartError);
+            
+            // Add new page and error message
+            if (currentPage > 1) pdf.addPage();
+            currentPage++;
+            
+            pdf.setFontSize(14);
+            pdf.text(`Grafik ${i + 1}: ${chart.title}`, 15, 20);
+            pdf.setFontSize(12);
+            pdf.setTextColor(255, 0, 0);
+            pdf.text(`Grafik yakalama hatası: ${(chartError as Error).message}`, 15, 50);
+            pdf.setTextColor(0, 0, 0);
+            
+            // Try alternative capture method using Chart.js toBase64Image if available
+            try {
+              const chartCanvas = document.querySelector(`#chart-${chart.id} canvas`) as HTMLCanvasElement;
+              if (chartCanvas) {
+                const chartInstance = (window as any).Chart?.getChart?.(chartCanvas);
+                if (chartInstance && typeof chartInstance.toBase64Image === 'function') {
+                  const imgData = chartInstance.toBase64Image();
+                  pdf.addImage(imgData, 'PNG', 15, 70, pageWidth - 30, 150);
+                  pdf.setTextColor(0, 128, 0);
+                  pdf.text(`Grafik alternatif yöntemle eklendi`, 15, 65);
+                  pdf.setTextColor(0, 0, 0);
+                  chartsAdded++;
+                  console.log(`📄 Chart ${i + 1} added using Chart.js method`);
+                }
+              }
+            } catch (fallbackError) {
+              console.error(`❌ Fallback capture also failed:`, fallbackError);
+            }
           }
         }
       }
@@ -630,11 +745,11 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         
         // Add table header
         pdf.setFontSize(14);
-        pdf.text('Veri Tablosu (Formul Vurgulamali)', 15, 20);
+        pdf.text('Veri Tablosu (Formül Vurgulamalı)', 15, 20);
         
         if (formulas.length > 0) {
           pdf.setFontSize(10);
-          pdf.text(`Uygulanan Formuller: ${formulas.map(f => f.name).join(', ')}`, 15, 30);
+          pdf.text(`Uygulanan Formüller: ${formulas.map(f => f.name).join(', ')}`, 15, 30);
         }
         
         // Prepare table data for PDF
@@ -642,15 +757,8 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         const tableData = data.map((row: (string | number | null)[]) => {
           return row.map((cell: string | number | null) => {
             if (cell === null) return '';
-            // Handle Turkish characters properly
             const cellStr = String(cell);
-            return cellStr
-              .replace(/ç/g, 'c').replace(/Ç/g, 'C')
-              .replace(/ğ/g, 'g').replace(/Ğ/g, 'G')
-              .replace(/ı/g, 'i').replace(/İ/g, 'I')
-              .replace(/ö/g, 'o').replace(/Ö/g, 'O')
-              .replace(/ş/g, 's').replace(/Ş/g, 'S')
-              .replace(/ü/g, 'u').replace(/Ü/g, 'U');
+            return cellStr;
           });
         });
         
@@ -660,48 +768,40 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           rowIds.push(`row-${rowIndex}`);
         });
         
-        // Generate the table with highlighting
+        // Add table with highlighting
         autoTable(pdf, {
           head: [columns],
           body: tableData,
           startY: 40,
-          margin: { top: 40 },
           styles: {
-            fontSize: 7,
-            cellPadding: 1.5,
-            font: 'helvetica'
+            fontSize: 8,
+            cellPadding: 2,
           },
           headStyles: {
             fillColor: [41, 128, 185],
             textColor: 255,
             fontStyle: 'bold',
-            font: 'helvetica'
           },
           alternateRowStyles: {
-            fillColor: [240, 240, 240],
+            fillColor: [248, 249, 250],
           },
-          didParseCell: function(data: CellHookData) {
+          didParseCell: function(data: any) {
             if (data.section === 'body') {
-              const actualRowId = rowIds[data.row.index];
-              const colName = columns[data.column.index];
+              const rowId = `row-${data.row.index}`;
+              const colId = columns[data.column.index];
               
-              if (!colName) return;
-              
-              // Check if this cell is highlighted
-              const highlight = highlightedCells.find(cell => 
-                (cell.row === actualRowId || cell.row === `${data.row.index}`) && cell.col === colName
+              const highlight = highlightedCells.find(
+                cell => cell.row === rowId && cell.col === colId
               );
               
               if (highlight) {
                 const rgb = hexToRgb(highlight.color);
-                
-                // Apply highlighting with proper type handling
-                if (data.cell.styles) {
-                  (data.cell.styles as unknown as Record<string, unknown>).fillColor = [rgb.r, rgb.g, rgb.b, 0.3];
-                  (data.cell.styles as unknown as Record<string, unknown>).textColor = [0, 0, 0];
-                  (data.cell.styles as unknown as Record<string, unknown>).fontStyle = 'bold';
-                  (data.cell.styles as unknown as Record<string, unknown>).lineWidth = 0.5;
-                  (data.cell.styles as unknown as Record<string, unknown>).lineColor = [rgb.r, rgb.g, rgb.b];
+                if (rgb) {
+                  data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b];
+                  data.cell.styles.textColor = [0, 0, 0];
+                  data.cell.styles.fontStyle = 'bold';
+                  data.cell.styles.lineWidth = 1;
+                  data.cell.styles.lineColor = [Math.max(0, rgb.r - 50), Math.max(0, rgb.g - 50), Math.max(0, rgb.b - 50)];
                 }
               }
             }
@@ -710,7 +810,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         
         // Add legend for highlighted cells
         if (highlightedCells.length > 0) {
-          const lastTableY = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable?.finalY || 40;
+          const lastTableY = (pdf as any).lastAutoTable?.finalY || 40;
           let yPos = lastTableY + 15;
           
           // Check if we need a new page for the legend
@@ -720,7 +820,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           }
           
           pdf.setFontSize(12);
-          pdf.text('Formul Vurgulamalari:', 15, yPos);
+          pdf.text('Formül Vurgulamaları:', 15, yPos);
           yPos += 10;
           
           // Group highlights by color and message
@@ -744,8 +844,10 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
             const rgb = hexToRgb(highlight.color);
             
             // Draw color indicator
-            pdf.setFillColor(rgb.r, rgb.g, rgb.b);
-            pdf.rect(15, yPos - 4, 6, 6, 'F');
+            if (rgb) {
+              pdf.setFillColor(rgb.r, rgb.g, rgb.b);
+              pdf.rect(15, yPos - 4, 6, 6, 'F');
+            }
             
             // Add message
             pdf.setFontSize(9);
@@ -761,7 +863,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         if (currentPage > 1) pdf.addPage();
         
         pdf.setFontSize(14);
-        pdf.text('Kullanilan Formuller:', 15, 20);
+        pdf.text('Kullanılan Formüller:', 15, 20);
         
         let yPos = 35;
         
@@ -774,8 +876,10 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           const rgb = hexToRgb(formula.color);
           
           // Draw color indicator
-          pdf.setFillColor(rgb.r, rgb.g, rgb.b);
-          pdf.rect(15, yPos - 4, 6, 6, 'F');
+          if (rgb) {
+            pdf.setFillColor(rgb.r, rgb.g, rgb.b);
+            pdf.rect(15, yPos - 4, 6, 6, 'F');
+          }
           
           // Add formula details
           pdf.setFontSize(10);
@@ -784,13 +888,13 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           if (formula.description) {
             yPos += 6;
             pdf.setFontSize(8);
-            pdf.text(`Aciklama: ${formula.description}`, 25, yPos);
+            pdf.text(`Açıklama: ${formula.description}`, 25, yPos);
           }
           
           yPos += 6;
           pdf.setFontSize(8);
-          pdf.text(`Formul: ${formula.formula}`, 25, yPos);
-          pdf.text(`Tip: ${formula.type === 'CELL_VALIDATION' ? 'Hucre Dogrulama' : 'Iliskisel'}`, 25, yPos + 6);
+          pdf.text(`Formül: ${formula.formula}`, 25, yPos);
+          pdf.text(`Tip: ${formula.type === 'CELL_VALIDATION' ? 'Hücre Doğrulama' : 'İlişkisel'}`, 25, yPos + 6);
           
           yPos += 18;
         });
@@ -803,7 +907,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         pdf.setFontSize(8);
         pdf.setTextColor(100);
         pdf.text(
-          'Cinar Cevre Laboratuvari - Kapsamli Analiz Raporu',
+          'Çınar Çevre Laboratuvarı - Kapsamlı Analiz Raporu',
           15,
           pageHeight - 10
         );
@@ -820,6 +924,19 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       pdf.save(fileName);
       
       console.log(`✅ PDF başarıyla oluşturuldu: ${fileName}`);
+      console.log(`📊 ${chartsAdded}/${charts.length} grafik başarıyla eklendi`);
+      
+      // Show success message
+      if (chartsAdded === charts.length) {
+        setError(`✅ PDF başarıyla oluşturuldu! ${chartsAdded} grafik ve ${showTable ? '1 tablo' : '0 tablo'} eklendi.`);
+      } else {
+        setError(`⚠️ PDF oluşturuldu ancak ${charts.length - chartsAdded} grafik eklenemedi. ${chartsAdded} grafik başarıyla eklendi.`);
+      }
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setError(null);
+      }, 5000);
       
     } catch (err) {
       console.error('❌ PDF oluşturma hatası:', err);
@@ -872,7 +989,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       {/* Header */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <h1 className="text-2xl font-bold mb-6 flex items-center">
-          <FcLineChart className="mr-2 h-6 w-6" />
+          <FcAreaChart className="mr-2 h-6 w-6" />
           Kapsamlı Analiz ve Rapor
         </h1>
 

@@ -403,6 +403,12 @@ export default function AnalysisPage() {
               onClick={async () => {
                 try {
                   setLoading(true);
+                  setError(null);
+                  
+                  if (!selectedVariable || !startDate || !endDate) {
+                    throw new Error('Lütfen tüm parametreleri seçin');
+                  }
+                  
                   const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/analysis-pdf`, {
                     method: 'POST',
                     headers: {
@@ -417,28 +423,63 @@ export default function AnalysisPage() {
                   });
                   
                   if (!response.ok) {
-                    throw new Error('PDF oluşturulamadı');
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || `PDF oluşturulamadı (${response.status})`);
+                  }
+                  
+                  // Check if response is actually a PDF
+                  const contentType = response.headers.get('content-type');
+                  if (!contentType || !contentType.includes('application/pdf')) {
+                    throw new Error('Sunucudan geçersiz dosya formatı alındı');
                   }
                   
                   const blob = await response.blob();
+                  
+                  // Verify blob size
+                  if (blob.size === 0) {
+                    throw new Error('Boş PDF dosyası oluşturuldu');
+                  }
+                  
                   const url = window.URL.createObjectURL(blob);
                   const a = document.createElement('a');
                   a.href = url;
                   a.download = `${selectedVariable}_analiz_${startDate}-${endDate}.pdf`;
+                  a.style.display = 'none';
                   document.body.appendChild(a);
                   a.click();
+                  
+                  // Cleanup
                   window.URL.revokeObjectURL(url);
                   document.body.removeChild(a);
+                  
+                  console.log('✅ PDF başarıyla indirildi');
+                  
+                  // Show success message
+                  setError('✅ PDF başarıyla indirildi!');
+                  setTimeout(() => setError(null), 3000);
+                  
                 } catch (err) {
+                  console.error('PDF indirme hatası:', err);
                   setError('PDF indirilemedi: ' + (err as Error).message);
                 } finally {
                   setLoading(false);
                 }
               }}
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:bg-gray-400"
+              disabled={loading || !selectedVariable || !startDate || !endDate}
+              className={`px-4 py-2 rounded-md transition ${
+                loading || !selectedVariable || !startDate || !endDate
+                  ? 'bg-gray-400 cursor-not-allowed text-gray-600'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+              }`}
             >
-              {loading ? 'İndiriliyor...' : 'Analizi PDF Olarak İndir'}
+              {loading ? (
+                <div className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  İndiriliyor...
+                </div>
+              ) : (
+                'Analizi PDF Olarak İndir'
+              )}
             </button>
           </div>
         )}

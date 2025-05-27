@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FcAddRow, FcCancel, FcCheckmark, FcManager, FcEditImage } from 'react-icons/fc';
+import { FcAddRow, FcCancel, FcCheckmark, FcManager } from 'react-icons/fc';
 
 interface User {
   id: string;
@@ -330,36 +330,6 @@ export default function UserManager() {
     setEditModalOpen(true);
   };
   
-  const handleUpdateUser = async (userData: Partial<User>) => {
-    try {
-      const response = await fetch(`/api/users/${userData.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(userData),
-      });
-      
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Kullanıcı güncelleme başarısız');
-      }
-      
-      const responseData = await response.json();
-      
-      // Update the user in our list
-      setUsers(users.map(u => 
-        u.id === userData.id ? { ...u, ...userData } : u
-      ));
-      
-      setSuccess('Kullanıcı başarıyla güncellendi');
-    } catch (err) {
-      setError((err as Error).message || 'Kullanıcı güncellenirken bir hata oluştu');
-      console.error('Kullanıcı güncelleme hatası:', err);
-      throw err; // Rethrow to handle in the modal
-    }
-  };
-
   const handleSaveUser = async (userData: Partial<User>) => {
     try {
       const response = await fetch(`/api/users/${userData.id}`, {

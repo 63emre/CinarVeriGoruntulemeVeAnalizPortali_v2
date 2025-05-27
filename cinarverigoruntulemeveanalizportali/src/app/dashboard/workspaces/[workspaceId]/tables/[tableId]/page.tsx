@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { FcAreaChart, FcRules, FcReuse } from 'react-icons/fc';
+import { FcAreaChart, FcRules } from 'react-icons/fc';
 import EditableDataTable from '@/components/tables/EditableDataTable';
 import FormulaSelector from '@/components/formulas/FormulaSelector';
 import FormulaBuilder from '@/components/formulas/FormulaBuilder';
@@ -533,15 +533,6 @@ export default function TablePage() {
               </button>
               
               <button
-                onClick={applyFormulas}
-                disabled={activeFormulas.length === 0 || loading}
-                className={`px-4 py-2 rounded-md flex items-center ${                  activeFormulas.length === 0 || loading                    ? 'bg-slate-300 cursor-not-allowed text-slate-600'                    : 'bg-green-600 hover:bg-green-700 text-white'                }`}
-              >
-                <FcReuse className="mr-2 bg-white rounded-full" />
-                {loading ? 'İşleniyor...' : 'Formülleri Uygula'}
-              </button>
-              
-              <button
                 onClick={exportToPdf}
                 disabled={loading}
                 className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md flex items-center"
@@ -614,7 +605,7 @@ export default function TablePage() {
                       </div>
                       {variables.length === 0 && (
                         <div className="mt-3 p-2 bg-orange-100 border border-orange-300 rounded text-orange-800 text-sm">
-                          ⚠️ Formül oluşturmak için tabloda "Variable" kolonuna değişken adları ekleyin
+                          ⚠️ Formül oluşturmak için tabloda &quot;Variable&quot; kolonuna değişken adları ekleyin
                         </div>
                       )}
                     </div>
@@ -721,6 +712,36 @@ export default function TablePage() {
                         workspaceId={workspaceId}
                         onSelectionChange={handleFormulaChange}
                       />
+                      
+                      {/* Apply Formulas Button */}
+                      <div className="mt-4 flex items-center justify-between">
+                        <button
+                          onClick={applyFormulas}
+                          disabled={loading}
+                          className={`px-4 py-2 rounded-lg flex items-center transition-all ${
+                            loading
+                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
+                          }`}
+                        >
+                          {loading ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                              Uygulanıyor...
+                            </>
+                          ) : (
+                            <>
+                              🎯 Formülleri Uygula
+                            </>
+                          )}
+                        </button>
+                        
+                        {highlightedCells.length > 0 && (
+                          <span className="text-sm text-green-600 font-medium">
+                            ✅ {highlightedCells.length} hücre vurgulandı
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )}
                   

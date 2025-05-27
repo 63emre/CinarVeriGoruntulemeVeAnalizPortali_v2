@@ -173,9 +173,10 @@ try {
         }
         
         npm run prisma:seed
-          if ($LASTEXITCODE -ne 0) {
+        
+        if ($LASTEXITCODE -ne 0) {
             Write-Log "Başlangıç verileri npm script ile eklenemedi. ts-node ile deneniyor..." "Yellow"
-            npx ts-node prisma/seed.ts
+            npx ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed.ts
             
             if ($LASTEXITCODE -ne 0) {
                 throw "Başlangıç verileri eklenirken hata oluştu. Lütfen 'prisma/seed.ts' dosyasının var olduğunu kontrol edin."

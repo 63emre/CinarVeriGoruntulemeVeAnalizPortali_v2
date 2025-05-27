@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { FcPlus, FcOk, FcCancel, FcRules } from 'react-icons/fc';
+import React, { useState, useEffect } from 'react';
+import { FcCancel, FcRules } from 'react-icons/fc';
 
 interface FormulaBuilderProps {
   variables: string[];
@@ -42,6 +42,34 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
   ]);
   const [formulaName, setFormulaName] = useState('');
   const [formulaColor, setFormulaColor] = useState('#ff4444');
+
+  // Reset form when visibility changes
+  useEffect(() => {
+    if (isVisible) {
+      setConditions([{
+        leftOperand: { type: 'variable', value: variables[0] || '' },
+        comparison: '>',
+        rightSideOperand: { type: 'constant', value: 0 }
+      }]);
+      setFormulaName('');
+      setFormulaColor('#ff4444');
+    }
+  }, [isVisible, variables]);
+
+  // Update conditions when variables change
+  useEffect(() => {
+    if (variables.length > 0 && conditions.length > 0) {
+      setConditions(prev => prev.map(condition => ({
+        ...condition,
+        leftOperand: condition.leftOperand.type === 'variable' && !variables.includes(condition.leftOperand.value as string)
+          ? { ...condition.leftOperand, value: variables[0] }
+          : condition.leftOperand,
+        rightSideOperand: condition.rightSideOperand.type === 'variable' && !variables.includes(condition.rightSideOperand.value as string)
+          ? { ...condition.rightSideOperand, value: variables[0] }
+          : condition.rightSideOperand
+      })));
+    }
+  }, [variables, conditions.length]);
 
   const arithmeticOperators = [
     { value: '+', label: 'Toplama (+)' },
@@ -144,39 +172,35 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
   if (!isVisible) return null;
 
   return (
-    <div className="bg-white border-2 border-blue-200 rounded-xl p-8 mb-6 shadow-lg">
+    <div className="bg-white border-2 border-blue-200 rounded-xl p-6 mb-6 shadow-lg">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <h3 className="text-2xl font-bold text-gray-800 flex items-center">
-          <FcRules className="mr-3 text-3xl" />
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-bold text-gray-800 flex items-center">
+          <FcRules className="mr-3 text-2xl" />
           Yeni Formül Oluştur
         </h3>
         <button
           onClick={onCancel}
           className="text-gray-600 hover:text-red-600 transition-colors duration-200 p-2 rounded-lg hover:bg-red-50"
         >
-          <FcCancel className="w-6 h-6" />
+          <FcCancel className="w-5 h-5" />
         </button>
       </div>
 
       {/* Formül Adı ve Renk */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="md:col-span-2">
-          <label className="block text-sm font-semibold text-gray-800 mb-2">
-            Formül Adı *
-          </label>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Formül Adı</label>
           <input
             type="text"
             value={formulaName}
             onChange={(e) => setFormulaName(e.target.value)}
-            placeholder="ör. Yüksek İletkenlik Kontrolü"
-            className="w-full px-4 py-3 text-gray-800 border-2 border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+            className="w-full text-base font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-4 py-3 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            placeholder="Örn: Yüksek İletkenlik Kontrolü"
           />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-800 mb-2">
-            Vurgulama Rengi
-          </label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Renk</label>
           <div className="flex items-center space-x-3">
             <input
               type="color"
@@ -184,35 +208,28 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
               onChange={(e) => setFormulaColor(e.target.value)}
               className="w-16 h-12 border-2 border-gray-300 rounded-lg cursor-pointer"
             />
-            <div className="flex-1">
-              <div 
-                className="w-full h-6 rounded-md border-2 border-gray-300"
-                style={{ backgroundColor: formulaColor }}
-              ></div>
-              <span className="text-xs text-gray-600 mt-1 block">{formulaColor}</span>
-            </div>
+            <span className="text-sm text-gray-600 font-mono">{formulaColor}</span>
           </div>
         </div>
       </div>
 
-      {/* Formül Koşulları */}
-      <div className="space-y-6">
-        <h4 className="text-lg font-semibold text-gray-800 border-b-2 border-gray-200 pb-2">
-          Formül Koşulları
-        </h4>
+      {/* Koşullar */}
+      <div className="space-y-4 mb-6">
+        <h4 className="text-lg font-bold text-gray-800 mb-4">📋 Formül Koşulları</h4>
         
         {conditions.map((condition, index) => (
           <div key={index} className="border-2 border-gray-300 rounded-xl p-6 bg-gradient-to-r from-blue-50 to-indigo-50">
             <div className="flex items-center justify-between mb-4">
-              <h5 className="text-lg font-semibold text-gray-800">
-                Koşul {index + 1}
+              <h5 className="text-base font-bold text-blue-800">
+                🔍 Koşul {index + 1}
               </h5>
               {conditions.length > 1 && (
                 <button
                   onClick={() => removeCondition(index)}
-                  className="text-red-600 hover:text-red-800 font-medium px-3 py-1 rounded-lg hover:bg-red-100 transition-colors duration-200"
+                  className="text-red-600 hover:bg-red-100 p-2 rounded-lg transition-colors"
+                  title="Koşulu Kaldır"
                 >
-                  Koşulu Sil
+                  🗑️
                 </button>
               )}
             </div>
@@ -234,6 +251,7 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
                   <option value="variable">📊 Değişken</option>
                   <option value="constant">🔢 Sabit Değer</option>
                 </select>
+                
                 {condition.leftOperand.type === 'variable' ? (
                   <select
                     value={condition.leftOperand.value}
@@ -295,6 +313,7 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
                     <option value="variable">📊 Değişken</option>
                     <option value="constant">🔢 Sabit Değer</option>
                   </select>
+                  
                   {condition.rightOperand?.type === 'variable' ? (
                     <select
                       value={condition.rightOperand.value}
@@ -323,7 +342,7 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
               )}
 
               {/* Karşılaştırma Operatörü */}
-              <div className={`xl:col-span-1 ${!condition.leftOperator ? 'xl:col-start-4' : ''}`}>
+              <div className="xl:col-span-1">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">Karşılaştırma</label>
                 <select
                   value={condition.comparison}
@@ -354,6 +373,7 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
                   <option value="variable">📊 Değişken</option>
                   <option value="constant">🔢 Sabit Değer</option>
                 </select>
+                
                 {condition.rightSideOperand.type === 'variable' ? (
                   <select
                     value={condition.rightSideOperand.value}
@@ -415,6 +435,7 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
                     <option value="variable">📊 Değişken</option>
                     <option value="constant">🔢 Sabit Değer</option>
                   </select>
+                  
                   {condition.rightSideSecondOperand?.type === 'variable' ? (
                     <select
                       value={condition.rightSideSecondOperand.value}
@@ -452,49 +473,49 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
             </div>
           </div>
         ))}
-      </div>
-
-      {/* Koşul Ekle Butonu */}
-      <div className="mt-8">
-        <button
-          onClick={addCondition}
-          className="text-blue-700 hover:text-blue-900 font-semibold text-lg flex items-center bg-blue-100 hover:bg-blue-200 px-6 py-3 rounded-lg transition-all duration-200"
-        >
-          <FcPlus className="mr-2 text-xl" />
-          + Yeni Koşul Ekle
-        </button>
+        
+        {/* Koşul Ekleme Butonu */}
+        <div className="text-center">
+          <button
+            onClick={addCondition}
+            className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
+          >
+            ➕ Yeni Koşul Ekle
+          </button>
+        </div>
       </div>
 
       {/* Tam Formül Önizleme */}
-      <div className="mt-8 p-6 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl">
-        <h4 className="text-xl font-bold text-green-800 mb-4 flex items-center">
-          🎯 Tam Formül Önizlemesi:
-        </h4>
-        <div className="bg-white p-4 rounded-lg border-2 border-green-200">
+      <div className="mb-6 p-6 bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-300 rounded-xl">
+        <h4 className="text-lg font-bold text-green-800 mb-3">🎯 Tam Formül Önizlemesi:</h4>
+        <div className="bg-white border-2 border-green-400 rounded-lg p-4">
           <code className="text-lg font-mono text-green-700 break-all">
             {generateFormulaString()}
           </code>
         </div>
-        <div className="mt-3 text-sm text-green-700">
-          <p><strong>ℹ️ Açıklama:</strong> Formül tüm koşulların AND (VE) mantığı ile birleştirilmesiyle oluşur. Tüm koşullar sağlandığında hücreler vurgulanır.</p>
-        </div>
+        <p className="text-sm text-green-600 mt-2">
+          Bu formül tablodaki veriler üzerinde çalıştırılacak ve koşulları sağlayan hücreler <span style={{backgroundColor: formulaColor, color: 'white', padding: '2px 6px', borderRadius: '4px'}}>{formulaColor}</span> rengiyle vurgulanacak.
+        </p>
       </div>
 
-      {/* Kaydet/İptal Butonları */}
-      <div className="flex justify-end space-x-4 mt-8 pt-6 border-t-2 border-gray-200">
+      {/* Kaydet ve İptal Butonları */}
+      <div className="flex justify-end space-x-4">
         <button
           onClick={onCancel}
-          className="px-6 py-3 text-gray-700 font-semibold bg-gray-200 hover:bg-gray-300 rounded-lg transition-all duration-200 border-2 border-gray-300"
+          className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium transition-all"
         >
-          ❌ İptal Et
+          ❌ İptal
         </button>
         <button
           onClick={handleSave}
           disabled={!formulaName.trim()}
-          className="px-8 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg flex items-center transition-all duration-200 border-2 border-green-700 disabled:border-gray-400 text-lg"
+          className={`px-6 py-3 rounded-lg font-medium transition-all ${
+            formulaName.trim()
+              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          }`}
         >
-          <FcOk className="mr-2 text-xl" />
-          ✅ Formülü Kaydet
+          💾 Formülü Kaydet
         </button>
       </div>
     </div>

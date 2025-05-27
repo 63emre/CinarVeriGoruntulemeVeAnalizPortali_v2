@@ -21,15 +21,7 @@ interface Workspace {
   };
 }
 
-interface User {
-  id: string;
-  name: string | null;
-  email: string;
-  role: string;
-}
-
 export default function DashboardPage() {
-  const [user, setUser] = useState<User | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,13 +29,7 @@ export default function DashboardPage() {
     const fetchData = async () => {
       try {        
         setLoading(true);
-        // Kullanıcı bilgilerini getir
-        const userRes = await fetch('/api/auth/me');
-        if (userRes.ok) {
-          const userData = await userRes.json();
-          setUser(userData.user);
-        }
-
+        
         // Çalışma alanlarını getir
         const workspacesRes = await fetch('/api/workspaces');
         if (workspacesRes.ok) {

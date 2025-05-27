@@ -8,8 +8,8 @@ interface Table {
   id: string;
   name: string;
   description: string | null;
-  columns: any[];
-  data: any[];
+  columns: string[];
+  data: (string | number | null)[][];
   workspace: {
     id: string;
     name: string;

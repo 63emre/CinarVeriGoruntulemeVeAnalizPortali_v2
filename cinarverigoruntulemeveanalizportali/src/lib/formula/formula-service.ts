@@ -139,71 +139,82 @@ export function parseFormula(formula: string): {
     rightVariables: string[];
     operator: string;
     raw: string;
-  }[] 
-} {  const variables: string[] = [];
-  // Modified regex to capture empty bracket pairs as well
-  const variableRegex = /\[([^\]]*)\]/g;
+  }[]
+} {
+  const variables: string[] = [];
+  const conditions: { leftVariables: string[]; rightVariables: string[]; operator: string; raw: string; }[] = [];
+  
+  // Extract variable names from brackets
+  const variableRegex = /\[([^\]]+)\]/g;
   let match;
   
-  // Find all variables in the formula
   while ((match = variableRegex.exec(formula)) !== null) {
-    // Include empty variables too, assign them a special name for tracking
-    const variableName = match[1] || '_empty_';
-    if (!variables.includes(variableName)) {
-      variables.push(variableName);
+    const varName = match[1].trim(); // Trim variable name
+    if (!variables.includes(varName)) {
+      variables.push(varName);
     }
   }
-
-  // Parse the conditions
-  const conditions: { 
-    leftVariables: string[]; 
-    rightVariables: string[];
-    operator: string;
-    raw: string;
-  }[] = [];
-
-  // First, split by logical operators (AND, OR)
-  const conditionsArr = formula.split(/\s+(?:AND|OR)\s+/);
   
-  for (const condition of conditionsArr) {
-    // Find the comparison operator
-    const operatorMatch = condition.match(/\s*(<=|>=|==|<|>|!=)\s*/);
-    if (operatorMatch) {
-      const operator = operatorMatch[1];
-      const [leftSide, rightSide] = condition.split(operatorMatch[0]);
+  // Split formula by logical operators (AND, OR, &&, ||)
+  const logicalOperatorRegex = /\s+(AND|OR|\&\&|\|\|)\s+/i;
+  const conditionParts = formula.split(logicalOperatorRegex);
+  
+  // Process each condition
+  for (let i = 0; i < conditionParts.length; i += 2) {
+    const conditionStr = conditionParts[i];
+    if (!conditionStr || logicalOperatorRegex.test(conditionStr)) continue;
+    
+    // Find comparison operator
+    const comparisonMatch = conditionStr.match(/(.+?)\s*([><=!]+)\s*(.+)/);
+    
+    if (comparisonMatch) {
+      const leftSide = comparisonMatch[1].trim();
+      const operator = comparisonMatch[2].trim();
+      const rightSide = comparisonMatch[3].trim();
       
-      // Find variables in left side
+      // Extract variables from each side
       const leftVariables: string[] = [];
-      let leftMatch;
-      const leftRegex = /\[([^\]]+)\]/g;
-      while ((leftMatch = leftRegex.exec(leftSide)) !== null) {
-        leftVariables.push(leftMatch[1]);
+      const rightVariables: string[] = [];
+      
+      let varMatch;
+      while ((varMatch = variableRegex.exec(leftSide)) !== null) {
+        const varName = varMatch[1].trim(); // Trim variable name
+        if (!leftVariables.includes(varName)) {
+          leftVariables.push(varName);
+        }
       }
       
-      // Find variables in right side
-      const rightVariables: string[] = [];
-      let rightMatch;
-      const rightRegex = /\[([^\]]+)\]/g;
-      while ((rightMatch = rightRegex.exec(rightSide)) !== null) {
-        rightVariables.push(rightMatch[1]);
+      variableRegex.lastIndex = 0;
+      
+      while ((varMatch = variableRegex.exec(rightSide)) !== null) {
+        const varName = varMatch[1].trim(); // Trim variable name
+        if (!rightVariables.includes(varName)) {
+          rightVariables.push(varName);
+        }
       }
+      
+      variableRegex.lastIndex = 0;
       
       conditions.push({
         leftVariables,
         rightVariables,
         operator,
-        raw: condition.trim()
+        raw: conditionStr
       });
     }
   }
   
-  return { variables, conditions };
+  return {
+    variables,
+    conditions
+  };
 }
 
 // Format formula helper function
 function formatFormula(formula: string, context: EvaluationContext): string {
   // Basic security check - only allow specific characters
   if (!/^[a-zA-Z0-9\s\[\]().,+\-*/><=!&|]+$/.test(formula)) {
+    console.error('Invalid characters in formula:', formula);
     return 'false';
   }
 
@@ -213,9 +224,18 @@ function formatFormula(formula: string, context: EvaluationContext): string {
   // Replace bracketed variable names [Variable Name]
   const bracketedVarRegex = /\[([^\]]+)\]/g;
   evaluableFormula = evaluableFormula.replace(bracketedVarRegex, (match, varName) => {
-    const value = context.variables[varName];
+    // Trim variable name
+    const trimmedVarName = varName.trim();
+    const value = context.variables[trimmedVarName];
+    
     if (value === undefined || value === null || isNaN(value)) {
-      console.log(`Warning: Variable [${varName}] has invalid value:`, value);
+      console.log(`Warning: Variable [${trimmedVarName}] has invalid value:`, value);
+      // Check if variable exists without trimming in context
+      const untrimmedValue = context.variables[varName];
+      if (untrimmedValue !== undefined && untrimmedValue !== null && !isNaN(untrimmedValue)) {
+        console.log(`Found value with untrimmed key: ${varName} = ${untrimmedValue}`);
+        return untrimmedValue.toString();
+      }
       // Return a value that will cause the comparison to be false
       return 'null';
     }
@@ -230,43 +250,46 @@ function formatFormula(formula: string, context: EvaluationContext): string {
   evaluableFormula = evaluableFormula.replace(/==/g, '===');
   evaluableFormula = evaluableFormula.replace(/!=/g, '!==');
   
+  console.log('Formatted formula:', evaluableFormula);
+  
   return evaluableFormula;
 }
 
 // Enhanced function to evaluate formula with detailed information about failing conditions
 export function evaluateFormula(formula: string, context: EvaluationContext): EvaluationResult {
   try {
-    // Parse the formula to get detailed information about variables and conditions
+    console.log('Evaluating formula:', formula);
+    console.log('Available variables:', Object.keys(context.variables));
+    console.log('Variable values:', context.variables);
+    
+    // Parse the formula to extract variables and conditions
     const parsedFormula = parseFormula(formula);
-    const formattedFormula = formatFormula(formula, context);
     
-    // Log for debugging
-    console.log('Formula to evaluate:', formula);
-    console.log('Formatted formula:', formattedFormula);
-    console.log('Variables in formula:', parsedFormula.variables);
+    // Check if all required variables are available
+    const missingVariables = parsedFormula.variables.filter(v => {
+      // Check both trimmed and untrimmed versions
+      return context.variables[v] === undefined && context.variables[v.trim()] === undefined;
+    });
     
-    // Check for missing or invalid variables
-    const missingVariables: string[] = [];
-    for (const varName of parsedFormula.variables) {
-      if (varName === '_empty_') continue; // Skip our placeholder for empty brackets
-      
-      const value = context.variables[varName];
-      if (value === undefined || value === null || isNaN(value)) {
-        console.log(`Missing or invalid variable: ${varName}`, value);
-        missingVariables.push(varName);
-      }
-    }
-    
-    // If we have missing variables, return specific failure
     if (missingVariables.length > 0) {
+      console.log('Missing variables:', missingVariables);
       return {
         isValid: false,
-        message: `Missing or invalid variables: ${missingVariables.join(', ')}`,
-        failingColumns: missingVariables
+        message: `Missing variables: ${missingVariables.join(', ')}`
       };
     }
     
-    // Track which specific columns caused the failure
+    // Format the formula for evaluation
+    const formattedFormula = formatFormula(formula, context);
+    
+    if (formattedFormula === 'false') {
+      return {
+        isValid: false,
+        message: 'Invalid formula syntax'
+      };
+    }
+    
+    // Track which columns are causing failures
     const failingColumns: string[] = [];
     
     // Check each condition individually to identify failing parts
@@ -275,7 +298,7 @@ export function evaluateFormula(formula: string, context: EvaluationContext): Ev
       
       // Check if any variable in this condition has null/undefined value
       const invalidVars = [...leftVariables, ...rightVariables].filter(v => {
-        const value = context.variables[v];
+        const value = context.variables[v] || context.variables[v.trim()];
         return value === undefined || value === null || isNaN(value);
       });
       
@@ -289,13 +312,14 @@ export function evaluateFormula(formula: string, context: EvaluationContext): Ev
     let result = false;
     try {
       result = new Function('return ' + formattedFormula)();
+      console.log('Formula evaluation result:', result);
     } catch (err) {
       console.error('Error in formula evaluation:', err);
       // If evaluation fails, use all variables as failing columns
       return {
         isValid: false,
         message: `Formula evaluation error: ${(err as Error).message}`,
-        failingColumns: parsedFormula.variables.filter(v => v !== '_empty_')
+        failingColumns: parsedFormula.variables
       };
     }
     

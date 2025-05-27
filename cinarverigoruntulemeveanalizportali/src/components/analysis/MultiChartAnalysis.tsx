@@ -7,7 +7,7 @@ import { FcLineChart, FcPlus, FcPrint, FcRules, FcApproval } from 'react-icons/f
 import { MdDragIndicator, MdDelete } from 'react-icons/md';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import autoTable, { CellHookData } from 'jspdf-autotable';
 import { evaluateFormulasForTable } from '@/lib/enhancedFormulaEvaluator';
 import EditableDataTable from '@/components/tables/EditableDataTable';
 
@@ -253,20 +253,25 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
     }
   }, [analysisData?.tableData, formulas]);
 
-  // Add new chart
+  // Add a new chart
   const addChart = () => {
-    if (!analysisData?.variables.length || !analysisData?.dateColumns.length) return;
+    if (!analysisData?.variables.length) {
+      console.error('No variables available for charting');
+      setError('Grafik eklemek için önce bir tablo seçmelisiniz.');
+      return;
+    }
     
     const newChart: ChartConfig = {
       id: `chart-${nextChartId}`,
       type: 'line',
       variable: analysisData.variables[0],
-      startDate: analysisData.dateColumns[0],
-      endDate: analysisData.dateColumns[analysisData.dateColumns.length - 1],
-      color: '#3b82f6',
+      startDate: analysisData.dateColumns[0] || '',
+      endDate: analysisData.dateColumns[analysisData.dateColumns.length - 1] || '',
+      color: '#3B82F6',
       title: `${analysisData.variables[0]} Trend Grafiği`
     };
     
+    console.log('Adding new chart:', newChart);
     setCharts([...charts, newChart]);
     setNextChartId(nextChartId + 1);
   };
@@ -285,36 +290,124 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
 
   // Get chart data for a specific chart configuration
   const getChartData = (chartConfig: ChartConfig) => {
-    if (!analysisData?.tableData) return { labels: [], datasets: [] };
+    if (!analysisData?.tableData) {
+      console.log('No analysis data available for chart:', chartConfig.id);
+      return { labels: [], datasets: [] };
+    }
     
     const { columns, data } = analysisData.tableData;
     const variableColumnIndex = columns.findIndex(col => col === 'Variable');
     
-    if (variableColumnIndex === -1) return { labels: [], datasets: [] };
+    if (variableColumnIndex === -1) {
+      console.log('Variable column not found in table data');
+      return { labels: [], datasets: [] };
+    }
     
-    // Filter rows for selected variable
-    const variableRows = data.filter((row: (string | number | null)[]) => 
-      row[variableColumnIndex] === chartConfig.variable
-    );
+    console.log('Looking for variable:', chartConfig.variable);
+    console.log('Available variables in data:', data.map(row => row[variableColumnIndex]).filter(Boolean));
     
-    if (variableRows.length === 0) return { labels: [], datasets: [] };
+    // Filter rows for selected variable - be more flexible with matching
+    const variableRows = data.filter((row: (string | number | null)[]) => {
+      const variableName = row[variableColumnIndex];
+      if (!variableName) return false;
+      
+      // Convert both to strings and clean them for comparison
+      const cleanRowVar = String(variableName).replace(/,+$/, '').trim();
+      const cleanConfigVar = String(chartConfig.variable).replace(/,+$/, '').trim();
+      
+      // Try exact match first, then case-insensitive, then contains
+      return cleanRowVar === cleanConfigVar || 
+             cleanRowVar.toLowerCase() === cleanConfigVar.toLowerCase() ||
+             cleanRowVar.includes(cleanConfigVar) ||
+             cleanConfigVar.includes(cleanRowVar);
+    });
     
-    // Get date range
-    const startIndex = analysisData.dateColumns.indexOf(chartConfig.startDate);
-    const endIndex = analysisData.dateColumns.indexOf(chartConfig.endDate);
+    console.log(`Found ${variableRows.length} rows for variable: ${chartConfig.variable}`);
     
-    if (startIndex === -1 || endIndex === -1) return { labels: [], datasets: [] };
+    if (variableRows.length === 0) {
+      console.log(`No rows found for variable: ${chartConfig.variable}`);
+      return { labels: [], datasets: [] };
+    }
+    
+    // Get date columns and ensure they exist
+    const availableDateColumns = analysisData.dateColumns;
+    console.log('Available date columns:', availableDateColumns);
+    console.log('Chart date range:', { start: chartConfig.startDate, end: chartConfig.endDate });
+    
+    // Find start and end indices
+    let startIndex = availableDateColumns.indexOf(chartConfig.startDate);
+    let endIndex = availableDateColumns.indexOf(chartConfig.endDate);
+    
+    // Fallback to first and last dates if specific dates not found
+    if (startIndex === -1) {
+      startIndex = 0;
+      console.log('Start date not found, using first date:', availableDateColumns[0]);
+    }
+    if (endIndex === -1) {
+      endIndex = availableDateColumns.length - 1;
+      console.log('End date not found, using last date:', availableDateColumns[endIndex]);
+    }
     
     const labels: string[] = [];
     const values: (number | null)[] = [];
     
-    for (let i = startIndex; i <= endIndex; i++) {
-      const dateColumn = analysisData.dateColumns[i];
+    // Ensure we process dates in the correct order
+    const actualStartIndex = Math.min(startIndex, endIndex);
+    const actualEndIndex = Math.max(startIndex, endIndex);
+    
+    console.log(`Processing date range from index ${actualStartIndex} to ${actualEndIndex}`);
+    
+    for (let i = actualStartIndex; i <= actualEndIndex; i++) {
+      const dateColumn = availableDateColumns[i];
       const colIndex = columns.indexOf(dateColumn);
-      const value = variableRows[0][colIndex];
+      
+      if (colIndex === -1) {
+        console.log(`Date column ${dateColumn} not found in table columns`);
+        continue;
+      }
+      
+      // Use the first matching row for this variable
+      const rawValue = variableRows[0][colIndex];
+      let numValue: number | null = null;
+      
+      if (rawValue !== null && rawValue !== undefined) {
+        if (typeof rawValue === 'number') {
+          numValue = rawValue;
+        } else if (typeof rawValue === 'string') {
+          // Handle various string formats
+          let cleanValue = rawValue.trim();
+          
+          // Handle values that start with '<', '>', '≤', '≥', etc.
+          cleanValue = cleanValue.replace(/^[<>≤≥]+/, '').trim();
+          
+          // Handle comma decimal separators
+          cleanValue = cleanValue.replace(',', '.');
+          
+          const parsed = parseFloat(cleanValue);
+          if (!isNaN(parsed)) {
+            numValue = parsed;
+          } else {
+            console.log(`Could not parse value: "${rawValue}" for date ${dateColumn}`);
+          }
+        }
+      }
       
       labels.push(dateColumn);
-      values.push(typeof value === 'number' ? value : null);
+      values.push(numValue);
+    }
+    
+    console.log(`Chart data for ${chartConfig.variable}:`, { 
+      labels: labels.slice(0, 5), // Show first 5 for brevity
+      values: values.slice(0, 5),
+      totalPoints: values.length,
+      validPoints: values.filter(v => v !== null).length
+    });
+    
+    // Ensure we have some valid data
+    const validDataCount = values.filter(v => v !== null).length;
+    if (validDataCount === 0) {
+      console.log('No valid numeric data found for chart');
+      return { labels: [], datasets: [] };
     }
     
     return {
@@ -329,6 +422,8 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           pointRadius: 4,
           pointHoverRadius: 6,
           fill: chartConfig.type === 'line',
+          connectNulls: false, // Don't connect null values
+          spanGaps: false, // Don't span gaps
         }
       ]
     };
@@ -382,26 +477,53 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       
+      // Set Turkish character support
+      pdf.setFont('helvetica', 'normal');
+      pdf.setLanguage('tr');
+      
       // Add title page
       pdf.setFontSize(20);
-      pdf.text('Çınar Çevre Laboratuvarı', pageWidth / 2, 30, { align: 'center' });
+      pdf.text('Cinar Cevre Laboratuvari', pageWidth / 2, 30, { align: 'center' });
       pdf.setFontSize(16);
-      pdf.text('Kapsamlı Analiz Raporu', pageWidth / 2, 45, { align: 'center' });
+      pdf.text('Kapsamli Analiz Raporu', pageWidth / 2, 45, { align: 'center' });
       
       const selectedTableName = tables.find(t => t.id === selectedTable)?.name || 'Bilinmeyen Tablo';
       pdf.setFontSize(12);
       pdf.text(`Tablo: ${selectedTableName}`, pageWidth / 2, 60, { align: 'center' });
       pdf.text(`Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, pageWidth / 2, 70, { align: 'center' });
       
-      // Add summary
-      pdf.setFontSize(10);
-      pdf.text(`Grafik Sayısı: ${charts.length}`, 15, 90);
-      pdf.text(`Aktif Formül Sayısı: ${formulas.length}`, 15, 100);
-      pdf.text(`Vurgulanan Hücre Sayısı: ${highlightedCells.length}`, 15, 110);
-
+      // Add formulas applied section
+      if (formulas.length > 0) {
+        pdf.setFontSize(14);
+        pdf.text('Uygulanan Formuller:', 15, 90);
+        
+        const formulaTableData = formulas.map((formula, index) => [
+          (index + 1).toString(),
+          formula.name,
+          formula.formula,
+          formula.active ? 'Aktif' : 'Pasif'
+        ]);
+        
+        autoTable(pdf, {
+          startY: 100,
+          head: [['#', 'Formul Adi', 'Formul', 'Durum']],
+          body: formulaTableData,
+          styles: { 
+            fontSize: 8,
+            font: 'helvetica'
+          },
+          headStyles: { 
+            fillColor: [41, 128, 185],
+            font: 'helvetica',
+            fontStyle: 'bold'
+          },
+          margin: { left: 15, right: 15 }
+        });
+      }
+      
       let currentPage = 1;
       
-      // Add charts
+      // Add charts with improved capture
       if (charts.length > 0) {
         for (let i = 0; i < charts.length; i++) {
           const chart = charts[i];
@@ -416,60 +538,87 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
             pdf.setFontSize(14);
             pdf.text(`Grafik ${i + 1}: ${chart.title}`, 15, 20);
             
-            // Capture chart as image with enhanced configuration for modern CSS
-            const canvas = await html2canvas(chartElement, {
-              backgroundColor: '#ffffff',
-              scale: 2,
-              logging: false,
-              useCORS: true,
-              allowTaint: true,
-              foreignObjectRendering: true,
-              // Ignore problematic CSS functions
-              ignoreElements: (element) => {
-                const style = window.getComputedStyle(element);
-                // Skip elements with problematic color functions
-                if (style.color && (style.color.includes('oklch') || style.color.includes('lch') || style.color.includes('lab'))) {
-                  return true;
-                }
-                if (style.backgroundColor && (style.backgroundColor.includes('oklch') || style.backgroundColor.includes('lch') || style.backgroundColor.includes('lab'))) {
-                  return true;
-                }
-                return false;
-              },
-              // Override problematic styles
-              onclone: (clonedDoc) => {
-                // Remove any problematic CSS that might contain oklch or other modern color functions
-                const allElements = clonedDoc.querySelectorAll('*');
-                allElements.forEach((el) => {
-                  const element = el as HTMLElement;
-                  const computedStyle = window.getComputedStyle(element);
+            try {
+              console.log(`📊 Capturing chart ${i + 1}: ${chart.title}`);
+              
+              // Enhanced chart capture with better settings
+              const canvas = await html2canvas(chartElement, {
+                backgroundColor: '#ffffff',
+                scale: 2,
+                logging: false,
+                useCORS: true,
+                allowTaint: false,
+                foreignObjectRendering: false,
+                width: chartElement.offsetWidth,
+                height: chartElement.offsetHeight,
+                x: 0,
+                y: 0,
+                scrollX: 0,
+                scrollY: 0,
+                windowWidth: window.innerWidth,
+                windowHeight: window.innerHeight,
+                // Remove problematic CSS handling
+                onclone: (clonedDoc) => {
+                  const allElements = clonedDoc.querySelectorAll('*');
+                  allElements.forEach((el) => {
+                    const element = el as HTMLElement;
+                    
+                    // Fix any CSS color issues
+                    if (element.style.color && element.style.color.includes('oklch')) {
+                      element.style.color = '#333333';
+                    }
+                    if (element.style.backgroundColor && element.style.backgroundColor.includes('oklch')) {
+                      element.style.backgroundColor = '#ffffff';
+                    }
+                    
+                    // Remove any transforms that might cause issues
+                    element.style.transform = 'none';
+                    element.style.filter = 'none';
+                  });
                   
-                  // Convert modern color functions to fallback colors
-                  if (computedStyle.color && (computedStyle.color.includes('oklch') || computedStyle.color.includes('lch'))) {
-                    element.style.color = '#333333'; // Fallback to dark gray
-                  }
-                  if (computedStyle.backgroundColor && (computedStyle.backgroundColor.includes('oklch') || computedStyle.backgroundColor.includes('lch'))) {
-                    element.style.backgroundColor = '#ffffff'; // Fallback to white
-                  }
-                  if (computedStyle.borderColor && (computedStyle.borderColor.includes('oklch') || computedStyle.borderColor.includes('lch'))) {
-                    element.style.borderColor = '#cccccc'; // Fallback to light gray
-                  }
-                });
-              }
-            });
-            
-            const imgData = canvas.toDataURL('image/png');
-            const imgWidth = pageWidth - 30;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
-            
-            // Add chart to PDF
-            pdf.addImage(imgData, 'PNG', 15, 30, imgWidth, Math.min(imgHeight, pageHeight - 50));
+                  // Force redraw of canvas elements
+                  const canvasElements = clonedDoc.querySelectorAll('canvas');
+                  canvasElements.forEach((canvas) => {
+                    canvas.style.display = 'block';
+                    canvas.style.width = '100%';
+                    canvas.style.height = '100%';
+                  });
+                }
+              });
+              
+              console.log(`✅ Chart ${i + 1} captured successfully - ${canvas.width}x${canvas.height}`);
+              
+              const imgData = canvas.toDataURL('image/png', 1.0);
+              const imgWidth = pageWidth - 30;
+              const imgHeight = (canvas.height * imgWidth) / canvas.width;
+              
+              // Ensure image fits on page
+              const maxHeight = pageHeight - 80;
+              const finalHeight = Math.min(imgHeight, maxHeight);
+              const finalWidth = (canvas.width * finalHeight) / canvas.height;
+              
+              // Add chart to PDF
+              pdf.addImage(imgData, 'PNG', 15, 30, finalWidth, finalHeight);
+              
+              console.log(`📄 Chart ${i + 1} added to PDF successfully`);
+              
+            } catch (chartError) {
+              console.error(`❌ Error capturing chart ${i + 1}:`, chartError);
+              
+              // Add error message to PDF
+              pdf.setFontSize(12);
+              pdf.setTextColor(255, 0, 0);
+              pdf.text(`Grafik yakalama hatasi: ${(chartError as Error).message}`, 15, 50);
+              pdf.setTextColor(0, 0, 0);
+            }
             
             // Add chart details
             pdf.setFontSize(10);
-            pdf.text(`Değişken: ${chart.variable}`, 15, pageHeight - 30);
-            pdf.text(`Tarih Aralığı: ${chart.startDate} - ${chart.endDate}`, 15, pageHeight - 20);
-            pdf.text(`Grafik Türü: ${chart.type === 'line' ? 'Çizgi' : 'Sütun'} Grafik`, 15, pageHeight - 10);
+            pdf.text(`Degisken: ${chart.variable}`, 15, pageHeight - 30);
+            pdf.text(`Tarih Araligi: ${chart.startDate} - ${chart.endDate}`, 15, pageHeight - 20);
+            pdf.text(`Grafik Turu: ${chart.type === 'line' ? 'Cizgi' : 'Sutun'} Grafik`, 15, pageHeight - 10);
+          } else {
+            console.error(`❌ Chart element not found: chart-${chart.id}`);
           }
         }
       }
@@ -481,17 +630,28 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         
         // Add table header
         pdf.setFontSize(14);
-        pdf.text('Veri Tablosu (Formül Vurgulamalı)', 15, 20);
+        pdf.text('Veri Tablosu (Formul Vurgulamali)', 15, 20);
         
         if (formulas.length > 0) {
           pdf.setFontSize(10);
-          pdf.text(`Uygulanan Formüller: ${formulas.map(f => f.name).join(', ')}`, 15, 30);
+          pdf.text(`Uygulanan Formuller: ${formulas.map(f => f.name).join(', ')}`, 15, 30);
         }
         
         // Prepare table data for PDF
         const { columns, data } = analysisData.tableData;
         const tableData = data.map((row: (string | number | null)[]) => {
-          return row.map((cell: string | number | null) => cell === null ? '' : String(cell));
+          return row.map((cell: string | number | null) => {
+            if (cell === null) return '';
+            // Handle Turkish characters properly
+            const cellStr = String(cell);
+            return cellStr
+              .replace(/ç/g, 'c').replace(/Ç/g, 'C')
+              .replace(/ğ/g, 'g').replace(/Ğ/g, 'G')
+              .replace(/ı/g, 'i').replace(/İ/g, 'I')
+              .replace(/ö/g, 'o').replace(/Ö/g, 'O')
+              .replace(/ş/g, 's').replace(/Ş/g, 'S')
+              .replace(/ü/g, 'u').replace(/Ü/g, 'U');
+          });
         });
         
         // Create row tracking for highlights
@@ -509,16 +669,18 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           styles: {
             fontSize: 7,
             cellPadding: 1.5,
+            font: 'helvetica'
           },
           headStyles: {
             fillColor: [41, 128, 185],
             textColor: 255,
             fontStyle: 'bold',
+            font: 'helvetica'
           },
           alternateRowStyles: {
             fillColor: [240, 240, 240],
           },
-          didParseCell: function(data: any) {
+          didParseCell: function(data: CellHookData) {
             if (data.section === 'body') {
               const actualRowId = rowIds[data.row.index];
               const colName = columns[data.column.index];
@@ -533,12 +695,14 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
               if (highlight) {
                 const rgb = hexToRgb(highlight.color);
                 
-                // Apply highlighting
-                data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b, 0.3];
-                data.cell.styles.textColor = [0, 0, 0];
-                data.cell.styles.fontStyle = 'bold';
-                data.cell.styles.lineWidth = 0.5;
-                data.cell.styles.lineColor = [rgb.r, rgb.g, rgb.b];
+                // Apply highlighting with proper type handling
+                if (data.cell.styles) {
+                  (data.cell.styles as unknown as Record<string, unknown>).fillColor = [rgb.r, rgb.g, rgb.b, 0.3];
+                  (data.cell.styles as unknown as Record<string, unknown>).textColor = [0, 0, 0];
+                  (data.cell.styles as unknown as Record<string, unknown>).fontStyle = 'bold';
+                  (data.cell.styles as unknown as Record<string, unknown>).lineWidth = 0.5;
+                  (data.cell.styles as unknown as Record<string, unknown>).lineColor = [rgb.r, rgb.g, rgb.b];
+                }
               }
             }
           }
@@ -546,7 +710,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         
         // Add legend for highlighted cells
         if (highlightedCells.length > 0) {
-          const lastTableY = (pdf as any).lastAutoTable.finalY || 40;
+          const lastTableY = (pdf as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable?.finalY || 40;
           let yPos = lastTableY + 15;
           
           // Check if we need a new page for the legend
@@ -556,11 +720,11 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           }
           
           pdf.setFontSize(12);
-          pdf.text('Formül Vurgulamaları:', 15, yPos);
+          pdf.text('Formul Vurgulamalari:', 15, yPos);
           yPos += 10;
           
           // Group highlights by color and message
-          const uniqueHighlights = highlightedCells.reduce((acc: any[], cell) => {
+          const uniqueHighlights = highlightedCells.reduce((acc: Array<{ color: string; message: string }>, cell) => {
             const existing = acc.find(h => h.color === cell.color && h.message === cell.message);
             if (!existing) {
               acc.push({
@@ -597,7 +761,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         if (currentPage > 1) pdf.addPage();
         
         pdf.setFontSize(14);
-        pdf.text('Kullanılan Formüller:', 15, 20);
+        pdf.text('Kullanilan Formuller:', 15, 20);
         
         let yPos = 35;
         
@@ -620,13 +784,13 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           if (formula.description) {
             yPos += 6;
             pdf.setFontSize(8);
-            pdf.text(`Açıklama: ${formula.description}`, 25, yPos);
+            pdf.text(`Aciklama: ${formula.description}`, 25, yPos);
           }
           
           yPos += 6;
           pdf.setFontSize(8);
-          pdf.text(`Formül: ${formula.formula}`, 25, yPos);
-          pdf.text(`Tip: ${formula.type === 'CELL_VALIDATION' ? 'Hücre Doğrulama' : 'İlişkisel'}`, 25, yPos + 6);
+          pdf.text(`Formul: ${formula.formula}`, 25, yPos);
+          pdf.text(`Tip: ${formula.type === 'CELL_VALIDATION' ? 'Hucre Dogrulama' : 'Iliskisel'}`, 25, yPos + 6);
           
           yPos += 18;
         });
@@ -639,7 +803,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         pdf.setFontSize(8);
         pdf.setTextColor(100);
         pdf.text(
-          'Çınar Çevre Laboratuvarı - Kapsamlı Analiz Raporu',
+          'Cinar Cevre Laboratuvari - Kapsamli Analiz Raporu',
           15,
           pageHeight - 10
         );
@@ -652,11 +816,14 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       }
       
       // Save PDF
-      pdf.save(`kapsamli-analiz-raporu-${new Date().toISOString().split('T')[0]}.pdf`);
+      const fileName = `kapsamli-analiz-raporu-${new Date().toISOString().split('T')[0]}.pdf`;
+      pdf.save(fileName);
+      
+      console.log(`✅ PDF başarıyla oluşturuldu: ${fileName}`);
       
     } catch (err) {
-      console.error('PDF oluşturma hatası:', err);
-      setError('PDF oluşturulurken bir hata oluştu.');
+      console.error('❌ PDF oluşturma hatası:', err);
+      setError(`PDF oluşturulurken bir hata oluştu: ${(err as Error).message}`);
     } finally {
       setLoading(false);
     }

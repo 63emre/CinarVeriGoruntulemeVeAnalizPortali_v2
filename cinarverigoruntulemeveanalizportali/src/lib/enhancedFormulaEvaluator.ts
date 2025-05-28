@@ -50,26 +50,51 @@ interface HighlightedCell {
 }
 
 /**
- * Parse a complex formula into individual conditions
+ * ENHANCED: Parse a complex formula into individual conditions
+ * Now supports both variable-to-constant and variable-to-variable comparisons
+ * Examples:
+ * - "İletkenlik > 312" (variable to constant)
+ * - "(İletkenlik + Toplam Fosfor) > (Orto Fosfat - Alkalinite Tayini)" (expression to expression)
+ * - "Variable < 0.001 OR Variable > 1000" (multiple conditions)
  */
 export function parseComplexFormula(formula: string): FormulaCondition[] {
+  // Clean the formula first
+  let cleanFormula = formula.trim();
+  
+  // Handle square brackets for variables (convert to standard format)
+  cleanFormula = cleanFormula.replace(/\[([^\]]+)\]/g, '$1');
+  
   // Split by AND/OR operators while preserving them
-  const parts = formula.split(/\s+(AND|OR)\s+/);
+  const parts = cleanFormula.split(/\s+(AND|OR)\s+/i);
   const conditions: FormulaCondition[] = [];
   
   for (let i = 0; i < parts.length; i += 2) {
     const conditionStr = parts[i].trim();
-    const logicalOp = i + 1 < parts.length ? parts[i + 1] as 'AND' | 'OR' : undefined;
+    const logicalOp = i + 1 < parts.length ? parts[i + 1].toUpperCase() as 'AND' | 'OR' : undefined;
     
-    // Parse individual condition
+    // Enhanced parsing to handle complex expressions with parentheses
+    // Match patterns like: (expr) op (expr) or expr op expr or expr op constant
     const comparisonMatch = conditionStr.match(/(.+?)\s*([><=!]+)\s*(.+)/);
     if (comparisonMatch) {
-      const [, left, operator, right] = comparisonMatch;
+      let [, left, operator, right] = comparisonMatch;
+      
+      // Clean and normalize the expressions
+      left = left.trim();
+      right = right.trim();
+      operator = operator.trim();
+      
+      // Handle parentheses - if they exist, keep them; if not, add them for consistency
+      if (!left.startsWith('(') && (left.includes('+') || left.includes('-') || left.includes('*') || left.includes('/'))) {
+        left = `(${left})`;
+      }
+      if (!right.startsWith('(') && (right.includes('+') || right.includes('-') || right.includes('*') || right.includes('/'))) {
+        right = `(${right})`;
+      }
       
       conditions.push({
-        leftExpression: left.trim(),
-        operator: operator.trim(),
-        rightExpression: right.trim(),
+        leftExpression: left,
+        operator: operator,
+        rightExpression: right,
         logicalOperator: logicalOp
       });
     }
@@ -79,28 +104,71 @@ export function parseComplexFormula(formula: string): FormulaCondition[] {
 }
 
 /**
- * Evaluate an arithmetic expression with variables
+ * ENHANCED: Evaluate an arithmetic expression with variables
+ * Now supports both simple variables/constants and complex expressions
+ * Examples:
+ * - "İletkenlik" -> returns value of İletkenlik variable
+ * - "312" -> returns 312
+ * - "(İletkenlik + Toplam Fosfor)" -> returns sum of two variables
+ * - "(Orto Fosfat - Alkalinite Tayini)" -> returns difference of two variables
  */
 export function evaluateArithmeticExpression(expression: string, variables: Record<string, number>): number {
   // Remove outer parentheses from the entire expression
   let cleanExpr = expression.replace(/^\(|\)$/g, '').trim();
   
-  // Check if it's a simple number
+  // Check if it's a simple number first
   const numMatch = cleanExpr.match(/^-?\d+\.?\d*$/);
   if (numMatch) {
     return parseFloat(numMatch[0]);
   }
 
-  // Extract variable names in square brackets for proper replacement
-  const variableMatches = cleanExpr.match(/\[[^\]]+\]/g) || [];
+  // Check if it's a simple variable name (no operators)
+  if (!cleanExpr.match(/[+\-*/]/)) {
+    // It's a single variable
+    const varName = cleanExpr.trim();
+    if (variables.hasOwnProperty(varName) && variables[varName] !== undefined && !isNaN(variables[varName])) {
+      return variables[varName];
+    } else {
+      // Try to find a close match (case-insensitive, trimmed)
+      const cleanVarName = varName.toLowerCase().trim();
+      const matchingKey = Object.keys(variables).find(key => 
+        key.toLowerCase().trim() === cleanVarName
+      );
+      if (matchingKey && !isNaN(variables[matchingKey])) {
+        return variables[matchingKey];
+      }
+      throw new Error(`Variable not found: ${varName}`);
+    }
+  }
+
+  // Handle complex expressions with multiple variables and operators
   const missingVariables: string[] = [];
   
-  // Replace variables in square brackets
+  // Replace variables with their values
+  // Sort by length (longest first) to avoid partial replacements
+  const sortedVariableNames = Object.keys(variables).sort((a, b) => b.length - a.length);
+  
+  for (const varName of sortedVariableNames) {
+    const value = variables[varName];
+    if (value !== undefined && !isNaN(value)) {
+      // Use word boundaries to ensure we don't replace partial matches
+      // But be flexible with Turkish characters and spaces
+      const escapedVarName = escapeRegExp(varName);
+      const regex = new RegExp(`\\b${escapedVarName}\\b`, 'gi');
+      
+      // Check if this variable exists in the expression
+      if (regex.test(cleanExpr)) {
+        cleanExpr = cleanExpr.replace(regex, value.toString());
+      }
+    }
+  }
+
+  // Also handle variables in square brackets (for backward compatibility)
+  const variableMatches = cleanExpr.match(/\[[^\]]+\]/g) || [];
   for (const match of variableMatches) {
     const varName = match.slice(1, -1); // Remove brackets
     
     if (variables.hasOwnProperty(varName) && variables[varName] !== undefined && !isNaN(variables[varName])) {
-      // Replace all occurrences of this bracketed variable
       const escapedMatch = escapeRegExp(match);
       const regex = new RegExp(escapedMatch, 'g');
       cleanExpr = cleanExpr.replace(regex, variables[varName].toString());
@@ -113,37 +181,25 @@ export function evaluateArithmeticExpression(expression: string, variables: Reco
     }
   }
 
-  // Also handle variables without brackets (for backward compatibility)
-  const sortedVariableNames = Object.keys(variables).sort((a, b) => b.length - a.length);
-  
-  for (const varName of sortedVariableNames) {
-    const value = variables[varName];
-    if (value !== undefined && !isNaN(value)) {
-      // Only replace if it's not already in brackets (to avoid double replacement)
-      if (!cleanExpr.includes(`[${varName}]`)) {
-        const escapedVarName = escapeRegExp(varName);
-        const regex = new RegExp(`\\b${escapedVarName}\\b`, 'g');
-        cleanExpr = cleanExpr.replace(regex, value.toString());
-      }
-    }
-  }
-
   // Clean up multiple spaces and trim
   cleanExpr = cleanExpr.replace(/\s+/g, ' ').trim();
 
   // Evaluate the mathematical expression
   try {
-    // Check for valid mathematical expression
+    // Enhanced validation for mathematical expressions
+    // Allow numbers, operators, parentheses, and spaces
     if (!/^[-+*/()\d.\s]+$/.test(cleanExpr)) {
-      throw new Error('Invalid characters in expression after variable replacement');
+      // Check what characters are causing issues
+      const invalidChars = cleanExpr.match(/[^-+*/()\d.\s]/g);
+      throw new Error(`Invalid characters in expression: ${invalidChars?.join(', ')} in "${cleanExpr}"`);
     }
 
     // Check for empty parentheses or invalid patterns
     if (cleanExpr.includes('()') || cleanExpr.includes('(-)') || cleanExpr.includes('(+)')) {
-      throw new Error('Expression contains empty or invalid parentheses after variable replacement');
+      throw new Error('Expression contains empty or invalid parentheses');
     }
 
-    // Additional safety: check for common issues
+    // Additional safety: check for empty expression
     if (cleanExpr === '' || cleanExpr === ' ') {
       throw new Error('Empty expression after variable replacement');
     }
@@ -152,7 +208,7 @@ export function evaluateArithmeticExpression(expression: string, variables: Reco
     const result = new Function('return ' + cleanExpr)();
 
     if (typeof result !== 'number' || isNaN(result)) {
-      throw new Error('Expression did not evaluate to a number');
+      throw new Error(`Expression did not evaluate to a number: ${result}`);
     }
 
     // Log missing variables if any (only in development)
@@ -166,10 +222,11 @@ export function evaluateArithmeticExpression(expression: string, variables: Reco
       original: expression,
       cleaned: cleanExpr,
       availableVariables: Object.keys(variables),
+      variableValues: variables,
       missingVariables: missingVariables,
       error: error
     });
-    throw new Error(`Cannot evaluate expression: ${expression}`);
+    throw new Error(`Cannot evaluate expression: ${expression} -> ${cleanExpr}`);
   }
 }
 

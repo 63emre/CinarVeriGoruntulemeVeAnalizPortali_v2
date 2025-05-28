@@ -521,7 +521,7 @@ export default function EditableDataTable({
                       }
                     }
 
-                    // Enhanced inline style for highlights with better visibility
+                    // FIXED: Enhanced inline style for highlights with better visibility and pizza slice effect
                     const inlineStyle: React.CSSProperties = {};
                     if (highlight) {
                       // Use the color directly from highlight
@@ -530,37 +530,73 @@ export default function EditableDataTable({
                       // Apply background color with appropriate opacity
                       const rgb = hexToRgb(color);
                       if (rgb) {
-                        // Use slightly transparent background for better visibility
-                        inlineStyle.backgroundColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3)`;
-                        inlineStyle.borderColor = color;
+                        // PIZZA SLICE EFFECT: Create a gradient background that looks like a colored slice
+                        const baseOpacity = 0.4;
+                        const gradientOpacity = 0.1;
+                        
+                        // Create a radial gradient for pizza slice effect
+                        inlineStyle.background = `
+                          radial-gradient(circle at 10% 10%, 
+                            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${baseOpacity + 0.2}) 0%, 
+                            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${baseOpacity}) 30%, 
+                            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${gradientOpacity}) 100%
+                          ),
+                          linear-gradient(135deg, 
+                            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${baseOpacity}) 0%, 
+                            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${gradientOpacity}) 100%
+                          )
+                        `;
+                        
+                        // Enhanced border with gradient effect
+                        inlineStyle.borderImage = `linear-gradient(45deg, ${color}, ${color}80) 1`;
                         inlineStyle.borderWidth = '2px';
                         inlineStyle.borderStyle = 'solid';
                         inlineStyle.position = 'relative';
                         
-                        // Add a subtle glow effect
-                        inlineStyle.boxShadow = `0 0 4px ${color}40`;
+                        // Add a subtle glow effect with multiple shadows
+                        inlineStyle.boxShadow = `
+                          0 0 8px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6),
+                          inset 0 1px 0 rgba(255, 255, 255, 0.3),
+                          inset 0 -1px 0 rgba(0, 0, 0, 0.1)
+                        `;
                         
                         // Ensure text is readable on colored background
                         const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-                        // For light backgrounds, use dark text; for dark backgrounds, use original color
-                        if (brightness > 200) {
+                        if (brightness > 180) {
                           inlineStyle.color = '#1a1a1a';
                         } else {
-                          inlineStyle.color = color;
+                          inlineStyle.color = '#ffffff';
                         }
-                        inlineStyle.fontWeight = '600'; // Make text bolder on highlighted cells
+                        inlineStyle.fontWeight = '700'; // Make text bolder on highlighted cells
+                        inlineStyle.textShadow = brightness > 180 
+                          ? '0 1px 2px rgba(255, 255, 255, 0.8)' 
+                          : '0 1px 2px rgba(0, 0, 0, 0.8)';
+                        
+                        // Add a subtle animation effect
+                        inlineStyle.transition = 'all 0.3s ease-in-out';
+                        
                       } else {
                         // Fallback if RGB conversion fails
-                        inlineStyle.backgroundColor = `${color}30`; // 30 = ~0.3 opacity in hex
+                        inlineStyle.backgroundColor = `${color}40`; // 40 = ~0.25 opacity in hex
                         inlineStyle.borderColor = color;
                         inlineStyle.borderWidth = '2px';
                         inlineStyle.borderStyle = 'solid';
+                        inlineStyle.boxShadow = `0 0 4px ${color}60`;
                       }
                       
                       // Override any conflicting styles when highlighted
                       if (isSelected) {
                         // Show selection with different visual cue when highlighted
-                        inlineStyle.boxShadow = `0 0 4px ${color}40, 0 0 0 3px #3b82f640`;
+                        const rgb = hexToRgb(color);
+                        if (rgb) {
+                          inlineStyle.boxShadow = `
+                            0 0 8px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6),
+                            0 0 0 3px rgba(59, 130, 246, 0.4),
+                            inset 0 1px 0 rgba(255, 255, 255, 0.3)
+                          `;
+                        } else {
+                          inlineStyle.boxShadow = `0 0 4px ${color}40, 0 0 0 3px #3b82f640`;
+                        }
                       }
                     }
                     

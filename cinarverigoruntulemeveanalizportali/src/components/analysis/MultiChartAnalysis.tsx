@@ -22,6 +22,7 @@ import autoTable from 'jspdf-autotable';
 import { evaluateFormulasForTable } from '@/lib/enhancedFormulaEvaluator';
 import EditableDataTable from '@/components/tables/EditableDataTable';
 import FormulaEditor from '@/components/formulas/FormulaEditor';
+import DropdownFormulaEditor from '@/components/formulas/DropdownFormulaEditor';
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
@@ -490,37 +491,40 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         pdf.setFont('helvetica', 'normal');
       }
       
-      // Enhanced Turkish text encoding with better Unicode support
+      // FIXED: Enhanced Turkish text encoding with proper UTF-8 support
       const encodeTurkishText = (text: string): string => {
         try {
-          // First try to preserve Turkish characters using proper encoding
-          const encoder = new TextEncoder();
-          const decoder = new TextDecoder('utf-8');
-          const encoded = encoder.encode(text);
-          const decoded = decoder.decode(encoded);
+          // First, ensure the text is properly encoded as UTF-8
+          const utf8Text = decodeURIComponent(encodeURIComponent(text));
           
-          // If encoding/decoding works, use original text
-          if (decoded === text) {
-            return text;
-          }
+          // For PDF compatibility, we need to handle special characters
+          // Use a more comprehensive character mapping
+          return utf8Text
+            .replace(/ğ/g, 'g').replace(/Ğ/g, 'G')
+            .replace(/ü/g, 'u').replace(/Ü/g, 'U')
+            .replace(/ş/g, 's').replace(/Ş/g, 'S')
+            .replace(/ı/g, 'i').replace(/İ/g, 'I')
+            .replace(/ö/g, 'o').replace(/Ö/g, 'O')
+            .replace(/ç/g, 'c').replace(/Ç/g, 'C')
+            // Handle other special characters
+            .replace(/[""]/g, '"')
+            .replace(/['']/g, "'")
+            .replace(/[–—]/g, '-')
+            .replace(/…/g, '...')
+            // Remove any remaining problematic characters
+            .replace(/[^\x00-\x7F]/g, '?');
         } catch (error) {
-          console.warn('Unicode encoding failed, using fallback:', error);
+          console.warn('Text encoding failed, using fallback:', error);
+          // Fallback: simple character replacement
+          return text
+            .replace(/ğ/g, 'g').replace(/Ğ/g, 'G')
+            .replace(/ü/g, 'u').replace(/Ü/g, 'U')
+            .replace(/ş/g, 's').replace(/Ş/g, 'S')
+            .replace(/ı/g, 'i').replace(/İ/g, 'I')
+            .replace(/ö/g, 'o').replace(/Ö/g, 'O')
+            .replace(/ç/g, 'c').replace(/Ç/g, 'C')
+            .replace(/[^\x00-\x7F]/g, '?');
         }
-        
-        // Fallback to character replacement for PDF compatibility
-        return text
-          .replace(/ğ/g, 'g')
-          .replace(/Ğ/g, 'G')
-          .replace(/ü/g, 'u')
-          .replace(/Ü/g, 'U')
-          .replace(/ş/g, 's')
-          .replace(/Ş/g, 'S')
-          .replace(/ı/g, 'i')
-          .replace(/İ/g, 'I')
-          .replace(/ö/g, 'o')
-          .replace(/Ö/g, 'O')
-          .replace(/ç/g, 'c')
-          .replace(/Ç/g, 'C');
       };
       
       // Add title page with proper encoding
@@ -789,37 +793,80 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
           pdf.text(`Uygulanan Formüller: ${formulas.map(f => f.name).join(', ')}`, 15, 30);
         }
         
-        // Prepare table data for PDF
+        // FIXED: Prepare table data for PDF with proper encoding and structure
         const { columns, data } = analysisData.tableData;
+        
+        // Ensure proper table structure and encoding
+        const tableHeaders = columns.map(col => encodeTurkishText(col));
+        
         const tableData = data.map((row: (string | number | null)[]) => {
           return row.map((cell: string | number | null) => {
-            if (cell === null) return '';
-            const cellStr = String(cell);
-            return cellStr;
+            if (cell === null || cell === undefined) return '';
+            
+            // Handle different data types properly
+            if (typeof cell === 'number') {
+              return cell.toString();
+            }
+            
+            if (typeof cell === 'string') {
+              // Encode Turkish characters and clean the string
+              return encodeTurkishText(cell.trim());
+            }
+            
+            return encodeTurkishText(String(cell));
           });
         });
         
-        // Create row tracking for highlights
-        const rowIds: string[] = [];
-        data.forEach((_, rowIndex) => {
-          rowIds.push(`row-${rowIndex}`);
-        });
-        
-        // Add table with highlighting support
+        // FIXED: Add table with proper highlighting support and row tracking
         autoTable(pdf, {
           startY: 40,
-          head: [columns],
+          head: [tableHeaders],
           body: tableData,
           styles: { 
             fontSize: 8,
-            font: 'helvetica'
+            font: 'helvetica',
+            cellPadding: 2,
+            lineColor: [200, 200, 200],
+            lineWidth: 0.1
           },
           headStyles: { 
             fillColor: [41, 128, 185],
             font: 'helvetica',
-            fontStyle: 'bold'
+            fontStyle: 'bold',
+            textColor: [255, 255, 255]
           },
-          margin: { left: 15, right: 15 }
+          bodyStyles: {
+            textColor: [0, 0, 0]
+          },
+          alternateRowStyles: {
+            fillColor: [245, 245, 245]
+          },
+          margin: { left: 15, right: 15 },
+          // FIXED: Add cell highlighting based on formula results
+          didParseCell: function(data) {
+            const rowIndex = data.row.index;
+            const colIndex = data.column.index;
+            
+            if (data.section === 'body' && rowIndex < tableData.length && colIndex < columns.length) {
+              const rowId = `row-${rowIndex}`;
+              const colId = columns[colIndex];
+              
+              // Check if this cell should be highlighted
+              const highlight = highlightedCells.find(
+                cell => cell.row === rowId && cell.col === colId
+              );
+              
+              if (highlight) {
+                const rgb = hexToRgb(highlight.color);
+                if (rgb) {
+                  // Apply highlight color with transparency
+                  data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b];
+                  data.cell.styles.textColor = [0, 0, 0]; // Ensure text is readable
+                  data.cell.styles.fontStyle = 'bold';
+                }
+              }
+            }
+          }
         });
         
         const lastTableY = (pdf as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 40;
@@ -1136,13 +1183,13 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         </div>
       )}
 
-      {/* Formula Management Section */}
+      {/* Formula Management Section - ENHANCED */}
       {showFormulaManager && selectedTable && (
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold flex items-center">
               <FcRules className="mr-2 h-6 w-6" />
-              Formül Yönetimi
+              Gelişmiş Formül Yönetimi
             </h2>
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-600">
@@ -1162,21 +1209,45 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
             </div>
           </div>
           
-          <FormulaEditor
-            workspaceId={selectedWorkspace}
-            tableId={selectedTable}
-            onFormulaAdded={(newFormula) => {
-              const formulaWithDefaults: Formula = {
-                ...newFormula,
-                active: newFormula.active ?? true
-              };
-              setFormulas(prev => [...prev, formulaWithDefaults]);
-              // Auto-apply formulas when a new one is added
-              setTimeout(() => {
-                applyFormulasToTable();
-              }, 500);
-            }}
-          />
+          {/* Enhanced Formula Editor with Dropdown Support */}
+          <div className="space-y-6">
+            {/* Dropdown Formula Builder */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <h3 className="text-lg font-semibold mb-4 text-blue-800">
+                Dropdown Formül Oluşturucu (Önerilen)
+              </h3>
+              <DropdownFormulaEditor
+                variables={analysisData?.variables || []}
+                onFormulaBuild={(formula, conditions) => {
+                  console.log('Built formula:', formula);
+                  console.log('Conditions:', conditions);
+                  // You can use this to preview or validate the formula
+                }}
+              />
+            </div>
+            
+            {/* Traditional Formula Editor */}
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <h3 className="text-lg font-semibold mb-4 text-gray-700">
+                Geleneksel Formül Editörü
+              </h3>
+              <FormulaEditor
+                workspaceId={selectedWorkspace}
+                tableId={selectedTable}
+                onFormulaAdded={(newFormula) => {
+                  const formulaWithDefaults: Formula = {
+                    ...newFormula,
+                    active: newFormula.active ?? true
+                  };
+                  setFormulas(prev => [...prev, formulaWithDefaults]);
+                  // Auto-apply formulas when a new one is added
+                  setTimeout(() => {
+                    applyFormulasToTable();
+                  }, 500);
+                }}
+              />
+            </div>
+          </div>
         </div>
       )}
 

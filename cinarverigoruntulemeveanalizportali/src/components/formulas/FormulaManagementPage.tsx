@@ -38,6 +38,22 @@ interface FormulaManagementPageProps {
   workspaceId: string;
 }
 
+interface HighlightedCell {
+  row: string;
+  col: string;
+  color: string;
+  message: string;
+  formulaIds: string[];
+  formulaDetails?: {
+    id: string;
+    name: string;
+    formula: string;
+    leftResult?: number;
+    rightResult?: number;
+    color: string;
+  }[];
+}
+
 // ENHANCED: Improved Formula Editor with better UI
 const EnhancedFormulaEditor = ({ 
   variables, 
@@ -182,6 +198,13 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // NEW: Auto-refresh states
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(30); // seconds
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [highlightedCells, setHighlightedCells] = useState<HighlightedCell[]>([]);
+  const [showHighlightPreview, setShowHighlightPreview] = useState(false);
+
   // Filter states
   const [selectedWorkspace, setSelectedWorkspace] = useState<string>(workspaceId);
   const [selectedTable, setSelectedTable] = useState<string>('');
@@ -221,6 +244,56 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
       fetchVariables();
     }
   }, [selectedWorkspace, selectedTable]);
+
+  // NEW: Auto-refresh effect
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    if (autoRefresh && refreshInterval > 0) {
+      intervalId = setInterval(() => {
+        fetchFormulas();
+        setLastRefresh(new Date());
+        // If we have a selected table, also refresh highlights
+        if (selectedTable) {
+          refreshHighlights();
+        }
+      }, refreshInterval * 1000);
+    }
+    
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [autoRefresh, refreshInterval, selectedTable]);
+
+  // NEW: Function to refresh highlights
+  const refreshHighlights = async () => {
+    if (!selectedWorkspace || !selectedTable) return;
+    
+    try {
+      const activeFormulas = formulas.filter(f => f.active);
+      if (activeFormulas.length === 0) {
+        setHighlightedCells([]);
+        return;
+      }
+
+      // Fetch table data to apply formulas
+      const response = await fetch(`/api/workspaces/${selectedWorkspace}/tables/${selectedTable}`);
+      if (!response.ok) return;
+      
+      const tableData = await response.json();
+      
+      // Use the enhanced formula evaluator
+      const { evaluateFormulasForTable } = await import('@/lib/enhancedFormulaEvaluator');
+      const highlights = evaluateFormulasForTable(activeFormulas, tableData);
+      
+      setHighlightedCells(highlights);
+      console.log(`🔄 Auto-refresh: ${highlights.length} highlighted cells updated`);
+    } catch (error) {
+      console.error('Error refreshing highlights:', error);
+    }
+  };
 
   const fetchWorkspaces = async () => {
     try {
@@ -466,13 +539,59 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
           <FcRules className="mr-3 h-8 w-8" />
           Gelişmiş Formül Yönetimi
         </h1>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"
-        >
-          <FcPlus className="mr-2" />
-          Yeni Formül Oluştur
-        </button>
+        <div className="flex items-center space-x-4">
+          {/* Auto-refresh controls */}
+          <div className="flex items-center space-x-2 bg-gray-50 rounded-lg p-2">
+            <label className="flex items-center space-x-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600"
+              />
+              <span>Otomatik Yenile</span>
+            </label>
+            {autoRefresh && (
+              <select
+                value={refreshInterval}
+                onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                className="text-xs border-gray-300 rounded"
+              >
+                <option value={10}>10s</option>
+                <option value={30}>30s</option>
+                <option value={60}>1m</option>
+                <option value={300}>5m</option>
+              </select>
+            )}
+            {lastRefresh && (
+              <span className="text-xs text-gray-500">
+                Son: {lastRefresh.toLocaleTimeString('tr-TR')}
+              </span>
+            )}
+          </div>
+          
+          {/* Highlight preview toggle */}
+          {highlightedCells.length > 0 && (
+            <button
+              onClick={() => setShowHighlightPreview(!showHighlightPreview)}
+              className={`px-3 py-2 text-sm rounded-md transition-colors ${
+                showHighlightPreview 
+                  ? 'bg-blue-600 text-white' 
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              🍕 Pizza Görünümü ({highlightedCells.length})
+            </button>
+          )}
+          
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"
+          >
+            <FcPlus className="mr-2" />
+            Yeni Formül Oluştur
+          </button>
+        </div>
       </div>
 
       {/* Success/Error Messages */}
@@ -588,6 +707,95 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
           </div>
         </div>
       </div>
+
+      {/* Pizza Chart Preview */}
+      {showHighlightPreview && highlightedCells.length > 0 && (
+        <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg shadow-md p-6 mb-6 border border-blue-200">
+          <h2 className="text-lg font-semibold mb-4 flex items-center text-gray-700">
+            🍕 Pizza Görselleştirme Önizlemesi
+            <span className="ml-2 text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+              {highlightedCells.length} hücre vurgulandı
+            </span>
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {highlightedCells.slice(0, 12).map((cell) => (
+              <div
+                key={`${cell.row}-${cell.col}`}
+                className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-600">
+                    {cell.col} - {cell.row}
+                  </span>
+                  <div className="flex space-x-1">
+                    {cell.formulaDetails && cell.formulaDetails.map((detail, idx) => (
+                      <div
+                        key={`${detail.id}-${idx}`}
+                        className="w-4 h-4 rounded-full border border-gray-300"
+                        style={{ backgroundColor: detail.color }}
+                        title={detail.name}
+                      />
+                    ))}
+                  </div>
+                </div>
+                
+                <div className="space-y-1">
+                  {cell.formulaDetails?.map((detail, idx) => (
+                    <div key={`detail-${idx}`} className="text-xs">
+                      <div className="flex items-center space-x-2">
+                        <div
+                          className="w-2 h-2 rounded-full"
+                          style={{ backgroundColor: detail.color }}
+                        />
+                        <span className="font-medium text-gray-700">{detail.name}</span>
+                      </div>
+                      {detail.leftResult !== undefined && detail.rightResult !== undefined && (
+                        <div className="ml-4 text-gray-500">
+                          {detail.leftResult.toFixed(2)} vs {detail.rightResult.toFixed(2)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                
+                {/* Mini pizza slice visualization */}
+                {cell.formulaDetails && cell.formulaDetails.length > 1 && (
+                  <div className="mt-3 flex justify-center">
+                    <div
+                      className="w-8 h-8 rounded-full border-2 border-gray-300"
+                      style={{
+                        background: `conic-gradient(from 0deg, ${
+                          cell.formulaDetails.map((detail, idx) => {
+                            const angle = (360 / cell.formulaDetails!.length);
+                            const start = idx * angle;
+                            const end = (idx + 1) * angle;
+                            return `${detail.color} ${start}deg ${end}deg`;
+                          }).join(', ')
+                        })`
+                      }}
+                      title="Pizza dilimi görünümü"
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          
+          {highlightedCells.length > 12 && (
+            <div className="mt-4 text-center">
+              <span className="text-sm text-gray-500">
+                ve {highlightedCells.length - 12} daha...
+              </span>
+            </div>
+          )}
+          
+          <div className="mt-4 text-xs text-gray-600 bg-white p-3 rounded border-l-4 border-blue-400">
+            <strong>💡 İpucu:</strong> Tabloda birden fazla formül koşulunu karşılayan hücreler 
+            pizza dilimi şeklinde renklendirilir. Her dilim farklı bir formülü temsil eder.
+          </div>
+        </div>
+      )}
 
       {/* Formulas Table */}
       <div className="bg-white rounded-lg shadow-md overflow-hidden">

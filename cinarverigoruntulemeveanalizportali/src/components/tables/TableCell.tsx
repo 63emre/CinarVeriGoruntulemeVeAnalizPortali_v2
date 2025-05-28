@@ -171,9 +171,12 @@ export default function TableCell({
   const handleMouseEnter = (e: React.MouseEvent) => {
     if (cellHighlights.length > 0) {
       const rect = e.currentTarget.getBoundingClientRect();
+      const scrollY = window.scrollY || document.documentElement.scrollTop;
+      const scrollX = window.scrollX || document.documentElement.scrollLeft;
+      
       setTooltipPosition({
-        x: rect.left + rect.width / 2,
-        y: rect.top - 10
+        x: rect.left + scrollX + rect.width / 2,
+        y: rect.top + scrollY - 10
       });
       setShowTooltip(true);
     }
@@ -183,7 +186,7 @@ export default function TableCell({
     setShowTooltip(false);
   };
 
-  // Get tooltip content
+  // Get tooltip content with enhanced pizza chart info
   const getTooltipContent = () => {
     if (cellHighlights.length === 0) return null;
 
@@ -195,23 +198,57 @@ export default function TableCell({
              transform: 'translate(-50%, -100%)',
              position: 'fixed'
            }}>
-        {/* Header */}
-        <div className="font-bold mb-2 text-blue-300 border-b border-gray-700 pb-2">
-          {cellHighlights.length === 1 ? 'Aktif Formül:' : `${cellHighlights.length} Aktif Formül:`}
+        {/* Enhanced Header with Pizza Slice Indicator */}
+        <div className="flex items-center justify-between font-bold mb-2 text-blue-300 border-b border-gray-700 pb-2">
+          <span>
+            {cellHighlights.length === 1 ? 'Aktif Formül:' : `${cellHighlights.length} Aktif Formül:`}
+          </span>
+          {cellHighlights.length > 1 && (
+            <div className="flex items-center space-x-2">
+              <span className="text-xs text-yellow-300">🍕 Pizza Dilimi</span>
+              <div
+                className="w-6 h-6 rounded-full border border-gray-400"
+                style={{
+                  background: cellHighlights.length > 1 ? 
+                    `conic-gradient(from 0deg, ${
+                      cellHighlights.map((h, idx) => {
+                        const color = h.formulaDetails?.[0]?.color || h.color;
+                        const angle = 360 / cellHighlights.length;
+                        const start = idx * angle;
+                        const end = (idx + 1) * angle;
+                        return `${color} ${start}deg ${end}deg`;
+                      }).join(', ')
+                    })` : cellHighlights[0].color
+                }}
+                title="Pizza dilimi görünümü"
+              />
+            </div>
+          )}
         </div>
         
-        {/* Formula list */}
+        {/* Formula list with enhanced pizza slice visualization */}
         <div className="space-y-3">
           {cellHighlights.map((highlight, idx) => {
             const formulaDetail = highlight.formulaDetails?.[0];
+            const sliceAngle = cellHighlights.length > 1 ? 360 / cellHighlights.length : 360;
+            const startAngle = idx * sliceAngle;
+            const endAngle = (idx + 1) * sliceAngle;
+            
             return (
               <div key={`formula-${idx}`} className="border-l-4 pl-3 py-1" 
-                   style={{ borderColor: highlight.color }}>
-                {/* Formula name and color indicator */}
-                <div className="flex items-center mb-1">
-                  <div className="w-3 h-3 rounded-full mr-2 border border-gray-400" 
-                       style={{ backgroundColor: highlight.color }}></div>
-                  <span className="font-semibold text-yellow-300">{highlight.message}</span>
+                   style={{ borderColor: formulaDetail?.color || highlight.color }}>
+                {/* Formula name with slice info */}
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 rounded-full mr-2 border border-gray-400" 
+                         style={{ backgroundColor: formulaDetail?.color || highlight.color }}></div>
+                    <span className="font-semibold text-yellow-300">{highlight.message}</span>
+                  </div>
+                  {cellHighlights.length > 1 && (
+                    <span className="text-xs text-gray-400">
+                      Dilim {idx + 1} ({startAngle.toFixed(0)}°-{endAngle.toFixed(0)}°)
+                    </span>
+                  )}
                 </div>
                 
                 {/* Formula details if available */}
@@ -241,13 +278,15 @@ export default function TableCell({
           })}
         </div>
         
-        {/* Cell info */}
+        {/* Enhanced cell info with pizza slice explanation */}
         <div className="mt-3 pt-2 border-t border-gray-700 text-xs text-gray-400">
           <div>Hücre: {colId} - {rowId}</div>
           <div>Değer: {formatCellValue(value)}</div>
           {cellHighlights.length > 1 && (
-            <div className="text-yellow-400 mt-1">
-              ⚠️ Bu hücre birden fazla formül koşulunu karşılıyor
+            <div className="text-yellow-400 mt-1 p-2 bg-gray-800 rounded">
+              🍕 <strong>Pizza Dilimi Açıklaması:</strong><br/>
+              Bu hücre {cellHighlights.length} farklı formül koşulunu karşılıyor. 
+              Her renk dilimi farklı bir formülü temsil eder.
             </div>
           )}
         </div>

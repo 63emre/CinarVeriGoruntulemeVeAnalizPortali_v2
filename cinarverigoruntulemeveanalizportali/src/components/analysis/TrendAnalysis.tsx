@@ -272,19 +272,25 @@ export default function TrendAnalysis({
       
       // Helper function for Turkish characters
       const handleTurkishText = (text: string): string => {
-        return text
-          .replace(/ğ/g, 'g')
-          .replace(/Ğ/g, 'G')
-          .replace(/ü/g, 'u')
-          .replace(/Ü/g, 'U')
-          .replace(/ş/g, 's')
-          .replace(/Ş/g, 'S')
-          .replace(/ı/g, 'i')
-          .replace(/İ/g, 'I')
-          .replace(/ö/g, 'o')
-          .replace(/Ö/g, 'O')
-          .replace(/ç/g, 'c')
-          .replace(/Ç/g, 'C');
+        try {
+          // Ensure the text is properly encoded as UTF-8
+          const utf8Text = decodeURIComponent(encodeURIComponent(text));
+          
+          // Only replace problematic characters that cause PDF issues
+          return utf8Text
+            .replace(/[""]/g, '"')
+            .replace(/['']/g, "'")
+            .replace(/[–—]/g, '-')
+            .replace(/…/g, '...')
+            .replace(/[\u2212]/g, '-') // Unicode minus sign
+            .replace(/[\u2013\u2014]/g, '-') // En dash, Em dash
+            .replace(/[\u201C\u201D]/g, '"') // Smart quotes
+            .replace(/[\u2018\u2019]/g, "'") // Smart apostrophes
+            .replace(/[\u00A0]/g, ' '); // Non-breaking space
+        } catch (error) {
+          console.warn('Text encoding failed, using original:', error);
+          return text;
+        }
       };
       
       pdf.setFontSize(16);

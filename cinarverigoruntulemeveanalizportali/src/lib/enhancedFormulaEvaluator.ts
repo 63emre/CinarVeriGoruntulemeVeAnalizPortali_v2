@@ -52,10 +52,12 @@ interface HighlightedCell {
 /**
  * ENHANCED: Parse a complex formula into individual conditions
  * Now supports both variable-to-constant and variable-to-variable comparisons
+ * FIXED: Better support for complex expressions on both sides
  * Examples:
  * - "İletkenlik > 312" (variable to constant)
  * - "(İletkenlik + Toplam Fosfor) > (Orto Fosfat - Alkalinite Tayini)" (expression to expression)
  * - "Variable < 0.001 OR Variable > 1000" (multiple conditions)
+ * - "İletkenlik + 50 > Orto Fosfat * 2" (mixed variables and constants)
  */
 export function parseComplexFormula(formula: string): FormulaCondition[] {
   // Clean the formula first
@@ -72,7 +74,7 @@ export function parseComplexFormula(formula: string): FormulaCondition[] {
     const conditionStr = parts[i].trim();
     const logicalOp = i + 1 < parts.length ? parts[i + 1].toUpperCase() as 'AND' | 'OR' : undefined;
     
-    // Enhanced parsing to handle complex expressions with parentheses
+    // ENHANCED: Better parsing to handle complex expressions with parentheses and mixed operands
     // Match patterns like: (expr) op (expr) or expr op expr or expr op constant
     const comparisonMatch = conditionStr.match(/(.+?)\s*([><=!]+)\s*(.+)/);
     if (comparisonMatch) {
@@ -83,18 +85,36 @@ export function parseComplexFormula(formula: string): FormulaCondition[] {
       right = right.trim();
       operator = operator.trim();
       
-      // Handle parentheses - if they exist, keep them; if not, add them for consistency
-      if (!left.startsWith('(') && (left.includes('+') || left.includes('-') || left.includes('*') || left.includes('/'))) {
+      // FIXED: Better handling of parentheses and complex expressions
+      // If expression contains arithmetic operators but no parentheses, add them for clarity
+      const hasArithmetic = (expr: string) => /[+\-*/]/.test(expr) && !expr.match(/^\d+(\.\d+)?$/);
+      
+      if (!left.startsWith('(') && hasArithmetic(left)) {
         left = `(${left})`;
       }
-      if (!right.startsWith('(') && (right.includes('+') || right.includes('-') || right.includes('*') || right.includes('/'))) {
+      if (!right.startsWith('(') && hasArithmetic(right)) {
         right = `(${right})`;
       }
       
+      // FIXED: Handle mixed variable and constant expressions
+      // Examples: "İletkenlik + 50", "Orto Fosfat * 2", "300"
+      const processExpression = (expr: string): string => {
+        // Remove outer parentheses if they exist
+        const cleaned = expr.replace(/^\(|\)$/g, '').trim();
+        
+        // If it's just a number, return as is
+        if (/^\d+(\.\d+)?$/.test(cleaned)) {
+          return cleaned;
+        }
+        
+        // If it contains arithmetic, ensure proper spacing
+        return cleaned.replace(/([+\-*/])/g, ' $1 ').replace(/\s+/g, ' ').trim();
+      };
+      
       conditions.push({
-        leftExpression: left,
+        leftExpression: processExpression(left),
         operator: operator,
-        rightExpression: right,
+        rightExpression: processExpression(right),
         logicalOperator: logicalOp
       });
     }
@@ -401,6 +421,7 @@ function cleanAndParseValue(value: string | number | null): number | null {
 /**
  * FIXED: Main function to evaluate formulas for table highlighting
  * Now properly highlights cells only when formula conditions are TRUE
+ * FIXED: Row locking issue - now uses proper row identification
  */
 export function evaluateFormulasForTable(
   formulas: Formula[],
@@ -429,6 +450,18 @@ export function evaluateFormulasForTable(
   const standardColumns = ['id', 'Variable', 'Data Source', 'Method', 'Unit', 'LOQ'];
   const dateColumns = columns.filter(col => !standardColumns.includes(col));
   
+  // FIXED: Create a mapping of variable names to their row indices for proper row identification
+  const variableToRowMap = new Map<string, number>();
+  data.forEach((row, rowIndex) => {
+    const rawVarName = row[variableColumnIndex] as string;
+    if (rawVarName) {
+      const cleanVarName = rawVarName.replace(/,+$/, '').trim();
+      if (cleanVarName) {
+        variableToRowMap.set(cleanVarName, rowIndex);
+      }
+    }
+  });
+  
   // Process each date column
   dateColumns.forEach((dateCol) => {
     const dateColIndex = columns.indexOf(dateCol);
@@ -437,7 +470,7 @@ export function evaluateFormulasForTable(
     // Create variables map for this date column
     const variables: Record<string, number> = {};
     
-    data.forEach(row => {
+    data.forEach((row) => {
       const rawVarName = row[variableColumnIndex] as string;
       const value = row[dateColIndex];
       
@@ -471,42 +504,45 @@ export function evaluateFormulasForTable(
             variables.hasOwnProperty(varName) && !isNaN(variables[varName])
           );
           
-          // Highlight cells for variables that are part of the TRUE condition
-          data.forEach((row, rowIndex) => {
-            const rawVarName = row[variableColumnIndex] as string;
-            // Clean the variable name by removing trailing commas and trimming whitespace
-            const cleanVarName = rawVarName ? rawVarName.replace(/,+$/, '').trim() : '';
-            
-            if (cleanVarName && existingVariables.includes(cleanVarName)) {
+          // FIXED: Highlight cells for variables that are part of the TRUE condition
+          // Use the variable-to-row mapping to ensure correct row identification
+          existingVariables.forEach(varName => {
+            const rowIndex = variableToRowMap.get(varName);
+            if (rowIndex !== undefined) {
+              // FIXED: Use EditableDataTable compatible row ID format (index + 1)
+              const rowId = String(rowIndex + 1);
+              
               // Check if this cell is already highlighted
               const existingCell = highlightedCells.find(
-                cell => cell.row === `row-${rowIndex}` && cell.col === dateCol
+                cell => cell.row === rowId && cell.col === dateCol
               );
               
               if (existingCell) {
                 // Merge with existing highlight
-                existingCell.formulaIds.push(formula.id);
-                existingCell.message = `${existingCell.message}, ${formula.name}`;
-                
-                // Blend colors if different
-                if (existingCell.color !== formula.color) {
-                  existingCell.color = blendColors([existingCell.color, formula.color]);
-                }
-                
-                // Add formula details
-                if (existingCell.formulaDetails) {
-                  existingCell.formulaDetails.push({
-                    id: formula.id,
-                    name: formula.name,
-                    formula: formula.formula,
-                    leftResult: result.leftResult,
-                    rightResult: result.rightResult
-                  });
+                if (!existingCell.formulaIds.includes(formula.id)) {
+                  existingCell.formulaIds.push(formula.id);
+                  existingCell.message = `${existingCell.message}, ${formula.name}`;
+                  
+                  // Blend colors if different
+                  if (existingCell.color !== formula.color) {
+                    existingCell.color = blendColors([existingCell.color, formula.color]);
+                  }
+                  
+                  // Add formula details
+                  if (existingCell.formulaDetails) {
+                    existingCell.formulaDetails.push({
+                      id: formula.id,
+                      name: formula.name,
+                      formula: formula.formula,
+                      leftResult: result.leftResult,
+                      rightResult: result.rightResult
+                    });
+                  }
                 }
               } else {
                 // Create new highlight
                 highlightedCells.push({
-                  row: `row-${rowIndex}`,
+                  row: rowId,
                   col: dateCol,
                   color: formula.color,
                   message: formula.name,
@@ -532,11 +568,11 @@ export function evaluateFormulasForTable(
           variables.hasOwnProperty(varName) && !isNaN(variables[varName])
         );
         
-        data.forEach((row, rowIndex) => {
-          const varName = row[variableColumnIndex] as string;
-          if (varName && existingVariables.includes(varName)) {
+        existingVariables.forEach(varName => {
+          const rowIndex = variableToRowMap.get(varName);
+          if (rowIndex !== undefined) {
             highlightedCells.push({
-              row: `row-${rowIndex}`,
+              row: String(rowIndex + 1),
               col: dateCol,
               color: '#ff6b6b', // Red color for evaluation errors
               message: `${formula.name} (Değerlendirme Hatası)`,

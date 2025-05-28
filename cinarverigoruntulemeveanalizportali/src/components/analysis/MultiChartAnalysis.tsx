@@ -21,8 +21,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { evaluateFormulasForTable } from '@/lib/enhancedFormulaEvaluator';
 import EditableDataTable from '@/components/tables/EditableDataTable';
-import FormulaEditor from '@/components/formulas/FormulaEditor';
-import DropdownFormulaEditor from '@/components/formulas/DropdownFormulaEditor';
+import FormulaBuilder from '@/components/formulas/FormulaBuilder';
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
@@ -494,36 +493,23 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       // FIXED: Enhanced Turkish text encoding with proper UTF-8 support
       const encodeTurkishText = (text: string): string => {
         try {
-          // First, ensure the text is properly encoded as UTF-8
+          // Ensure the text is properly encoded as UTF-8
           const utf8Text = decodeURIComponent(encodeURIComponent(text));
           
-          // For PDF compatibility, we need to handle special characters
-          // Use a more comprehensive character mapping
+          // Only replace problematic characters that cause PDF issues
           return utf8Text
-            .replace(/ğ/g, 'g').replace(/Ğ/g, 'G')
-            .replace(/ü/g, 'u').replace(/Ü/g, 'U')
-            .replace(/ş/g, 's').replace(/Ş/g, 'S')
-            .replace(/ı/g, 'i').replace(/İ/g, 'I')
-            .replace(/ö/g, 'o').replace(/Ö/g, 'O')
-            .replace(/ç/g, 'c').replace(/Ç/g, 'C')
-            // Handle other special characters
             .replace(/[""]/g, '"')
             .replace(/['']/g, "'")
             .replace(/[–—]/g, '-')
             .replace(/…/g, '...')
-            // Remove any remaining problematic characters
-            .replace(/[^\x00-\x7F]/g, '?');
+            .replace(/[\u2212]/g, '-') // Unicode minus sign
+            .replace(/[\u2013\u2014]/g, '-') // En dash, Em dash
+            .replace(/[\u201C\u201D]/g, '"') // Smart quotes
+            .replace(/[\u2018\u2019]/g, "'") // Smart apostrophes
+            .replace(/[\u00A0]/g, ' '); // Non-breaking space
         } catch (error) {
-          console.warn('Text encoding failed, using fallback:', error);
-          // Fallback: simple character replacement
-          return text
-            .replace(/ğ/g, 'g').replace(/Ğ/g, 'G')
-            .replace(/ü/g, 'u').replace(/Ü/g, 'U')
-            .replace(/ş/g, 's').replace(/Ş/g, 'S')
-            .replace(/ı/g, 'i').replace(/İ/g, 'I')
-            .replace(/ö/g, 'o').replace(/Ö/g, 'O')
-            .replace(/ç/g, 'c').replace(/Ç/g, 'C')
-            .replace(/[^\x00-\x7F]/g, '?');
+          console.warn('Text encoding failed, using original:', error);
+          return text;
         }
       };
       
@@ -1214,37 +1200,48 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
             {/* Dropdown Formula Builder */}
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
               <h3 className="text-lg font-semibold mb-4 text-blue-800">
-                Dropdown Formül Oluşturucu (Önerilen)
+                Formül Oluşturucu
               </h3>
-              <DropdownFormulaEditor
+              <FormulaBuilder
                 variables={analysisData?.variables || []}
-                onFormulaBuild={(formula, conditions) => {
-                  console.log('Built formula:', formula);
-                  console.log('Conditions:', conditions);
-                  // You can use this to preview or validate the formula
+                onSave={async (formula: string, name: string, color: string) => {
+                  try {
+                    // Create formula via API
+                    const response = await fetch(`/api/workspaces/${selectedWorkspace}/formulas`, {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        name,
+                        formula,
+                        color,
+                        type: 'CELL_VALIDATION',
+                        description: `Analiz sayfasından oluşturulan formül: ${formula}`,
+                        active: true
+                      }),
+                    });
+                    
+                    if (response.ok) {
+                      const newFormula = await response.json();
+                      const formulaWithDefaults: Formula = {
+                        ...newFormula,
+                        active: newFormula.active ?? true
+                      };
+                      setFormulas(prev => [...prev, formulaWithDefaults]);
+                      // Auto-apply formulas when a new one is added
+                      setTimeout(() => {
+                        applyFormulasToTable();
+                      }, 500);
+                    }
+                  } catch (error) {
+                    console.error('Error creating formula:', error);
+                  }
                 }}
-              />
-            </div>
-            
-            {/* Traditional Formula Editor */}
-            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-              <h3 className="text-lg font-semibold mb-4 text-gray-700">
-                Geleneksel Formül Editörü
-              </h3>
-              <FormulaEditor
-                workspaceId={selectedWorkspace}
-                tableId={selectedTable}
-                onFormulaAdded={(newFormula) => {
-                  const formulaWithDefaults: Formula = {
-                    ...newFormula,
-                    active: newFormula.active ?? true
-                  };
-                  setFormulas(prev => [...prev, formulaWithDefaults]);
-                  // Auto-apply formulas when a new one is added
-                  setTimeout(() => {
-                    applyFormulasToTable();
-                  }, 500);
+                onCancel={() => {
+                  // Handle cancel if needed
                 }}
+                isVisible={true}
               />
             </div>
           </div>

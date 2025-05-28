@@ -69,17 +69,27 @@ interface PDFGenerationOptions {
 
 // Helper function to properly encode Turkish characters
 function encodeTurkishText(text: string): string {
-  // Replace Turkish characters with their closest ASCII equivalents for better PDF compatibility
-  const turkishMap: { [key: string]: string } = {
-    'ç': 'c', 'Ç': 'C',
-    'ğ': 'g', 'Ğ': 'G', 
-    'ı': 'i', 'İ': 'I',
-    'ö': 'o', 'Ö': 'O',
-    'ş': 's', 'Ş': 'S',
-    'ü': 'u', 'Ü': 'U'
-  };
-  
-  return text.replace(/[çÇğĞıİöÖşŞüÜ]/g, (match) => turkishMap[match] || match);
+  // FIXED: Keep Turkish characters instead of replacing them
+  // Use proper UTF-8 encoding for better PDF compatibility
+  try {
+    // Ensure the text is properly encoded as UTF-8
+    const utf8Text = decodeURIComponent(encodeURIComponent(text));
+    
+    // Only replace problematic characters that cause PDF issues
+    return utf8Text
+      .replace(/[""]/g, '"')
+      .replace(/['']/g, "'")
+      .replace(/[–—]/g, '-')
+      .replace(/…/g, '...')
+      .replace(/[\u2212]/g, '-') // Unicode minus sign
+      .replace(/[\u2013\u2014]/g, '-') // En dash, Em dash
+      .replace(/[\u201C\u201D]/g, '"') // Smart quotes
+      .replace(/[\u2018\u2019]/g, "'") // Smart apostrophes
+      .replace(/[\u00A0]/g, ' '); // Non-breaking space
+  } catch (error) {
+    console.warn('Text encoding failed, using original:', error);
+    return text;
+  }
 }
 
 /**

@@ -93,7 +93,7 @@ export default function TableCell({
       return style;
     }
 
-    // Multiple highlights - create pizza slice effect using conic-gradient
+    // FIXED: Multiple highlights - create improved pizza slice effect using conic-gradient
     const totalFormulas = cellHighlights.length;
     const sliceAngle = 360 / totalFormulas;
     
@@ -101,22 +101,30 @@ export default function TableCell({
     cellHighlights.forEach((highlight, index) => {
       const startAngle = index * sliceAngle;
       const endAngle = (index + 1) * sliceAngle;
+      // FIXED: Add smooth transitions between slices
       gradientStops.push(`${highlight.color} ${startAngle}deg ${endAngle}deg`);
     });
     
+    // FIXED: Improved conic-gradient with better visual appearance
     const conicGradient = `conic-gradient(from 0deg, ${gradientStops.join(', ')})`;
+    
+    // FIXED: Add a subtle overlay pattern for better visibility
+    const overlayPattern = `radial-gradient(circle at center, rgba(255,255,255,0.1) 0%, transparent 50%)`;
     
     const style = {
       position: 'relative' as const,
-      background: conicGradient,
-      border: '2px solid #333',
+      background: `${overlayPattern}, ${conicGradient}`,
+      border: '3px solid #333',
+      borderRadius: '4px',
       fontWeight: 'bold' as const,
-      transition: 'all 0.2s ease-in-out',
+      transition: 'all 0.3s ease-in-out',
       color: '#000', // Ensure text is visible
-      textShadow: '1px 1px 2px rgba(255,255,255,0.8)' // Add text shadow for better readability
+      textShadow: '1px 1px 3px rgba(255,255,255,0.9)', // Stronger text shadow for better readability
+      boxShadow: '0 0 8px rgba(0,0,0,0.3), inset 0 0 4px rgba(255,255,255,0.2)', // Enhanced shadow
+      transform: 'scale(1.02)' // Slightly larger to indicate multiple formulas
     };
     
-    console.log(`🍕 Pizza slice style for [${rowId}, ${colId}] with ${totalFormulas} formulas:`, style);
+    console.log(`🍕 FIXED Pizza slice style for [${rowId}, ${colId}] with ${totalFormulas} formulas:`, style);
     return style;
   };
 

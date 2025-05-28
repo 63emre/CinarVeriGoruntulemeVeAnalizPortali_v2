@@ -53,7 +53,6 @@ export default function TablePage() {
   const [error, setError] = useState<string | null>(null);
   const [activeFormulas, setActiveFormulas] = useState<string[]>([]);
   const [highlightedCells, setHighlightedCells] = useState<HighlightedCell[]>([]);
-  const [selectedVariable, setSelectedVariable] = useState<string | null>(null);
   const [showFormulaSidebar, setShowFormulaSidebar] = useState(false);
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [variables, setVariables] = useState<string[]>([]);
@@ -182,9 +181,8 @@ export default function TablePage() {
 
   // Handle cell selection for variable identification
   const handleCellSelect = (rowId: string, colId: string, value: string | number | null) => {
-    if (colId === 'Variable' && typeof value === 'string') {
-      setSelectedVariable(value);
-    }
+    // Cell selection logic can be added here if needed
+    console.log('Cell selected:', { rowId, colId, value });
   };
 
   // Apply formulas to the table data with enhanced error handling
@@ -194,94 +192,70 @@ export default function TablePage() {
       return;
     }
 
+    if (!table) {
+      setError('Tablo verisi bulunamadı');
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null); // Clear any previous errors
       setHighlightedCells([]); // Clear previous highlights
 
-      const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/apply-formulas`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          formulaIds: activeFormulas,
-          selectedVariable: selectedVariable,
-          formulaType: 'CELL_VALIDATION', // Include formulaType to prevent Zod validation errors
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(`Formül uygulanırken hata oluştu (${response.status}): ${errorData}`);
+      // FIXED: Use client-side formula evaluator like Analysis page
+      const { evaluateFormulasForTable } = await import('@/lib/enhancedFormulaEvaluator');
+      
+      // Get active formulas
+      const activeFormulaObjects = formulas.filter(f => activeFormulas.includes(f.id));
+      
+      if (activeFormulaObjects.length === 0) {
+        setError('Seçili formüller bulunamadı');
+        return;
       }
 
-      const result = await response.json();
-      console.log("Formula application result:", result);
+      // Prepare table data in the format expected by evaluator
+      const tableDataForEvaluator = {
+        columns: table.columns,
+        data: table.data
+      };
 
-      // Update table data if provided
-      if (result.tableData) {
-        // The API now returns tableData in the format we expect
-        const updatedTable = {
-          ...table!,
-          data: result.tableData.map((row: Record<string, string | number | null>) => {
-            return table!.columns.map(col => row[col]);
-          })
-        };
-        setTable(updatedTable);
-      }
+      // Use the same evaluator as Analysis page
+      const highlighted = evaluateFormulasForTable(activeFormulaObjects, tableDataForEvaluator);
+      
+      console.log(`Applied ${activeFormulaObjects.length} formulas, got ${highlighted.length} highlighted cells`);
+      setHighlightedCells(highlighted);
 
-      if (result.highlightedCells && Array.isArray(result.highlightedCells)) {
-        console.log(`Received ${result.highlightedCells.length} highlighted cells:`, result.highlightedCells);
-        setHighlightedCells(result.highlightedCells);
+      // Show success feedback
+      const formulaNames = activeFormulaObjects.map(f => f.name).join(', ');
 
-        // Show success feedback
-        const formulaNames = formulas
-          .filter(f => activeFormulas.includes(f.id))
-          .map(f => f.name)
-          .join(', ');
-
-        if (result.highlightedCells.length > 0) {
-          console.log(`✅ Formüller başarıyla uygulandı ve ${result.highlightedCells.length} hücre vurgulandı: ${formulaNames}`);
-          
-          // Show temporary success message
-          const successMessage = `✅ ${result.highlightedCells.length} hücre ${formulaNames} formül(ler)i ile vurgulandı. Tabloda renkli hücreler formül kriterlerini karşılayan değerleri gösteriyor.`;
-          setError(successMessage);
-          
-          // Clear message after 5 seconds
-          setTimeout(() => {
-            if (error === successMessage) {
-              setError(null);
-            }
-          }, 5000);
-        } else {
-          console.log(`✅ Formüller başarıyla uygulandı ancak hiçbir hücre koşulları karşılamadı: ${formulaNames}`);
-          
-          // Show info message for no matches
-          const infoMessage = `ℹ️ ${formulaNames} formül(ler)i uygulandı ancak hiçbir hücre belirtilen kriterleri karşılamadı. Bu normal bir durumdur.`;
-          setError(infoMessage);
-          
-          // Clear message after 4 seconds
-          setTimeout(() => {
-            if (error === infoMessage) {
-              setError(null);
-            }
-          }, 4000);
-        }
-      } else {
-        console.log("No highlighted cells received - all validations passed");
-        setHighlightedCells([]);
+      if (highlighted.length > 0) {
+        console.log(`✅ Formüller başarıyla uygulandı ve ${highlighted.length} hücre vurgulandı: ${formulaNames}`);
         
-        // Show message for no highlighting data
-        const infoMessage = "ℹ️ Formüller uygulandı ancak vurgulama verisi alınamadı. API yanıtını kontrol edin.";
+        // Show temporary success message
+        const successMessage = `✅ ${highlighted.length} hücre ${formulaNames} formül(ler)i ile vurgulandı. Tabloda renkli hücreler formül kriterlerini karşılayan değerleri gösteriyor.`;
+        setError(successMessage);
+        
+        // Clear message after 5 seconds
+        setTimeout(() => {
+          if (error === successMessage) {
+            setError(null);
+          }
+        }, 5000);
+      } else {
+        console.log(`✅ Formüller başarıyla uygulandı ancak hiçbir hücre koşulları karşılamadı: ${formulaNames}`);
+        
+        // Show info message for no matches
+        const infoMessage = `ℹ️ ${formulaNames} formül(ler)i uygulandı ancak hiçbir hücre belirtilen kriterleri karşılamadı. Bu normal bir durumdur.`;
         setError(infoMessage);
         
+        // Clear message after 4 seconds
         setTimeout(() => {
           if (error === infoMessage) {
             setError(null);
           }
         }, 4000);
       }
+
     } catch (err) {
       setError((err as Error).message);
       console.error('Error applying formulas:', err);
@@ -586,7 +560,7 @@ export default function TablePage() {
                     <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h4 className="font-medium text-green-800 mb-1">Hızlı Formül Oluştur</h4>
+                          <h4 className="font-medium text-green-800 mb-1">Formül Oluştur</h4>
                           <p className="text-sm text-green-600">
                             {variables.length} değişken mevcut. Yeni formül oluşturmak için tıklayın.
                           </p>
@@ -706,7 +680,7 @@ export default function TablePage() {
                   {formulas.length > 0 && (
                     <div className="border-t pt-4">
                       <h4 className="font-medium text-gray-700 mb-3">
-                        📋 Tabloya Formül Uygula
+                        �� Tabloya Formül Uygula
                       </h4>
                       <FormulaSelector
                         workspaceId={workspaceId}

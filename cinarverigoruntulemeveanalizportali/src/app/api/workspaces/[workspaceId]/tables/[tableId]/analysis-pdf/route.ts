@@ -98,12 +98,15 @@ export async function POST(
       if (!text) return '';
       
       try {
-        // First, ensure the text is properly encoded
-        const cleanText = text.toString();
+        // Ensure the text is properly encoded as UTF-8
+        const utf8Text = decodeURIComponent(encodeURIComponent(text.toString()));
         
-        // For better PDF compatibility, we'll keep Turkish characters
-        // but ensure they're properly encoded
-        return cleanText
+        // Only replace problematic characters that cause PDF issues
+        return utf8Text
+          .replace(/[""]/g, '"')
+          .replace(/['']/g, "'")
+          .replace(/[–—]/g, '-')
+          .replace(/…/g, '...')
           .replace(/[\u2212]/g, '-') // Unicode minus sign
           .replace(/[\u2013\u2014]/g, '-') // En dash, Em dash
           .replace(/[\u201C\u201D]/g, '"') // Smart quotes
@@ -111,15 +114,7 @@ export async function POST(
           .replace(/[\u00A0]/g, ' '); // Non-breaking space
       } catch (error) {
         console.warn('Text encoding issue:', error);
-        // Fallback: replace problematic characters
-        return text
-          .replace(/[ğĞ]/g, 'g')
-          .replace(/[üÜ]/g, 'u')
-          .replace(/[şŞ]/g, 's')
-          .replace(/[ıİ]/g, 'i')
-          .replace(/[öÖ]/g, 'o')
-          .replace(/[çÇ]/g, 'c')
-          .replace(/[^\x00-\x7F]/g, '?');
+        return text;
       }
     };
 

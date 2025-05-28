@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FcRules, FcPlus, FcSettings, FcApproval, FcHighPriority, FcSearch } from 'react-icons/fc';
 import { FiEdit, FiEye, FiTrash2, FiSave, FiX, FiFilter } from 'react-icons/fi';
-import EnhancedFormulaEditor from './EnhancedFormulaEditor';
 
 interface Formula {
   id: string;
@@ -38,6 +37,140 @@ interface Variable {
 interface FormulaManagementPageProps {
   workspaceId: string;
 }
+
+// ENHANCED: Improved Formula Editor with better UI
+const EnhancedFormulaEditor = ({ 
+  variables, 
+  onFormulaChange, 
+  initialFormula,
+  readOnly = false
+}: {
+  variables: Variable[];
+  onFormulaChange?: (formula: string, valid: boolean) => void;
+  initialFormula?: string;
+  readOnly?: boolean;
+}) => {
+  const [formula, setFormula] = useState(initialFormula || '');
+  const [isValid, setIsValid] = useState(true);
+  const [validationMessage, setValidationMessage] = useState('');
+
+  const validateFormula = (formulaText: string) => {
+    if (!formulaText.trim()) {
+      setIsValid(false);
+      setValidationMessage('Formül boş olamaz');
+      return false;
+    }
+
+    // Basic validation for formula structure
+    const hasComparison = /[><=!]+/.test(formulaText);
+    if (!hasComparison) {
+      setIsValid(false);
+      setValidationMessage('Formül bir karşılaştırma operatörü içermelidir (>, <, >=, <=, ==)');
+      return false;
+    }
+
+    setIsValid(true);
+    setValidationMessage('');
+    return true;
+  };
+
+  const handleFormulaChange = (value: string) => {
+    setFormula(value);
+    const valid = validateFormula(value);
+    if (onFormulaChange) {
+      onFormulaChange(value, valid);
+    }
+  };
+
+  const insertVariable = (varName: string) => {
+    if (readOnly) return;
+    const newFormula = formula + `[${varName}]`;
+    handleFormulaChange(newFormula);
+  };
+
+  const insertOperator = (operator: string) => {
+    if (readOnly) return;
+    const newFormula = formula + ` ${operator} `;
+    handleFormulaChange(newFormula);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* ENHANCED: Formula Input with better styling */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Formül İfadesi
+        </label>
+        <textarea
+          className={`w-full p-3 border-2 rounded-lg font-mono text-sm transition-colors ${
+            isValid 
+              ? 'border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200' 
+              : 'border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-200'
+          }`}
+          placeholder="Örn: [İletkenlik] + [Toplam Fosfor] > [Orto Fosfat] - [Alkalinite Tayini]"
+          value={formula}
+          onChange={(e) => handleFormulaChange(e.target.value)}
+          readOnly={readOnly}
+          rows={3}
+        />
+        {!isValid && validationMessage && (
+          <p className="text-red-600 text-xs mt-1">{validationMessage}</p>
+        )}
+      </div>
+
+      {!readOnly && (
+        <>
+          {/* ENHANCED: Variable Selector */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Değişken Ekle
+            </label>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
+              {variables.map(variable => (
+                <button
+                  key={variable.name}
+                  onClick={() => insertVariable(variable.name)}
+                  className="text-left p-2 text-xs bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded transition-colors"
+                  title={`${variable.name} ekle`}
+                >
+                  {variable.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ENHANCED: Operator Buttons */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Operatör Ekle
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {['+', '-', '*', '/', '>', '<', '>=', '<=', '==', '!=', 'AND', 'OR'].map(op => (
+                <button
+                  key={op}
+                  onClick={() => insertOperator(op)}
+                  className="px-3 py-1 bg-gray-100 hover:bg-gray-200 border border-gray-300 rounded text-sm font-mono transition-colors"
+                >
+                  {op}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ENHANCED: Formula Examples */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+            <h4 className="text-sm font-semibold text-blue-800 mb-2">💡 Örnek Formüller:</h4>
+            <div className="space-y-1 text-xs text-blue-700">
+              <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] &gt; 300</div>
+              <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] + [Toplam Fosfor] &gt; [Orto Fosfat]</div>
+              <div className="font-mono bg-blue-100 p-1 rounded">[pH] &gt;= 7 AND [pH] &lt;= 8.5</div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 export default function FormulaManagementPage({ workspaceId }: FormulaManagementPageProps) {
   // State management
@@ -619,7 +752,7 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
                   </label>
                   <select
                     value={formulaType}
-                    onChange={(e) => setFormulaType(e.target.value as any)}
+                    onChange={(e) => setFormulaType(e.target.value as 'CELL_VALIDATION' | 'RELATIONAL')}
                     className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
                   >
                     <option value="CELL_VALIDATION">Hücre Doğrulama</option>
@@ -741,7 +874,7 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
                   </label>
                   <select
                     value={formulaType}
-                    onChange={(e) => setFormulaType(e.target.value as any)}
+                    onChange={(e) => setFormulaType(e.target.value as 'CELL_VALIDATION' | 'RELATIONAL')}
                     className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
                   >
                     <option value="CELL_VALIDATION">Hücre Doğrulama</option>

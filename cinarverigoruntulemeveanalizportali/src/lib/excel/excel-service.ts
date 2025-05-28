@@ -338,7 +338,7 @@ export async function saveExcelData(
         }
         
         // Use fileName-sheetName format for the table name displayed to users
-        let fileNameToUse = sheet.fileName ? `${sheet.fileName} - ${uniqueSheetName}` : uniqueSheetName;
+        const fileNameToUse = sheet.fileName ? `${sheet.fileName} - ${uniqueSheetName}` : uniqueSheetName;
         
         // Update the batch map for future sheets in this import
         batchSheetNames.set(baseSheetName, batchCount + 1);

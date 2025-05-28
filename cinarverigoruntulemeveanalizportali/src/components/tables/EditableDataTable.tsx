@@ -125,6 +125,12 @@ export default function EditableDataTable({
               return rowData;
             });
             
+            console.log('🔍 ROW ID DEBUG:', {
+              totalRows: rowsWithIds.length,
+              sampleRowIds: rowsWithIds.slice(0, 5).map(row => row.id),
+              highlightedRowIds: highlightedCells.map(cell => cell.row).slice(0, 10)
+            });
+            
             setColumns(columnDefs);
             setData(rowsWithIds);
             setOriginalData(JSON.parse(JSON.stringify(rowsWithIds)));

@@ -46,6 +46,7 @@ interface HighlightedCell {
     formula: string;
     leftResult?: number;
     rightResult?: number;
+    color: string;
   }[];
 }
 
@@ -509,8 +510,8 @@ export function evaluateFormulasForTable(
           existingVariables.forEach(varName => {
             const rowIndex = variableToRowMap.get(varName);
             if (rowIndex !== undefined) {
-              // FIXED: Use EditableDataTable compatible row ID format (index + 1)
-              const rowId = String(rowIndex + 1);
+              // FIXED: Use proper row ID format to match TablePage expectations
+              const rowId = `row-${rowIndex + 1}`;
               
               // Check if this cell is already highlighted
               const existingCell = highlightedCells.find(
@@ -518,26 +519,30 @@ export function evaluateFormulasForTable(
               );
               
               if (existingCell) {
-                // Merge with existing highlight
+                // Merge with existing highlight - ENHANCED for pizza slice effect
                 if (!existingCell.formulaIds.includes(formula.id)) {
                   existingCell.formulaIds.push(formula.id);
                   existingCell.message = `${existingCell.message}, ${formula.name}`;
                   
-                  // Blend colors if different
-                  if (existingCell.color !== formula.color) {
-                    existingCell.color = blendColors([existingCell.color, formula.color]);
-                  }
+                  // PIZZA SLICE: Don't blend colors, keep them separate for gradient
+                  // existingCell.color remains the first formula's color for backward compatibility
                   
-                  // Add formula details
+                  // Add formula details for pizza slice rendering
                   if (existingCell.formulaDetails) {
                     existingCell.formulaDetails.push({
                       id: formula.id,
                       name: formula.name,
                       formula: formula.formula,
                       leftResult: result.leftResult,
-                      rightResult: result.rightResult
+                      rightResult: result.rightResult,
+                      color: formula.color // IMPORTANT: Keep individual formula colors
                     });
                   }
+                  
+                  console.log(`🍕 PIZZA SLICE SETUP: Cell [${rowId}, ${dateCol}] now has ${existingCell.formulaIds.length} formulas:`, {
+                    formulaNames: existingCell.formulaDetails?.map(d => d.name),
+                    formulaColors: existingCell.formulaDetails?.map(d => d.color)
+                  });
                 }
               } else {
                 // Create new highlight
@@ -552,9 +557,12 @@ export function evaluateFormulasForTable(
                     name: formula.name,
                     formula: formula.formula,
                     leftResult: result.leftResult,
-                    rightResult: result.rightResult
+                    rightResult: result.rightResult,
+                    color: formula.color // IMPORTANT: Store individual formula color
                   }]
                 });
+                
+                console.log(`🎨 NEW HIGHLIGHT: Cell [${rowId}, ${dateCol}] created for formula: ${formula.name}`);
               }
             }
           });
@@ -572,7 +580,7 @@ export function evaluateFormulasForTable(
           const rowIndex = variableToRowMap.get(varName);
           if (rowIndex !== undefined) {
             highlightedCells.push({
-              row: String(rowIndex + 1),
+              row: `row-${rowIndex + 1}`,
               col: dateCol,
               color: '#ff6b6b', // Red color for evaluation errors
               message: `${formula.name} (Değerlendirme Hatası)`,
@@ -580,7 +588,8 @@ export function evaluateFormulasForTable(
               formulaDetails: [{
                 id: formula.id,
                 name: formula.name,
-                formula: formula.formula
+                formula: formula.formula,
+                color: '#ff6b6b' // Add required color property
               }]
             });
           }
@@ -590,35 +599,6 @@ export function evaluateFormulasForTable(
   });
   
   return highlightedCells;
-}
-
-/**
- * Blend multiple colors for cells with multiple formula matches
- */
-function blendColors(colors: string[]): string {
-  if (colors.length === 1) return colors[0];
-  
-  const rgbColors = colors.map(color => hexToRgb(color));
-  
-  const avgR = Math.round(rgbColors.reduce((sum, color) => sum + color.r, 0) / rgbColors.length);
-  const avgG = Math.round(rgbColors.reduce((sum, color) => sum + color.g, 0) / rgbColors.length);
-  const avgB = Math.round(rgbColors.reduce((sum, color) => sum + color.b, 0) / rgbColors.length);
-  
-  return `#${avgR.toString(16).padStart(2, '0')}${avgG.toString(16).padStart(2, '0')}${avgB.toString(16).padStart(2, '0')}`;
-}
-
-/**
- * Convert hex color to RGB
- */
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
-  const cleaned = hex.replace('#', '');
-  const bigint = parseInt(cleaned, 16);
-  
-  return {
-    r: (bigint >> 16) & 255,
-    g: (bigint >> 8) & 255,
-    b: bigint & 255
-  };
 }
 
 /**

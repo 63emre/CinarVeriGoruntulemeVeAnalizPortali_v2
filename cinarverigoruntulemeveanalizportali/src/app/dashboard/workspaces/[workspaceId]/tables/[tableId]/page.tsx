@@ -202,63 +202,82 @@ export default function TablePage() {
       setError(null); // Clear any previous errors
       setHighlightedCells([]); // Clear previous highlights
 
-      // FIXED: Use client-side formula evaluator like Analysis page
+      // FIXED: Use the SAME logic as MultiChartAnalysis (Analysis page)
       const { evaluateFormulasForTable } = await import('@/lib/enhancedFormulaEvaluator');
       
-      // Get active formulas
-      const activeFormulaObjects = formulas.filter(f => activeFormulas.includes(f.id));
+      // Get active formulas - only the ones that are actually active
+      const activeFormulaObjects = formulas.filter(f => 
+        activeFormulas.includes(f.id) && f.active === true
+      );
       
       if (activeFormulaObjects.length === 0) {
-        setError('Seçili formüller bulunamadı');
+        setError('Seçili aktif formüller bulunamadı');
         return;
       }
 
-      // Prepare table data in the format expected by evaluator
+      console.log('🔧 APPLYING FORMULAS:', {
+        activeFormulaCount: activeFormulaObjects.length,
+        formulaNames: activeFormulaObjects.map(f => f.name),
+        tableDataStructure: {
+          columns: table.columns.length,
+          rows: table.data.length
+        }
+      });
+
+      // FIXED: Use EXACT same data structure as Analysis page
       const tableDataForEvaluator = {
         columns: table.columns,
-        data: table.data
+        data: table.data,
+        name: table.name
       };
 
-      // Use the same evaluator as Analysis page
+      // FIXED: Use the SAME evaluator as Analysis page - this is the key fix!
       const highlighted = evaluateFormulasForTable(activeFormulaObjects, tableDataForEvaluator);
       
-      console.log(`Applied ${activeFormulaObjects.length} formulas, got ${highlighted.length} highlighted cells`);
+      console.log('🎯 FORMULA EVALUATION RESULT:', {
+        inputFormulas: activeFormulaObjects.length,
+        outputHighlights: highlighted.length,
+        sampleHighlight: highlighted[0],
+        allRowIds: highlighted.map(h => h.row).slice(0, 10)
+      });
+
+      // Set the highlights - this should now work correctly
       setHighlightedCells(highlighted);
 
-      // Show success feedback
+      // Enhanced feedback with proper success/info messaging
       const formulaNames = activeFormulaObjects.map(f => f.name).join(', ');
 
       if (highlighted.length > 0) {
-        console.log(`✅ Formüller başarıyla uygulandı ve ${highlighted.length} hücre vurgulandı: ${formulaNames}`);
+        console.log(`✅ SUCCESS: ${highlighted.length} cells highlighted for formulas: ${formulaNames}`);
         
-        // Show temporary success message
+        // Show success message with auto-clear
         const successMessage = `✅ ${highlighted.length} hücre ${formulaNames} formül(ler)i ile vurgulandı. Tabloda renkli hücreler formül kriterlerini karşılayan değerleri gösteriyor.`;
         setError(successMessage);
         
-        // Clear message after 5 seconds
+        // Clear success message after 5 seconds
         setTimeout(() => {
-          if (error === successMessage) {
-            setError(null);
-          }
+          setError(null);
         }, 5000);
       } else {
-        console.log(`✅ Formüller başarıyla uygulandı ancak hiçbir hücre koşulları karşılamadı: ${formulaNames}`);
+        console.log(`✅ APPLIED: Formulas applied but no cells match criteria: ${formulaNames}`);
         
         // Show info message for no matches
         const infoMessage = `ℹ️ ${formulaNames} formül(ler)i uygulandı ancak hiçbir hücre belirtilen kriterleri karşılamadı. Bu normal bir durumdur.`;
         setError(infoMessage);
         
-        // Clear message after 4 seconds
+        // Clear info message after 4 seconds
         setTimeout(() => {
-          if (error === infoMessage) {
-            setError(null);
-          }
+          setError(null);
         }, 4000);
       }
 
     } catch (err) {
-      setError((err as Error).message);
-      console.error('Error applying formulas:', err);
+      const errorMessage = (err as Error).message;
+      console.error('❌ FORMULA APPLICATION ERROR:', {
+        error: errorMessage,
+        stack: (err as Error).stack
+      });
+      setError(`Formül uygulama hatası: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -680,7 +699,7 @@ export default function TablePage() {
                   {formulas.length > 0 && (
                     <div className="border-t pt-4">
                       <h4 className="font-medium text-gray-700 mb-3">
-                        �� Tabloya Formül Uygula
+                        Tabloya Formül Uygula
                       </h4>
                       <FormulaSelector
                         workspaceId={workspaceId}

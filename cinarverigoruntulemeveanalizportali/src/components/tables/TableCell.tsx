@@ -6,6 +6,7 @@ interface FormulaDetail {
   formula: string;
   leftResult?: number;
   rightResult?: number;
+  color: string;
 }
 
 interface HighlightedCell {
@@ -93,38 +94,70 @@ export default function TableCell({
       return style;
     }
 
-    // FIXED: Multiple highlights - create improved pizza slice effect using conic-gradient
+    // FIXED: Multiple highlights - create proper pizza slice effect using conic-gradient
     const totalFormulas = cellHighlights.length;
-    const sliceAngle = 360 / totalFormulas;
     
+    // ENHANCED: Get colors from formulaDetails if available, otherwise use highlight.color
+    const formulaColors: string[] = [];
+    
+    cellHighlights.forEach(highlight => {
+      if (highlight.formulaDetails && highlight.formulaDetails.length > 0) {
+        // Use colors from formulaDetails for accurate pizza slices
+        highlight.formulaDetails.forEach(detail => {
+          if (detail.color) {
+            formulaColors.push(detail.color);
+          }
+        });
+      } else {
+        // Fallback to highlight.color
+        formulaColors.push(highlight.color);
+      }
+    });
+    
+    console.log(`🍕 CREATING PIZZA SLICE for [${rowId}, ${colId}]:`, {
+      totalFormulas,
+      totalColors: formulaColors.length,
+      colors: formulaColors,
+      highlights: cellHighlights.map(h => ({
+        message: h.message,
+        color: h.color,
+        formulaDetailsCount: h.formulaDetails?.length || 0
+      }))
+    });
+    
+    // Create conic-gradient pizza slices
+    const sliceAngle = 360 / totalFormulas;
     const gradientStops: string[] = [];
-    cellHighlights.forEach((highlight, index) => {
+    
+    formulaColors.forEach((color, index) => {
       const startAngle = index * sliceAngle;
       const endAngle = (index + 1) * sliceAngle;
-      // FIXED: Add smooth transitions between slices
-      gradientStops.push(`${highlight.color} ${startAngle}deg ${endAngle}deg`);
+      gradientStops.push(`${color} ${startAngle}deg ${endAngle}deg`);
     });
     
     // FIXED: Improved conic-gradient with better visual appearance
     const conicGradient = `conic-gradient(from 0deg, ${gradientStops.join(', ')})`;
     
-    // FIXED: Add a subtle overlay pattern for better visibility
-    const overlayPattern = `radial-gradient(circle at center, rgba(255,255,255,0.1) 0%, transparent 50%)`;
-    
     const style = {
       position: 'relative' as const,
-      background: `${overlayPattern}, ${conicGradient}`,
+      background: conicGradient,
       border: '3px solid #333',
-      borderRadius: '4px',
+      borderRadius: '6px',
       fontWeight: 'bold' as const,
       transition: 'all 0.3s ease-in-out',
-      color: '#000', // Ensure text is visible
-      textShadow: '1px 1px 3px rgba(255,255,255,0.9)', // Stronger text shadow for better readability
-      boxShadow: '0 0 8px rgba(0,0,0,0.3), inset 0 0 4px rgba(255,255,255,0.2)', // Enhanced shadow
-      transform: 'scale(1.02)' // Slightly larger to indicate multiple formulas
+      color: '#000000', // Ensure text is visible
+      textShadow: '2px 2px 4px rgba(255,255,255,0.9)', // Strong text shadow for readability
+      boxShadow: '0 0 12px rgba(0,0,0,0.4), inset 0 0 6px rgba(255,255,255,0.3)', // Enhanced shadow
+      transform: 'scale(1.05)', // Slightly larger to indicate multiple formulas
+      zIndex: 10
     };
     
-    console.log(`🍕 FIXED Pizza slice style for [${rowId}, ${colId}] with ${totalFormulas} formulas:`, style);
+    console.log(`🍕 PIZZA SLICE APPLIED for [${rowId}, ${colId}]:`, {
+      totalFormulas,
+      gradient: conicGradient,
+      finalStyle: style
+    });
+    
     return style;
   };
 

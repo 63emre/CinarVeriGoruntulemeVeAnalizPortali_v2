@@ -834,7 +834,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
             const colIndex = data.column.index;
             
             if (data.section === 'body' && rowIndex < tableData.length && colIndex < columns.length) {
-              const rowId = `row-${rowIndex}`;
+              const rowId = `row-${rowIndex + 1}`;
               const colId = columns[colIndex];
               
               // Check if this cell should be highlighted
@@ -1006,7 +1006,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
     
     const data = analysisData.tableData.data.map((row, rowIndex) => {
       const rowData: { [key: string]: string | number | null, id: string } = { 
-        id: `row-${rowIndex}` 
+        id: `row-${rowIndex + 1}` 
       };
       analysisData.tableData.columns.forEach((col, colIndex) => {
         rowData[col] = row[colIndex];

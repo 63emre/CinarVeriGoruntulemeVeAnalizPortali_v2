@@ -67,29 +67,55 @@ interface PDFGenerationOptions {
   includeDate?: boolean;
 }
 
-// Helper function to properly encode Turkish characters
+/**
+ * Enhanced Turkish text encoding for better PDF compatibility
+ * Handles complex Turkish characters and ensures proper rendering
+ */
 function encodeTurkishText(text: string): string {
-  // FIXED: Keep Turkish characters instead of replacing them
-  // Use proper UTF-8 encoding for better PDF compatibility
-  try {
-    // Ensure the text is properly encoded as UTF-8
-    const utf8Text = decodeURIComponent(encodeURIComponent(text));
-    
-    // Only replace problematic characters that cause PDF issues
-    return utf8Text
-      .replace(/[""]/g, '"')
-      .replace(/['']/g, "'")
-      .replace(/[–—]/g, '-')
-      .replace(/…/g, '...')
-      .replace(/[\u2212]/g, '-') // Unicode minus sign
-      .replace(/[\u2013\u2014]/g, '-') // En dash, Em dash
-      .replace(/[\u201C\u201D]/g, '"') // Smart quotes
-      .replace(/[\u2018\u2019]/g, "'") // Smart apostrophes
-      .replace(/[\u00A0]/g, ' '); // Non-breaking space
-  } catch (error) {
-    console.warn('Text encoding failed, using original:', error);
-    return text;
-  }
+  if (typeof text !== 'string') return '';
+  
+  // Enhanced character mapping for better PDF support
+  const characterMap: { [key: string]: string } = {
+    // Turkish specific characters with better fallbacks
+    'ş': 's', 'Ş': 'S',
+    'ğ': 'g', 'Ğ': 'G', 
+    'ü': 'u', 'Ü': 'U',
+    'ç': 'c', 'Ç': 'C',
+    'ı': 'i', 'İ': 'I',
+    'ö': 'o', 'Ö': 'O',
+    // Additional problematic characters with unique Unicode codes
+    '\u201C': '"', // Left double quotation mark
+    '\u201D': '"', // Right double quotation mark  
+    '\u2018': "'", // Left single quotation mark
+    '\u2019': "'", // Right single quotation mark
+    '\u2013': '-', // En dash
+    '\u2014': '-', // Em dash
+    '\u2026': '..', // Horizontal ellipsis
+    // Remove zero-width characters that can cause rendering issues
+    '\u200B': '', // Zero Width Space
+    '\u200C': '', // Zero Width Non-Joiner
+    '\u200D': '', // Zero Width Joiner
+    '\uFEFF': ''  // Byte Order Mark
+  };
+  
+  let result = text;
+  
+  // Apply character replacements
+  Object.entries(characterMap).forEach(([char, replacement]) => {
+    const regex = new RegExp(char, 'g');
+    result = result.replace(regex, replacement);
+  });
+  
+  // Remove any remaining non-ASCII characters that might cause issues
+  result = result.replace(/[^\x00-\x7F]/g, function(char) {
+    // Try to get a reasonable ASCII approximation
+    return char.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  });
+  
+  // Clean up extra whitespace and ensure proper encoding
+  result = result.trim().replace(/\s+/g, ' ');
+  
+  return result;
 }
 
 /**
@@ -235,7 +261,10 @@ export async function exportTableToPdf(
   const tableData = table.data.map((row: any[], rowIndex: number) => {
     // Store the row ID for highlighting
     rowIds.push(`row-${rowIndex}`);
-    return row.map((cell: any) => cell === null ? '' : String(cell));
+    return row.map((cell: any) => {
+      if (cell === null || cell === undefined) return '';
+      return String(cell);
+    });
   });
   
   // Generate the table
@@ -256,7 +285,10 @@ export async function exportTableToPdf(
     alternateRowStyles: {
       fillColor: [240, 240, 240],
     },
-        // @ts-expect-error - type definition issue with jspdf-autotable    didParseCell: cellHooks.didParseCell,    // @ts-expect-error    willDrawCell: cellHooks.willDrawCell,
+    // @ts-ignore - type definition issue with jspdf-autotable
+    didParseCell: cellHooks.didParseCell,
+    // @ts-ignore - type definition issue with jspdf-autotable
+    willDrawCell: cellHooks.willDrawCell,
   });
   
   // Add explanation of cell highlights if there are any

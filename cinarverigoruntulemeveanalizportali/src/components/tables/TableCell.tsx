@@ -86,7 +86,7 @@ export default function TableCell({
         color: '#000',
         fontWeight: 'bold' as const,
         border: `2px solid ${highlight.color}`,
-        boxShadow: `0 0 4px ${highlight.color}40`,
+        boxShadow: `0 0 8px ${highlight.color}40`,
         position: 'relative' as const,
         transition: 'all 0.2s ease-in-out'
       };
@@ -94,11 +94,12 @@ export default function TableCell({
       return style;
     }
 
-    // FIXED: Multiple highlights - create proper pizza slice effect using conic-gradient
+    // ENHANCED: Multiple highlights - create advanced pizza slice effect using conic-gradient
     const totalFormulas = cellHighlights.length;
     
-    // ENHANCED: Get colors from formulaDetails if available, otherwise use highlight.color
+    // ENHANCED: Get colors from formulaDetails with improved fallback logic
     const formulaColors: string[] = [];
+    const formulaNames: string[] = [];
     
     cellHighlights.forEach(highlight => {
       if (highlight.formulaDetails && highlight.formulaDetails.length > 0) {
@@ -106,18 +107,22 @@ export default function TableCell({
         highlight.formulaDetails.forEach(detail => {
           if (detail.color) {
             formulaColors.push(detail.color);
+            formulaNames.push(detail.name || 'Bilinmeyen Formül');
           }
         });
       } else {
-        // Fallback to highlight.color
-        formulaColors.push(highlight.color);
+        // Enhanced fallback with better color extraction
+        const cleanColor = highlight.color.startsWith('#') ? highlight.color : `#${highlight.color}`;
+        formulaColors.push(cleanColor);
+        formulaNames.push(highlight.message || 'Bilinmeyen Formül');
       }
     });
     
-    console.log(`🍕 CREATING PIZZA SLICE for [${rowId}, ${colId}]:`, {
+    console.log(`🍕 ENHANCED PIZZA SLICE for [${rowId}, ${colId}]:`, {
       totalFormulas,
       totalColors: formulaColors.length,
       colors: formulaColors,
+      names: formulaNames,
       highlights: cellHighlights.map(h => ({
         message: h.message,
         color: h.color,
@@ -125,35 +130,41 @@ export default function TableCell({
       }))
     });
     
-    // Create conic-gradient pizza slices
-    const sliceAngle = 360 / totalFormulas;
+    // ENHANCED: Create balanced conic-gradient pizza slices with better color distribution
+    const sliceAngle = 360 / formulaColors.length;
     const gradientStops: string[] = [];
     
     formulaColors.forEach((color, index) => {
       const startAngle = index * sliceAngle;
       const endAngle = (index + 1) * sliceAngle;
-      gradientStops.push(`${color} ${startAngle}deg ${endAngle}deg`);
+      
+      // Add slight overlap to prevent gaps between slices
+      const adjustedEndAngle = index === formulaColors.length - 1 ? 360 : endAngle + 0.5;
+      
+      gradientStops.push(`${color} ${startAngle}deg ${adjustedEndAngle}deg`);
     });
     
-    // FIXED: Improved conic-gradient with better visual appearance
+    // ENHANCED: Improved conic-gradient with better visual appearance and animation
     const conicGradient = `conic-gradient(from 0deg, ${gradientStops.join(', ')})`;
     
     const style = {
       position: 'relative' as const,
       background: conicGradient,
       border: '3px solid #333',
-      borderRadius: '6px',
+      borderRadius: formulaColors.length > 2 ? '50%' : '6px', // Circular for 3+ slices, rounded square for 2
       fontWeight: 'bold' as const,
       transition: 'all 0.3s ease-in-out',
       color: '#000000', // Ensure text is visible
-      textShadow: '2px 2px 4px rgba(255,255,255,0.9)', // Strong text shadow for readability
-      boxShadow: '0 0 12px rgba(0,0,0,0.4), inset 0 0 6px rgba(255,255,255,0.3)', // Enhanced shadow
-      transform: 'scale(1.05)', // Slightly larger to indicate multiple formulas
-      zIndex: 10
+      textShadow: '3px 3px 6px rgba(255,255,255,0.9)', // Strong text shadow for readability
+      boxShadow: '0 0 16px rgba(0,0,0,0.4), inset 0 0 8px rgba(255,255,255,0.3)', // Enhanced shadow
+      transform: 'scale(1.08)', // Slightly larger to indicate multiple formulas
+      zIndex: 10,
+      // ENHANCED: Add animation hint
+      animation: formulaColors.length > 2 ? 'pizza-pulse 3s infinite' : undefined,
     };
     
-    console.log(`🍕 PIZZA SLICE APPLIED for [${rowId}, ${colId}]:`, {
-      totalFormulas,
+    console.log(`🍕 ENHANCED PIZZA SLICE APPLIED for [${rowId}, ${colId}]:`, {
+      totalFormulas: formulaColors.length,
       gradient: conicGradient,
       finalStyle: style
     });
@@ -161,9 +172,54 @@ export default function TableCell({
     return style;
   };
 
-  // Render cell layers for multiple formulas - now simplified since we use conic-gradient
+  // ENHANCED: Render cell layers for complex visualizations - now includes SVG overlays for premium pizza effect
   const renderCellLayers = () => {
-    // No longer needed since we use CSS conic-gradient for pizza slices
+    if (cellHighlights.length <= 1) return null;
+    
+    // For 3+ formulas, add an SVG overlay with slice indicators
+    if (cellHighlights.length >= 3) {
+      const formulaColors = cellHighlights.flatMap(h => 
+        h.formulaDetails?.map(d => d.color) || [h.color]
+      );
+      
+      return (
+        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 5 }}>
+          <svg 
+            width="100%" 
+            height="100%" 
+            className="absolute inset-0"
+            style={{ borderRadius: 'inherit' }}
+          >
+            {formulaColors.map((color, index) => {
+              const sliceAngle = 360 / formulaColors.length;
+              const startAngle = (index * sliceAngle - 90) * (Math.PI / 180); // -90 to start from top
+              
+              // Calculate slice path for thin divider lines
+              const centerX = 50;
+              const centerY = 50;
+              const radius = 45;
+              
+              const x1 = centerX + radius * Math.cos(startAngle);
+              const y1 = centerY + radius * Math.sin(startAngle);
+              
+              return (
+                <line
+                  key={`divider-${index}`}
+                  x1={`${centerX}%`}
+                  y1={`${centerY}%`}
+                  x2={`${x1}%`}
+                  y2={`${y1}%`}
+                  stroke="rgba(0,0,0,0.3)"
+                  strokeWidth="1"
+                  className="slice-divider"
+                />
+              );
+            })}
+          </svg>
+        </div>
+      );
+    }
+    
     return null;
   };
 
@@ -186,39 +242,41 @@ export default function TableCell({
     setShowTooltip(false);
   };
 
-  // Get tooltip content with enhanced pizza chart info
+  // ENHANCED: Get tooltip content with improved pizza chart info and better formatting
   const getTooltipContent = () => {
     if (cellHighlights.length === 0) return null;
 
     return (
-      <div className="absolute z-50 bg-gray-900 text-white text-sm rounded-lg py-3 px-4 shadow-xl border border-gray-700 min-w-[300px] max-w-[500px]"
+      <div className="absolute z-50 bg-gray-900 text-white text-sm rounded-lg py-4 px-5 shadow-2xl border border-gray-700 min-w-[350px] max-w-[600px]"
            style={{
              left: `${tooltipPosition.x}px`,
              top: `${tooltipPosition.y}px`,
              transform: 'translate(-50%, -100%)',
              position: 'fixed'
            }}>
-        {/* Enhanced Header with Pizza Slice Indicator */}
-        <div className="flex items-center justify-between font-bold mb-2 text-blue-300 border-b border-gray-700 pb-2">
-          <span>
-            {cellHighlights.length === 1 ? 'Aktif Formül:' : `${cellHighlights.length} Aktif Formül:`}
+        {/* ENHANCED: Header with Pizza Slice Indicator and animation */}
+        <div className="flex items-center justify-between font-bold mb-3 text-blue-300 border-b border-gray-700 pb-2">
+          <span className="text-base">
+            {cellHighlights.length === 1 ? 'Aktif Formül:' : `🍕 ${cellHighlights.length} Aktif Formül:`}
           </span>
           {cellHighlights.length > 1 && (
-            <div className="flex items-center space-x-2">
-              <span className="text-xs text-yellow-300">🍕 Pizza Dilimi</span>
+            <div className="flex items-center space-x-3">
+              <span className="text-xs text-yellow-300 font-normal">Pizza Dilimi Görünümü</span>
               <div
-                className="w-6 h-6 rounded-full border border-gray-400"
+                className="w-8 h-8 rounded-full border-2 border-gray-400 animate-spin"
                 style={{
                   background: cellHighlights.length > 1 ? 
                     `conic-gradient(from 0deg, ${
-                      cellHighlights.map((h, idx) => {
-                        const color = h.formulaDetails?.[0]?.color || h.color;
-                        const angle = 360 / cellHighlights.length;
+                      cellHighlights.flatMap(h => 
+                        h.formulaDetails?.map(d => d.color) || [h.color]
+                      ).map((color, idx, arr) => {
+                        const angle = 360 / arr.length;
                         const start = idx * angle;
                         const end = (idx + 1) * angle;
                         return `${color} ${start}deg ${end}deg`;
                       }).join(', ')
-                    })` : cellHighlights[0].color
+                    })` : cellHighlights[0].color,
+                  animationDuration: '4s'
                 }}
                 title="Pizza dilimi görünümü"
               />
@@ -226,94 +284,156 @@ export default function TableCell({
           )}
         </div>
         
-        {/* Formula list with enhanced pizza slice visualization */}
-        <div className="space-y-3">
-          {cellHighlights.map((highlight, idx) => {
-            const formulaDetail = highlight.formulaDetails?.[0];
-            const sliceAngle = cellHighlights.length > 1 ? 360 / cellHighlights.length : 360;
-            const startAngle = idx * sliceAngle;
-            const endAngle = (idx + 1) * sliceAngle;
-            
-            return (
-              <div key={`formula-${idx}`} className="border-l-4 pl-3 py-1" 
-                   style={{ borderColor: formulaDetail?.color || highlight.color }}>
-                {/* Formula name with slice info */}
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 rounded-full mr-2 border border-gray-400" 
-                         style={{ backgroundColor: formulaDetail?.color || highlight.color }}></div>
-                    <span className="font-semibold text-yellow-300">{highlight.message}</span>
+        {/* ENHANCED: Formula details with better layout and slice information */}
+        <div className="space-y-4">
+          {cellHighlights.flatMap((highlight, highlightIdx) => 
+            highlight.formulaDetails?.map((formulaDetail, detailIdx) => {
+              const globalIndex = cellHighlights.slice(0, highlightIdx).reduce((sum, h) => sum + (h.formulaDetails?.length || 1), 0) + detailIdx;
+              const totalSlices = cellHighlights.reduce((sum, h) => sum + (h.formulaDetails?.length || 1), 0);
+              const sliceAngle = totalSlices > 1 ? 360 / totalSlices : 360;
+              const startAngle = globalIndex * sliceAngle;
+              const endAngle = (globalIndex + 1) * sliceAngle;
+              
+              return (
+                <div key={`formula-${highlightIdx}-${detailIdx}`} 
+                     className="border-l-4 pl-4 py-2 bg-gray-800 rounded-r-lg transition-all hover:bg-gray-750" 
+                     style={{ borderColor: formulaDetail.color }}>
+                  {/* ENHANCED: Formula name with slice info and visual indicator */}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center">
+                      <div 
+                        className="w-4 h-4 rounded-full mr-3 border-2 border-gray-400 flex-shrink-0" 
+                        style={{ backgroundColor: formulaDetail.color }}
+                      ></div>
+                      <span className="font-semibold text-yellow-300 text-base">{formulaDetail.name}</span>
+                    </div>
+                    {totalSlices > 1 && (
+                      <div className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded">
+                        Dilim {globalIndex + 1}/{totalSlices} ({Math.round(startAngle)}°-{Math.round(endAngle)}°)
+                      </div>
+                    )}
                   </div>
-                  {cellHighlights.length > 1 && (
-                    <span className="text-xs text-gray-400">
-                      Dilim {idx + 1} ({startAngle.toFixed(0)}°-{endAngle.toFixed(0)}°)
-                    </span>
+                  
+                  {/* ENHANCED: Formula calculation details if available */}
+                  {(formulaDetail.leftResult !== undefined || formulaDetail.rightResult !== undefined) && (
+                    <div className="text-xs space-y-2 ml-7 text-gray-300">
+                      <div className="grid grid-cols-2 gap-4 bg-gray-900 p-3 rounded border border-gray-600">
+                        <div className="text-center">
+                          <span className="text-blue-400 font-semibold block">Sol İfade</span>
+                          <span className="ml-1 font-mono text-green-300 text-lg font-bold">
+                            {formatNumericValue(formulaDetail.leftResult)}
+                          </span>
+                        </div>
+                        <div className="text-center">
+                          <span className="text-blue-400 font-semibold block">Sağ İfade</span>
+                          <span className="ml-1 font-mono text-green-300 text-lg font-bold">
+                            {formatNumericValue(formulaDetail.rightResult)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mt-3 p-3 bg-gray-800 rounded text-xs font-mono text-gray-200 border border-gray-600">
+                        <span className="text-blue-400 font-semibold">Formül: </span>
+                        {formulaDetail.formula}
+                      </div>
+                    </div>
                   )}
                 </div>
-                
-                {/* Formula details if available */}
-                {formulaDetail && (
-                  <div className="text-xs space-y-1 ml-5 text-gray-300">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-blue-300">Sol İfade:</span>
-                        <span className="ml-1 font-mono text-green-300">
-                          {formatNumericValue(formulaDetail.leftResult)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-blue-300">Sağ İfade:</span>
-                        <span className="ml-1 font-mono text-green-300">
-                          {formatNumericValue(formulaDetail.rightResult)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="mt-2 p-2 bg-gray-800 rounded text-xs font-mono text-gray-200 border border-gray-600">
-                      {formulaDetail.formula}
-                    </div>
-                  </div>
-                )}
+              );
+            }) || [
+              <div key={`highlight-${highlightIdx}`} 
+                   className="border-l-4 pl-4 py-2 bg-gray-800 rounded-r-lg" 
+                   style={{ borderColor: highlight.color }}>
+                <div className="flex items-center">
+                  <div 
+                    className="w-4 h-4 rounded-full mr-3 border-2 border-gray-400" 
+                    style={{ backgroundColor: highlight.color }}
+                  ></div>
+                  <span className="font-semibold text-yellow-300">{highlight.message}</span>
+                </div>
               </div>
-            );
-          })}
+            ]
+          )}
         </div>
         
-        {/* Enhanced cell info with pizza slice explanation */}
-        <div className="mt-3 pt-2 border-t border-gray-700 text-xs text-gray-400">
-          <div>Hücre: {colId} - {rowId}</div>
-          <div>Değer: {formatCellValue(value)}</div>
+        {/* ENHANCED: Cell info with pizza slice explanation and visual guide */}
+        <div className="mt-4 pt-3 border-t border-gray-700 text-xs text-gray-400">
+          <div className="grid grid-cols-2 gap-4 mb-3">
+            <div><strong>Hücre:</strong> {colId} - {rowId}</div>
+            <div><strong>Değer:</strong> {formatCellValue(value)}</div>
+          </div>
           {cellHighlights.length > 1 && (
-            <div className="text-yellow-400 mt-1 p-2 bg-gray-800 rounded">
-              🍕 <strong>Pizza Dilimi Açıklaması:</strong><br/>
-              Bu hücre {cellHighlights.length} farklı formül koşulunu karşılıyor. 
-              Her renk dilimi farklı bir formülü temsil eder.
+            <div className="text-yellow-400 mt-2 p-3 bg-gray-800 rounded border border-yellow-600">
+              <div className="flex items-center mb-2">
+                <span className="text-lg mr-2">🍕</span>
+                <strong>Pizza Dilimi Açıklaması:</strong>
+              </div>
+              <p className="text-sm text-gray-300 leading-relaxed">
+                Bu hücre <strong>{cellHighlights.length}</strong> farklı formül koşulunu karşılıyor. 
+                Her renk dilimi farklı bir formülü temsil eder ve hücrenin arka planı 
+                {cellHighlights.length > 2 ? ' dairesel' : ' dikdörtgen'} pasta dilimlerine bölünmüştür.
+              </p>
+              {cellHighlights.length > 2 && (
+                <p className="text-xs text-gray-400 mt-2">
+                  💡 İpucu: 3 veya daha fazla formül için dairesel görünüm kullanılır.
+                </p>
+              )}
             </div>
           )}
         </div>
         
-        {/* Tooltip arrow */}
-        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+        {/* ENHANCED: Tooltip arrow with better positioning */}
+        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[8px] border-r-[8px] border-t-[8px] border-transparent border-t-gray-900"></div>
       </div>
     );
   };
   
   return (
     <>
-      {/* Add CSS for animations */}
+      {/* ENHANCED: Add CSS for improved animations and effects */}
       <style jsx>{`
-        @keyframes pulse {
-          0% { box-shadow: 0 0 8px rgba(0,0,0,0.4); }
-          50% { box-shadow: 0 0 12px rgba(0,0,0,0.6); }
-          100% { box-shadow: 0 0 8px rgba(0,0,0,0.4); }
+        @keyframes pizza-pulse {
+          0% { 
+            box-shadow: 0 0 16px rgba(0,0,0,0.4), inset 0 0 8px rgba(255,255,255,0.3);
+            transform: scale(1.08);
+          }
+          50% { 
+            box-shadow: 0 0 20px rgba(0,0,0,0.6), inset 0 0 12px rgba(255,255,255,0.4);
+            transform: scale(1.12);
+          }
+          100% { 
+            box-shadow: 0 0 16px rgba(0,0,0,0.4), inset 0 0 8px rgba(255,255,255,0.3);
+            transform: scale(1.08);
+          }
+        }
+        
+        @keyframes slice-glow {
+          0% { opacity: 0.6; }
+          50% { opacity: 1; }
+          100% { opacity: 0.6; }
         }
         
         .multi-formula-cell {
-          animation: pulse 2s infinite;
+          animation: pizza-pulse 3s infinite;
+        }
+        
+        .slice-divider {
+          animation: slice-glow 2s infinite;
         }
         
         .highlighted-cell:hover {
-          transform: scale(1.02);
-          z-index: 10;
+          transform: scale(1.02) !important;
+          z-index: 15 !important;
+          transition: transform 0.2s ease-in-out !important;
+        }
+        
+        .pizza-slice-indicator {
+          background: conic-gradient(from 0deg, #ff6b6b 0deg 120deg, #4ecdc4 120deg 240deg, #45b7d1 240deg 360deg);
+          animation: spin 4s linear infinite;
+        }
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
       
@@ -326,33 +446,33 @@ export default function TableCell({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        {/* Render cell layers for multiple formulas */}
+        {/* ENHANCED: Render cell layers for multiple formulas with SVG overlays */}
         {renderCellLayers()}
         
-        <span className={isSelected ? 'font-medium' : ''} style={{ position: 'relative', zIndex: 10 }}>
+        <span className={isSelected ? 'font-medium' : ''} style={{ position: 'relative', zIndex: 12 }}>
           {formatCellValue(value)}
         </span>
         
-        {/* Enhanced multi-formula indicator */}
+        {/* ENHANCED: Multi-formula indicator with animation and count */}
         {cellHighlights.length > 1 && (
-          <div className="absolute top-1 right-1 flex items-center space-x-1" style={{ zIndex: 15 }}>
+          <div className="absolute top-1 right-1 flex items-center space-x-1" style={{ zIndex: 20 }}>
             <div className="w-2 h-2 bg-yellow-400 rounded-full border border-white shadow-sm animate-bounce"></div>
-            <span className="text-xs font-bold text-white bg-red-500 rounded-full px-1 min-w-[16px] h-4 flex items-center justify-center shadow-sm">
+            <span className="text-xs font-bold text-white bg-red-500 rounded-full px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center shadow-lg border border-white">
               {cellHighlights.length}
             </span>
           </div>
         )}
         
-        {/* Single formula indicator */}
+        {/* ENHANCED: Single formula indicator with subtle glow */}
         {cellHighlights.length === 1 && (
-          <div className="absolute top-1 right-1" style={{ zIndex: 15 }}>
-            <div className="w-2 h-2 bg-green-400 rounded-full border border-white shadow-sm"></div>
+          <div className="absolute top-1 right-1" style={{ zIndex: 20 }}>
+            <div className="w-3 h-3 bg-green-400 rounded-full border border-white shadow-md animate-pulse"></div>
           </div>
         )}
+        
+        {/* Tooltip */}
+        {showTooltip && getTooltipContent()}
       </td>
-      
-      {/* Enhanced tooltip portal */}
-      {showTooltip && cellHighlights.length > 0 && getTooltipContent()}
     </>
   );
 } 

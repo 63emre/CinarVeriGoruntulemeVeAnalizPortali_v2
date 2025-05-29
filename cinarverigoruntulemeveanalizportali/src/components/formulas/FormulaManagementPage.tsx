@@ -13,6 +13,7 @@ interface Formula {
   color: string;
   active: boolean;
   tableId: string | null;
+  scope?: 'table' | 'workspace';
   createdAt: string;
   updatedAt: string;
 }
@@ -54,23 +55,29 @@ interface HighlightedCell {
   }[];
 }
 
-// ENHANCED: Improved Formula Editor with better UI
+// ENHANCED: Improved Formula Editor with scope-aware context and better validation
 const EnhancedFormulaEditor = ({ 
   variables, 
   onFormulaChange, 
   initialFormula,
-  readOnly = false
+  readOnly = false,
+  context = 'general', // ENHANCED: 'table' | 'analysis' | 'general'
+  scope = 'table', // YENI: Formül kapsamı
+  tableId // YENI: Hangi tablo için
 }: {
   variables: Variable[];
   onFormulaChange?: (formula: string, valid: boolean) => void;
   initialFormula?: string;
   readOnly?: boolean;
+  context?: 'table' | 'analysis' | 'general';
+  scope?: 'table' | 'workspace'; // YENI
+  tableId?: string | null; // YENI
 }) => {
   const [formula, setFormula] = useState(initialFormula || '');
   const [isValid, setIsValid] = useState(true);
   const [validationMessage, setValidationMessage] = useState('');
 
-  const validateFormula = (formulaText: string) => {
+  const validateFormula = async (formulaText: string) => {
     if (!formulaText.trim()) {
       setIsValid(false);
       setValidationMessage('Formül boş olamaz');
@@ -85,33 +92,130 @@ const EnhancedFormulaEditor = ({
       return false;
     }
 
+    // ENHANCED: Scope-aware validation
+    try {
+      const { validateFormulaScope, validateUnidirectionalFormula } = await import('@/lib/enhancedFormulaEvaluator');
+      const availableVarNames = variables.map(v => v.name);
+      
+      // Use scope-aware validation
+      const scopeResult = validateFormulaScope(formulaText, scope, availableVarNames, tableId || undefined);
+      
+      if (!scopeResult.isValid) {
+        setIsValid(false);
+        setValidationMessage(`Kapsam hatası: ${scopeResult.error}`);
+        return false;
+      }
+      
+      // Show warnings if any
+      if (scopeResult.warnings && scopeResult.warnings.length > 0) {
+        setValidationMessage(`⚠️ Uyarılar: ${scopeResult.warnings.join(', ')}`);
+      }
+      
+      // Additional context-specific validation
+      if (context === 'table' && scope === 'table') {
+        const unidirectionalResult = validateUnidirectionalFormula(formulaText, availableVarNames);
+        
+        if (!unidirectionalResult.isValid) {
+          setIsValid(false);
+          setValidationMessage(`Tablo modu hatası: ${unidirectionalResult.error}`);
+          return false;
+        }
+        
+        // Success message for table mode
+        if (unidirectionalResult.targetVariable) {
+          setValidationMessage(`✅ Geçerli tek yönlü formül: "${unidirectionalResult.targetVariable}" sütunu vurgulanacak`);
+        }
+      } else {
+        // For workspace scope, show different success message
+        setValidationMessage(`✅ Geçerli ${scope === 'workspace' ? 'workspace' : 'tablo'} kapsamı formülü`);
+      }
+      
+    } catch (error) {
+      setIsValid(false);
+      setValidationMessage('Formül analiz hatası: ' + (error as Error).message);
+      return false;
+    }
+
     setIsValid(true);
-    setValidationMessage('');
     return true;
   };
 
   const handleFormulaChange = (value: string) => {
     setFormula(value);
-    const valid = validateFormula(value);
-    if (onFormulaChange) {
-      onFormulaChange(value, valid);
-    }
+    validateFormula(value).then(valid => {
+      if (onFormulaChange) {
+        onFormulaChange(value, valid);
+      }
+    });
   };
 
   const insertVariable = (varName: string) => {
     if (readOnly) return;
-    const newFormula = formula + `[${varName}]`;
-    handleFormulaChange(newFormula);
+    
+    // ENHANCED: Scope-aware variable insertion logic
+    if (scope === 'table' && context === 'table') {
+      const currentFormula = formula.trim();
+      
+      // Eğer formülde zaten karşılaştırma operatörü varsa, sağ tarafa ekle
+      const hasComparison = /[><=!]+/.test(currentFormula);
+      if (hasComparison) {
+        const newFormula = formula + `[${varName}]`;
+        handleFormulaChange(newFormula);
+      } else {
+        // Sol tarafa ilk değişkeni ekle (tek değişken kısıtlaması)
+        const leftVariables = currentFormula.match(/\[([^\]]+)\]/g) || [];
+        if (leftVariables.length === 0) {
+          // Sol tarafa ilk değişken ekleniyor
+          const newFormula = formula + `[${varName}]`;
+          handleFormulaChange(newFormula);
+        } else {
+          // Sol tarafta zaten değişken var, sağ tarafa ekle
+          const newFormula = formula + ` > [${varName}]`;
+          handleFormulaChange(newFormula);
+        }
+      }
+    } else {
+      // Normal mod: istediği yere ekleyebilir
+      const newFormula = formula + `[${varName}]`;
+      handleFormulaChange(newFormula);
+    }
   };
 
   const insertOperator = (operator: string) => {
     if (readOnly) return;
+    
+    // ENHANCED: Scope-aware operator restrictions
+    if (scope === 'table' && context === 'table' && ['AND', 'OR'].includes(operator)) {
+      setValidationMessage('⚠️ Tablo kapsamında AND/OR operatörleri desteklenmez');
+      return;
+    }
+    
     const newFormula = formula + ` ${operator} `;
     handleFormulaChange(newFormula);
   };
 
   return (
     <div className="space-y-4">
+      {/* ENHANCED: Context and Scope Information */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <h4 className="text-sm font-semibold text-blue-800 mb-1">
+          🎯 {scope === 'table' ? 'Tablo Kapsamı' : 'Workspace Kapsamı'} - {context === 'table' ? 'Tablo Modu' : 'Genel Mod'}
+        </h4>
+        <p className="text-xs text-blue-700">
+          {scope === 'table' && context === 'table' && (
+            <>Bu modda formüller tek yönlü olmalıdır: Sol tarafta sadece bir değişken, sağ tarafta karşılaştırma ifadesi.
+            Örnek: &quot;İletkenlik &gt; 300&quot; veya &quot;pH &lt; Alkalinite + 2&quot;</>
+          )}
+          {scope === 'workspace' && (
+            <>Bu formül tüm workspace&apos;teki tablolara uygulanacaktır. Karmaşık koşullar (AND/OR) kullanabilirsiniz.
+            Örnek: &quot;İletkenlik &gt; 300 AND pH &lt; 7&quot;</>
+          )}
+          {scope === 'table' && context !== 'table' && (
+            <>Bu formül sadece seçili tabloya uygulanacaktır. Genel analiz kuralları için kullanışlıdır.</>
+          )}
+        </p>
+      </div>
+
       {/* ENHANCED: Formula Input with better styling */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -123,14 +227,22 @@ const EnhancedFormulaEditor = ({
               ? 'border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200' 
               : 'border-red-300 focus:border-red-500 focus:ring-2 focus:ring-red-200'
           }`}
-          placeholder="Örn: [İletkenlik] + [Toplam Fosfor] > [Orto Fosfat] - [Alkalinite Tayini]"
+          placeholder={
+            scope === 'table' && context === 'table'
+              ? "Örn: [İletkenlik] > 300 veya [pH] < [Alkalinite] + 2"
+              : scope === 'workspace'
+              ? "Örn: [İletkenlik] > 300 AND [pH] < 7 veya [Toplam Fosfor] + [Orto Fosfat] > 5"
+              : "Örn: [İletkenlik] + [Toplam Fosfor] > [Orto Fosfat] - [Alkalinite Tayini]"
+          }
           value={formula}
           onChange={(e) => handleFormulaChange(e.target.value)}
           readOnly={readOnly}
           rows={3}
         />
-        {!isValid && validationMessage && (
-          <p className="text-red-600 text-xs mt-1">{validationMessage}</p>
+        {validationMessage && (
+          <p className={`text-xs mt-1 ${isValid ? 'text-green-600' : 'text-red-600'}`}>
+            {validationMessage}
+          </p>
         )}
       </div>
 
@@ -140,6 +252,9 @@ const EnhancedFormulaEditor = ({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Değişken Ekle
+              {scope === 'table' && context === 'table' && (
+                <span className="text-xs text-amber-600 ml-1">(Tablo modunda akıllı ekleme)</span>
+              )}
             </label>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
               {variables.map(variable => (
@@ -161,7 +276,7 @@ const EnhancedFormulaEditor = ({
               Operatör Ekle
             </label>
             <div className="flex flex-wrap gap-2">
-              {['+', '-', '*', '/', '>', '<', '>=', '<=', '==', '!=', 'AND', 'OR'].map(op => (
+              {['+', '-', '*', '/', '>', '<', '>=', '<=', '==', '!='].map(op => (
                 <button
                   key={op}
                   onClick={() => insertOperator(op)}
@@ -170,16 +285,46 @@ const EnhancedFormulaEditor = ({
                   {op}
                 </button>
               ))}
+              {scope === 'workspace' && ['AND', 'OR'].map(op => (
+                <button
+                  key={op}
+                  onClick={() => insertOperator(op)}
+                  className="px-3 py-1 bg-green-100 hover:bg-green-200 border border-green-300 rounded text-sm font-mono transition-colors"
+                >
+                  {op}
+                </button>
+              ))}
+              {scope === 'table' && (
+                <div className="text-xs text-gray-500 italic px-2 py-1 bg-gray-50 rounded border border-gray-200">
+                  AND/OR {context === 'table' ? 'tablo modunda' : 'tablo kapsamında'} kısıtlı
+                </div>
+              )}
             </div>
           </div>
 
-          {/* ENHANCED: Formula Examples */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-            <h4 className="text-sm font-semibold text-blue-800 mb-2">💡 Örnek Formüller:</h4>
+          {/* ENHANCED: Formula Examples based on scope */}
+          <div className="bg-gray-50 rounded-lg p-3">
+            <h4 className="text-sm font-semibold text-blue-800 mb-2">💡 {scope === 'table' ? 'Tablo' : 'Workspace'} Kapsamı Örnekleri:</h4>
             <div className="space-y-1 text-xs text-blue-700">
-              <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] &gt; 300</div>
-              <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] + [Toplam Fosfor] &gt; [Orto Fosfat]</div>
-              <div className="font-mono bg-blue-100 p-1 rounded">[pH] &gt;= 7 AND [pH] &lt;= 8.5</div>
+              {scope === 'table' && context === 'table' ? (
+                <>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] &gt; 300</div>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[pH] &lt; [Alkalinite] + 2</div>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[Toplam Fosfor] &gt;= 0.5</div>
+                </>
+              ) : scope === 'workspace' ? (
+                <>
+                  <div className="font-mono bg-green-100 p-1 rounded">[İletkenlik] &gt; 300 AND [pH] &lt; 7</div>
+                  <div className="font-mono bg-green-100 p-1 rounded">[Toplam Fosfor] + [Orto Fosfat] &gt; 5</div>
+                  <div className="font-mono bg-green-100 p-1 rounded">[pH] &gt;= 7 OR [Alkalinite] &lt; 100</div>
+                </>
+              ) : (
+                <>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] &gt; 300</div>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] + [Toplam Fosfor] &gt; [Orto Fosfat]</div>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[pH] &gt;= 7 AND [pH] &lt;= 8.5</div>
+                </>
+              )}
             </div>
           </div>
         </>
@@ -226,6 +371,10 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
   const [formulaActive, setFormulaActive] = useState(true);
   const [formulaExpression, setFormulaExpression] = useState('');
   const [isFormulaValid, setIsFormulaValid] = useState(false);
+  
+  // YENI: Formül scope'u için state'ler
+  const [formulaScope, setFormulaScope] = useState<'workspace' | 'table'>('table');
+  const [formulaScopeTableId, setFormulaScopeTableId] = useState<string>('');
 
   // Fetch data on component mount
   useEffect(() => {
@@ -382,6 +531,12 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
       return;
     }
 
+    // ENHANCED: Scope kontrolü
+    if (formulaScope === 'table' && !formulaScopeTableId) {
+      setError('Tablo kapsamı seçildi ama tablo seçilmedi. Lütfen bir tablo seçin veya workspace kapsamını seçin.');
+      return;
+    }
+
     try {
       setLoading(true);
       const response = await fetch(`/api/workspaces/${selectedWorkspace}/formulas`, {
@@ -396,7 +551,9 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
           type: formulaType,
           color: formulaColor,
           active: formulaActive,
-          tableId: selectedTable || null,
+          // ENHANCED: Include scope information
+          scope: formulaScope,
+          tableId: formulaScope === 'table' ? formulaScopeTableId : null,
         }),
       });
 
@@ -405,14 +562,15 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
         throw new Error(errorData.message || 'Formül oluşturulurken bir hata oluştu');
       }
 
-      const newFormula = await response.json();
-      setFormulas([...formulas, newFormula]);
-      
-      // Reset form
-      resetForm();
-      setShowCreateModal(false);
       setSuccess('Formül başarıyla oluşturuldu');
-      setTimeout(() => setSuccess(null), 3000);
+      setShowCreateModal(false);
+      resetForm();
+      fetchFormulas();
+      
+      // Auto-refresh triggered after successful creation
+      setAutoRefresh(true);
+      setTimeout(() => setAutoRefresh(false), 5000); // Auto-refresh for 5 seconds
+      
     } catch (err) {
       console.error('Error creating formula:', err);
       setError((err as Error).message);
@@ -424,6 +582,12 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
   const handleUpdateFormula = async () => {
     if (!editingFormula || !isFormulaValid || !formulaName.trim() || !formulaExpression.trim()) {
       setError('Lütfen tüm gerekli alanları doldurun ve geçerli bir formül oluşturun.');
+      return;
+    }
+
+    // ENHANCED: Scope kontrolü
+    if (formulaScope === 'table' && !formulaScopeTableId) {
+      setError('Tablo kapsamı seçildi ama tablo seçilmedi. Lütfen bir tablo seçin veya workspace kapsamını seçin.');
       return;
     }
 
@@ -441,6 +605,9 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
           type: formulaType,
           color: formulaColor,
           active: formulaActive,
+          // ENHANCED: Include scope information
+          scope: formulaScope,
+          tableId: formulaScope === 'table' ? formulaScopeTableId : null,
         }),
       });
 
@@ -449,15 +616,16 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
         throw new Error(errorData.message || 'Formül güncellenirken bir hata oluştu');
       }
 
-      const updatedFormula = await response.json();
-      setFormulas(formulas.map(f => f.id === updatedFormula.id ? updatedFormula : f));
-      
-      // Reset form
-      resetForm();
+      setSuccess('Formül başarıyla güncellendi');
       setShowEditModal(false);
       setEditingFormula(null);
-      setSuccess('Formül başarıyla güncellendi');
-      setTimeout(() => setSuccess(null), 3000);
+      resetForm();
+      fetchFormulas();
+      
+      // Auto-refresh triggered after successful update
+      setAutoRefresh(true);
+      setTimeout(() => setAutoRefresh(false), 5000); // Auto-refresh for 5 seconds
+      
     } catch (err) {
       console.error('Error updating formula:', err);
       setError((err as Error).message);
@@ -501,6 +669,9 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
     setFormulaActive(true);
     setFormulaExpression('');
     setIsFormulaValid(false);
+    // ENHANCED: Reset scope states
+    setFormulaScope('table');
+    setFormulaScopeTableId('');
   };
 
   const openEditModal = (formula: Formula) => {
@@ -511,6 +682,9 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
     setFormulaColor(formula.color);
     setFormulaActive(formula.active);
     setFormulaExpression(formula.formula);
+    // ENHANCED: Set scope information
+    setFormulaScope(formula.scope || (formula.tableId ? 'table' : 'workspace'));
+    setFormulaScopeTableId(formula.tableId || '');
     setShowEditModal(true);
   };
 

@@ -32,6 +32,9 @@ interface Formula {
   formula: string;
   color: string;
   active: boolean;
+  // ENHANCED: Add scope support
+  scope?: 'table' | 'workspace';
+  tableId?: string | null;
 }
 
 interface HighlightedCell {
@@ -660,6 +663,265 @@ export function validateFormula(formula: string, availableVariables: string[]): 
       error: (error as Error).message
     };
   }
+}
+
+/**
+ * ENHANCED: Tek yönlü formül kısıtlaması validatörü
+ * Tablo görüntüleme ekranında kullanılmak üzere, formülün sol tarafında 
+ * yalnızca tek bir değişken olmasını sağlar
+ */
+export function validateUnidirectionalFormula(formula: string, availableVariables: string[]): {
+  isValid: boolean;
+  error?: string;
+  missingVariables?: string[];
+  leftVariables?: string[];
+  rightVariables?: string[];
+  targetVariable?: string; // YENI: Hangi değişkenin vurgulanacağını belirtir
+} {
+  try {
+    const conditions = parseComplexFormula(formula);
+    
+    if (conditions.length === 0) {
+      return {
+        isValid: false,
+        error: 'Formülde geçerli koşul bulunamadı'
+      };
+    }
+    
+    // ENHANCED: Tek yönlü kısıtlama - Sadece tek bir karşılaştırma koşuluna izin ver
+    if (conditions.length > 1) {
+      return {
+        isValid: false,
+        error: 'Tablo görüntüleme modunda birden fazla koşul (AND/OR) desteklenmez. Her formül tek bir karşılaştırma içermelidir. Örnek: "İletkenlik > 300" ✓, "İletkenlik > 300 AND pH < 7" ✗'
+      };
+    }
+    
+    const condition = conditions[0];
+    
+    // Sol ve sağ taraftaki değişkenleri çıkar
+    const leftVars = extractVariables(condition.leftExpression);
+    const rightVars = extractVariables(condition.rightExpression);
+    
+    // TEK YÖNLÜ KISITLAMA: Sol tarafta yalnızca tek değişken olmalı
+    if (leftVars.length === 0) {
+      return {
+        isValid: false,
+        error: 'Formülün sol tarafında bir değişken bulunmalıdır. Örnek: "İletkenlik > 300"',
+        leftVariables: leftVars,
+        rightVariables: rightVars
+      };
+    }
+    
+    if (leftVars.length > 1) {
+      return {
+        isValid: false,
+        error: `Tablo görüntüleme modunda sol tarafta yalnızca TEK değişken kullanılabilir. Şu anda ${leftVars.length} değişken var: ${leftVars.join(', ')}. Doğru örnek: "İletkenlik > Alkalinite + 3" ✓, Yanlış örnek: "(İletkenlik + pH) > 300" ✗`,
+        leftVariables: leftVars,
+        rightVariables: rightVars
+      };
+    }
+    
+    // ENHANCED: Sol taraftaki ifadenin temiz olması kontrolü
+    const leftExpr = condition.leftExpression.trim().replace(/^\(|\)$/g, '');
+    const hasLeftArithmetic = /[+\-*/]/.test(leftExpr);
+    
+    if (hasLeftArithmetic) {
+      return {
+        isValid: false,
+        error: `Tablo görüntüleme modunda sol tarafta aritmetik işlemler kullanılamaz. Sol taraf: "${leftExpr}". Doğru format: "İletkenlik > 300" ✓ veya "İletkenlik > Alkalinite + 3" ✓, Yanlış format: "(İletkenlik + 50) > 300" ✗`,
+        leftVariables: leftVars,
+        rightVariables: rightVars
+      };
+    }
+    
+    // ENHANCED: Operator kontrolü - desteklenen operatörler
+    const supportedOperators = ['>', '<', '>=', '<=', '==', '!=', '='];
+    if (!supportedOperators.includes(condition.operator)) {
+      return {
+        isValid: false,
+        error: `Desteklenmeyen operatör: "${condition.operator}". Desteklenen operatörler: ${supportedOperators.join(', ')}`,
+        leftVariables: leftVars,
+        rightVariables: rightVars
+      };
+    }
+    
+    // Tüm değişkenlerin mevcut olup olmadığını kontrol et
+    const allVars = [...leftVars, ...rightVars];
+    const missingVariables = allVars.filter(v => !availableVariables.includes(v));
+    
+    if (missingVariables.length > 0) {
+      return {
+        isValid: false,
+        error: `Tanımsız değişkenler: ${missingVariables.join(', ')}. Mevcut değişkenler: ${availableVariables.slice(0, 5).join(', ')}${availableVariables.length > 5 ? '...' : ''}`,
+        missingVariables,
+        leftVariables: leftVars,
+        rightVariables: rightVars
+      };
+    }
+    
+    // ENHANCED: Mantık kontrolü - sol taraftaki değişken sağ tarafta da varsa uyarı
+    if (rightVars.includes(leftVars[0])) {
+      return {
+        isValid: false,
+        error: `"${leftVars[0]}" değişkeni hem sol hem sağ tarafta kullanılıyor. Bu çembersel referans yaratabilir. Örnek düzeltme: "${leftVars[0]} > sabit_değer" veya "${leftVars[0]} > başka_değişken + sabit"`,
+        leftVariables: leftVars,
+        rightVariables: rightVars
+      };
+    }
+    
+    // ENHANCED: Sentaks kontrolü için dummy verilerle test et
+    const dummyVariables: Record<string, number> = {};
+    availableVariables.forEach(v => {
+      dummyVariables[v] = Math.random() * 100 + 1; // Realistic test values
+    });
+    
+    try {
+      const result = evaluateComplexFormula(formula, dummyVariables);
+      if (!result.isValid) {
+        return {
+          isValid: false,
+          error: `Formül değerlendirme hatası: ${result.message}`,
+          leftVariables: leftVars,
+          rightVariables: rightVars
+        };
+      }
+    } catch (evalError) {
+      return {
+        isValid: false,
+        error: `Formül test hatası: ${(evalError as Error).message}`,
+        leftVariables: leftVars,
+        rightVariables: rightVars
+      };
+    }
+    
+    return {
+      isValid: true,
+      leftVariables: leftVars,
+      rightVariables: rightVars,
+      targetVariable: leftVars[0] // Vurgulanacak hedef değişken
+    };
+    
+  } catch (error) {
+    return {
+      isValid: false,
+      error: `Formül analiz hatası: ${(error as Error).message}`
+    };
+  }
+}
+
+/**
+ * YENI: Formül kapsamı (scope) validatörü
+ * Formülün hangi kapsamda kullanılacağını belirler ve doğrular
+ */
+export function validateFormulaScope(
+  formula: string, 
+  scope: 'table' | 'workspace',
+  availableVariables: string[],
+  tableId?: string
+): {
+  isValid: boolean;
+  error?: string;
+  warnings?: string[];
+} {
+  const warnings: string[] = [];
+  
+  try {
+    // Temel formül validasyonu
+    const basicValidation = validateFormula(formula, availableVariables);
+    if (!basicValidation.isValid) {
+      return {
+        isValid: false,
+        error: basicValidation.error
+      };
+    }
+    
+    // Scope özel kontrolleri
+    if (scope === 'table') {
+      // Tablo kapsamı için tek yönlü kısıtlamayı kontrol et
+      const unidirectionalValidation = validateUnidirectionalFormula(formula, availableVariables);
+      if (!unidirectionalValidation.isValid) {
+        return {
+          isValid: false,
+          error: `Tablo kapsamı için: ${unidirectionalValidation.error}`
+        };
+      }
+      
+      if (!tableId) {
+        warnings.push('Tablo kapsamı seçildi ancak tablo ID belirtilmedi');
+      }
+      
+      // Tek yönlü formüller için ipucu
+      if (unidirectionalValidation.targetVariable) {
+        warnings.push(`Bu formül "${unidirectionalValidation.targetVariable}" sütunundaki hücreleri vurgulayacak`);
+      }
+      
+    } else if (scope === 'workspace') {
+      // Workspace kapsamı için çoklu koşullara izin ver
+      const conditions = parseComplexFormula(formula);
+      if (conditions.length > 3) {
+        warnings.push('Çok karmaşık formüller performansı etkileyebilir. 3\'den az koşul kullanmanız önerilir.');
+      }
+      
+      // Workspace kapsamında kullanılan değişkenlerin genel olduğunu kontrol et
+      const allVars = extractVariables(formula);
+      if (allVars.length > 5) {
+        warnings.push(`Formülde ${allVars.length} değişken kullanılıyor. Çok sayıda değişken performansı etkileyebilir.`);
+      }
+    }
+    
+    return {
+      isValid: true,
+      warnings: warnings.length > 0 ? warnings : undefined
+    };
+    
+  } catch (error) {
+    return {
+      isValid: false,
+      error: `Kapsam validasyon hatası: ${(error as Error).message}`
+    };
+  }
+}
+
+/**
+ * ENHANCED: Ana formül değerlendirme fonksiyonuna kapsam desteği ekleme
+ */
+export function evaluateFormulasForTableWithScope(
+  formulas: Formula[],
+  tableData: {
+    columns: string[];
+    data: (string | number | null)[][];
+  },
+  targetTableId?: string
+): HighlightedCell[] {
+  // Formülleri kapsama göre filtrele
+  const applicableFormulas = formulas.filter(formula => {
+    if (!formula.active) return false;
+    
+    // Tablo kapsamı - sadece belirtilen tablo için
+    if (formula.scope === 'table') {
+      return targetTableId ? formula.tableId === targetTableId : false;
+    }
+    
+    // Workspace kapsamı - her zaman uygula
+    if (formula.scope === 'workspace') {
+      return true;
+    }
+    
+    // Geriye uyumluluk: scope belirtilmemişse tableId'ye göre karar ver
+    if (!formula.scope) {
+      if (formula.tableId === null) {
+        return true; // Genel formül
+      }
+      return targetTableId ? formula.tableId === targetTableId : false;
+    }
+    
+    return false;
+  });
+  
+  console.log(`🎯 Scope filtering: ${formulas.length} total formulas -> ${applicableFormulas.length} applicable for table ${targetTableId}`);
+  
+  // Mevcut fonksiyonu kullan
+  return evaluateFormulasForTable(applicableFormulas, tableData);
 }
 
 // Export for backward compatibility with existing code

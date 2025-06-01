@@ -1248,70 +1248,56 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Kapsam Türü
                     </label>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="relative flex items-center p-3 bg-blue-50 border-2 border-blue-200 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="flex items-center p-4 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
                         <input
                           type="radio"
-                          name="scope"
+                          name="formulaScope"
                           value="table"
                           checked={formulaScope === 'table'}
                           onChange={(e) => setFormulaScope(e.target.value as 'table' | 'workspace')}
-                          className="sr-only"
+                          className="mr-3 text-blue-600"
                         />
-                        <div className="flex items-center">
-                          <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
-                            formulaScope === 'table' ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
-                          }`}>
-                            {formulaScope === 'table' && (
-                              <div className="w-2 h-2 bg-white rounded-full mx-auto mt-[1px]"></div>
-                            )}
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">Tablo Kapsamı</div>
-                            <div className="text-xs text-gray-600">Sadece belirli bir tabloya uygula</div>
+                        <div>
+                          <div className="font-medium text-gray-900">Belirli Tablo</div>
+                          <div className="text-sm text-gray-600">
+                            Bu formülü sadece seçili tabloya uygula
                           </div>
                         </div>
                       </label>
                       
-                      <label className="relative flex items-center p-3 bg-green-50 border-2 border-green-200 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">
+                      <label className="flex items-center p-4 bg-gray-50 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-100 transition-colors">
                         <input
                           type="radio"
-                          name="scope"
+                          name="formulaScope"
                           value="workspace"
                           checked={formulaScope === 'workspace'}
                           onChange={(e) => setFormulaScope(e.target.value as 'table' | 'workspace')}
-                          className="sr-only"
+                          className="mr-3 text-blue-600"
                         />
-                        <div className="flex items-center">
-                          <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
-                            formulaScope === 'workspace' ? 'bg-green-600 border-green-600' : 'border-gray-300'
-                          }`}>
-                            {formulaScope === 'workspace' && (
-                              <div className="w-2 h-2 bg-white rounded-full mx-auto mt-[1px]"></div>
-                            )}
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">Workspace Kapsamı</div>
-                            <div className="text-xs text-gray-600">Tüm workspace genelinde uygula</div>
+                        <div>
+                          <div className="font-medium text-gray-900">Tüm Workspace</div>
+                          <div className="text-sm text-gray-600">
+                            Bu formülü çalışma alanındaki tüm tablolara uygula
                           </div>
                         </div>
                       </label>
                     </div>
                   </div>
 
-                  {/* ENHANCED: Table Selection for Table Scope */}
+                  {/* Table Selection (only if table scope is selected) */}
                   {formulaScope === 'table' && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Hedef Tablo *
+                        Hedef Tablo Seçimi
                       </label>
                       <select
                         value={formulaScopeTableId}
                         onChange={(e) => setFormulaScopeTableId(e.target.value)}
                         className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
-                        required
+                        required={formulaScope === 'table'}
                       >
-                        <option value="">Lütfen bir tablo seçin</option>
+                        <option value="">Tablo seçin...</option>
                         {tables.map((table) => (
                           <option key={table.id} value={table.id}>
                             {table.name}
@@ -1319,27 +1305,39 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
                         ))}
                       </select>
                       {formulaScope === 'table' && !formulaScopeTableId && (
-                        <p className="text-red-600 text-xs mt-1">Tablo kapsamı için hedef tablo seçimi zorunludur</p>
+                        <p className="text-sm text-red-600 mt-1">
+                          Tablo kapsamı için bir tablo seçmelisiniz.
+                        </p>
                       )}
                     </div>
                   )}
 
                   {/* Scope Information */}
-                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Seçili Kapsam Açıklaması:</h4>
-                    {formulaScope === 'table' ? (
-                      <div className="text-sm text-gray-600">
-                        <p>✅ Bu formül sadece seçili tabloda çalışacak</p>
-                        <p>✅ Tek yönlü kısıtlamalar uygulanacak (sol tarafta tek değişken)</p>
-                        <p>✅ Hücre seviyesinde doğrulama yapılacak</p>
-                      </div>
-                    ) : (
-                      <div className="text-sm text-gray-600">
-                        <p>✅ Bu formül workspace&apos;teki tüm tablolarda çalışacak</p>
-                        <p>✅ Karmaşık koşullar (AND/OR) desteklenir</p>
-                        <p>✅ Çapraz tablo analizleri mümkün</p>
-                      </div>
-                    )}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 className="text-sm font-semibold text-blue-800 mb-2">
+                      📋 Seçilen Kapsam: {formulaScope === 'table' ? 'Belirli Tablo' : 'Tüm Workspace'}
+                    </h4>
+                    <ul className="text-sm text-blue-700 space-y-1">
+                      {formulaScope === 'table' ? (
+                        <>
+                          <li>• Bu formül sadece seçili tabloya uygulanacak</li>
+                          <li>• Tek yönlü formüller (sol tarafta bir değişken) önerilir</li>
+                          <li>• Tablo verileri değiştiğinde otomatik olarak güncellenir</li>
+                          {formulaScopeTableId && (
+                            <li className="font-medium">
+                              • Hedef Tablo: {tables.find(t => t.id === formulaScopeTableId)?.name || 'Seçili tablo'}
+                            </li>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <li>• Bu formül workspace&apos;teki tüm tablolara uygulanacak</li>
+                          <li>• Karmaşık koşullar (AND/OR) kullanabilirsiniz</li>
+                          <li>• Yeni tablolar eklendiğinde otomatik olarak uygulanır</li>
+                          <li>• Genel kurallar için idealdir</li>
+                        </>
+                      )}
+                    </ul>
                   </div>
                 </div>
               </div>
@@ -1351,21 +1349,21 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
                   setShowCreateModal(false);
                   resetForm();
                 }}
-                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
               >
                 İptal
               </button>
               <button
                 onClick={handleCreateFormula}
-                disabled={!isFormulaValid || !formulaName.trim() || loading}
-                className={`px-4 py-2 rounded-md ${
-                  isFormulaValid && formulaName.trim() && !loading
-                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                    : 'bg-gray-300 cursor-not-allowed text-gray-500'
+                disabled={!formulaName || !formulaExpression || !isFormulaValid || (formulaScope === 'table' && !formulaScopeTableId)}
+                className={`px-4 py-2 rounded-md font-medium ${
+                  !formulaName || !formulaExpression || !isFormulaValid || (formulaScope === 'table' && !formulaScopeTableId)
+                    ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
                 }`}
               >
-                <FiSave className="inline mr-1" />
-                {loading ? 'Oluşturuluyor...' : 'Oluştur'}
+                <FiSave className="inline mr-2" />
+                Formül Oluştur
               </button>
             </div>
           </div>
@@ -1566,8 +1564,8 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
                       </div>
                     ) : (
                       <div className="text-sm text-gray-600">
-                        <p>✅ Bu formül workspace&apos;teki tüm tablolarda çalışacak</p>
-                        <p>✅ Karmaşık koşullar (AND/OR) desteklenir</p>
+                        <p>✅ Bu formül workspace&apos;teki tüm tablolara uygulanacak</p>
+                        <p>✅ Karmaşık koşullar (AND/OR) kullanabilirsiniz</p>
                         <p>✅ Çapraz tablo analizleri mümkün</p>
                       </div>
                     )}

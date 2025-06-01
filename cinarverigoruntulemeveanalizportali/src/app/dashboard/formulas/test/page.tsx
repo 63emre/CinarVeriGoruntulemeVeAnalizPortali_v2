@@ -21,7 +21,7 @@ interface HighlightedCell {
   }[];
 }
 
-// Test data for demonstration
+// Test formulas for validation and system testing
 const testFormulas = [
   {
     id: '1',

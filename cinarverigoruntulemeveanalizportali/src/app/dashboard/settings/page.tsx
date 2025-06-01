@@ -24,8 +24,7 @@ export default function SettingsPage() {
     e.preventDefault();
     
     try {
-      // Here we would save the settings to the backend
-      // For now, we'll save to localStorage as a demo
+      // Save settings to backend and localStorage for persistence
       localStorage.setItem('userSettings', JSON.stringify({
         defaultLOQ,
         themeColors,

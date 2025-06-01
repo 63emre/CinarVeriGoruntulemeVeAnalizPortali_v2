@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { FcPrint, FcFullTrash, FcCheckmark, FcCancel } from 'react-icons/fc';
 import { AiOutlineSearch, AiOutlineSave } from 'react-icons/ai';
+import { FiDownload } from 'react-icons/fi';
 import TableCell from './TableCell'; // ENHANCED: Import TableCell for pizza slice effect
+import { exportEnhancedTableToPdf } from '@/lib/pdf/enhanced-pdf-export';
 
 type Column = {
   id: string;
@@ -325,6 +327,45 @@ export default function EditableDataTable({
     setHasChanges(false);
   };
 
+  // ENHANCED: New PDF export using enhanced service
+  const exportEnhancedPDF = async () => {
+    if (!Array.isArray(filteredData) || filteredData.length === 0) {
+      alert('PDF oluşturmak için tablo verisi gereklidir.');
+      return;
+    }
+    
+    try {
+      console.log('🚀 Starting enhanced PDF export from EditableDataTable...');
+      
+      // Prepare table data structure
+      const tableData = {
+        name: title,
+        columns: columns.filter(col => col.id !== 'id').map(col => col.name),
+        data: filteredData.map(row => 
+          columns.filter(col => col.id !== 'id').map(col => row[col.id])
+        )
+      };
+      
+      // Use enhanced PDF export
+      await exportEnhancedTableToPdf(tableData, {
+        title: 'Tablo Veri Raporu',
+        subtitle: `Tablo: ${title}`,
+        orientation: 'landscape',
+        includeFormulas: false, // Could be enhanced to include formulas if available
+        includeCharts: false,
+        highlightedCells: highlightedCells,
+        cellBorderWidth: 2, // Thicker borders as requested
+        userName: 'Tablo Kullanicisi'
+      });
+      
+      console.log('✅ Enhanced PDF export completed from EditableDataTable');
+      
+    } catch (error) {
+      console.error('❌ Enhanced PDF export error:', error);
+      alert(`PDF oluşturulurken hata: ${(error as Error).message}`);
+    }
+  };
+
   if (error) {
     return (
       <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -406,6 +447,14 @@ export default function EditableDataTable({
               Yazdır
             </button>
           )}
+          
+          <button
+            onClick={exportEnhancedPDF}
+            className="bg-orange-100 text-orange-800 hover:bg-orange-200 px-4 py-2 rounded-md flex items-center transition"
+          >
+            <FiDownload className="mr-1" />
+            Gelişmiş PDF
+          </button>
         </div>
       </div>
       
@@ -427,39 +476,36 @@ export default function EditableDataTable({
               : 'Gösterilecek veri bulunmuyor.'}
           </div>
         ) : (
-          <table className="w-full divide-y divide-gray-200 border-collapse table-fixed">
+          <table className="w-full divide-y divide-gray-200 border-collapse border-2 border-gray-400">
             <thead className="bg-gray-100 sticky top-0 z-10">
               <tr>
                 {columns.map((column) => {
-                  // Determine column width based on type
+                  // OPTIMIZED: More efficient column width calculation
                   let colWidth = "auto";
                   
-                  // ID columns should be narrow
                   if (column.id === 'id') {
-                    colWidth = "60px";
+                    colWidth = "50px"; // Narrower ID column
                   } 
-                  // Fixed columns get appropriate width
                   else if (['Data Source', 'Variable', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
-                    colWidth = "150px";
+                    colWidth = "120px"; // Reduced from 150px
                   } 
-                  // Date columns (all others) should be compact
                   else {
-                    colWidth = "120px";
+                    colWidth = "100px"; // Reduced from 120px for date columns
                   }
                   
                   return (
                     <th
                       key={column.id}
                       scope="col"
-                      style={{ width: colWidth }}
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-200 border-b border-gray-300 sticky truncate"
+                      style={{ width: colWidth, minWidth: colWidth }}
+                      className="px-2 py-2 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-200 border-2 border-gray-400 sticky truncate"
                       onClick={() => handleSort(column.id)}
                       title={column.name}
                     >
                       <div className="flex items-center">
                         <span className="truncate">{column.name}</span>
                         {sortColumn === column.id && (
-                          <span className="ml-1 flex-shrink-0">
+                          <span className="ml-1 flex-shrink-0 text-xs">
                             {sortDirection === 'asc' ? '↑' : '↓'}
                           </span>
                         )}
@@ -470,21 +516,22 @@ export default function EditableDataTable({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredData.map((row) => (
-                <tr key={row.id} className="hover:bg-gray-50">
+              {/* OPTIMIZED: Limit visible rows for better performance */}
+              {filteredData.slice(0, 500).map((row) => (
+                <tr key={row.id} className="hover:bg-gray-50 transition-colors border-b-2 border-gray-300">
                   {columns.map((column) => {
                     const cellValue = row[column.id];
                     const isSelected = selectedCell?.row === row.id && selectedCell?.col === column.id;
                     const isEditing = editingCell?.row === row.id && editingCell?.col === column.id;
                     const isEditable = column.editable !== false;
                     
-                    // ENHANCED: Use TableCell component for better highlight support and pizza slice effect
+                    // OPTIMIZED: Use TableCell component with better performance
                     if (isEditing) {
-                      // Special case: show inline editing UI
                       return (
                         <td
                           key={`${row.id}-${column.id}`}
-                          className="px-4 py-2 text-sm border border-gray-200"
+                          className="px-2 py-1 text-xs border border-gray-200"
+                          style={{ maxWidth: column.id === 'id' ? '50px' : column.id.includes('Data Source') || column.id.includes('Variable') ? '120px' : '100px' }}
                         >
                           <div className="flex items-center">
                             <input
@@ -493,32 +540,32 @@ export default function EditableDataTable({
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
                               onKeyDown={(e) => handleKeyDown(e, row.id, column.id)}
-                              className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full px-1 py-0.5 border border-blue-500 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                             />
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleEditSave(row.id, column.id);
                               }}
-                              className="ml-1 p-1 text-green-600"
+                              className="ml-1 p-0.5 text-green-600 hover:bg-green-50 rounded"
                             >
-                              <FcCheckmark className="h-5 w-5" />
+                              <FcCheckmark className="h-3 w-3" />
                             </button>
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleEditCancel();
                               }}
-                              className="ml-1 p-1 text-red-600"
+                              className="ml-1 p-0.5 text-red-600 hover:bg-red-50 rounded"
                             >
-                              <FcCancel className="h-5 w-5" />
+                              <FcCancel className="h-3 w-3" />
                             </button>
                           </div>
                         </td>
                       );
                     }
                     
-                    // ENHANCED: Use TableCell component for all non-editing cells
+                    // OPTIMIZED: Use TableCell component for all non-editing cells
                     return (
                       <TableCell
                         key={`${row.id}-${column.id}`}
@@ -529,13 +576,10 @@ export default function EditableDataTable({
                         isSelected={isSelected}
                         onClick={(rowId, colId, value) => {
                           handleCellClick(rowId, colId, value);
-                          // Handle double-click for editing
                           if (isEditable) {
-                            // Simple click detection for edit mode with proper typing
                             const currentTime = Date.now();
                             const lastClickTime = (window as Window & { lastClickTime?: number }).lastClickTime || 0;
                             if (currentTime - lastClickTime < 300) {
-                              // Double click detected
                               handleCellDoubleClick(rowId, colId, value, isEditable);
                             }
                             (window as Window & { lastClickTime?: number }).lastClickTime = currentTime;
@@ -546,6 +590,35 @@ export default function EditableDataTable({
                   })}
                 </tr>
               ))}
+              
+              {/* OPTIMIZED: Show message if data is truncated */}
+              {filteredData.length > 500 && (
+                <tr>
+                  <td 
+                    colSpan={columns.length} 
+                    className="px-4 py-6 text-center text-gray-500 bg-yellow-50 border border-yellow-200"
+                  >
+                    <div className="flex flex-col items-center space-y-2">
+                      <span className="text-sm font-medium">
+                        Performans için ilk 500 satır gösteriliyor
+                      </span>
+                      <span className="text-xs">
+                        Toplam {filteredData.length} satırdan 500 tanesi görüntülendi. 
+                        Daha fazla sonuç için arama filtresini kullanın.
+                      </span>
+                      <button
+                        onClick={() => {
+                          // Option to load more data
+                          console.log('Load more data functionality can be implemented here');
+                        }}
+                        className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors"
+                      >
+                        Daha Fazla Göster
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         )}
@@ -555,8 +628,15 @@ export default function EditableDataTable({
         <div>
           {Array.isArray(filteredData) ? (
             <>
-              <span className="font-medium">{filteredData.length}</span> satır gösteriliyor
+              <span className="font-medium">
+                {Math.min(filteredData.length, 500)}
+              </span> satır gösteriliyor
               {searchTerm && Array.isArray(data) && ` (toplam ${data.length} satırdan)`}
+              {filteredData.length > 500 && (
+                <span className="text-yellow-600 ml-2">
+                  • Performans için {filteredData.length - 500} satır gizlendi
+                </span>
+              )}
             </>
           ) : (
             'Veri yok'
@@ -565,9 +645,9 @@ export default function EditableDataTable({
         {isFullscreen && (
           <button 
             onClick={toggleFullscreen}
-            className="text-red-600 hover:text-red-800 flex items-center"
+            className="text-red-600 hover:text-red-800 flex items-center text-xs"
           >
-            <FcFullTrash className="mr-1" />
+            <FcFullTrash className="mr-1 h-4 w-4" />
             Tam Ekrandan Çık
           </button>
         )}

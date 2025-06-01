@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FcDownload, FcPrint, FcExpand, FcCollapse } from 'react-icons/fc';
 import { AiOutlineSearch } from 'react-icons/ai';
-import TableCell from './TableCell';
+import EnhancedTableCell from './EnhancedTableCell';
 import { evaluateFormulasWithDataRows } from '../../lib/enhancedFormulaEvaluator';
+import { generateAdvancedPDF, processTableCellValue } from '../../lib/pdf/new-pdf-service';
 
 type Column = {
   id: string;
@@ -49,6 +50,8 @@ interface DataTableProps {
   workspaceId?: string;
   highlightedCells?: HighlightedCell[];
   onCellSelect?: (rowId: string, colId: string, value: string | number | null) => void;
+  showDataTypes?: boolean;
+  cellBorderWidth?: number;
 }
 
 export default function DataTable({ 
@@ -61,7 +64,9 @@ export default function DataTable({
   tableId,
   workspaceId,
   highlightedCells = [],
-  onCellSelect
+  onCellSelect,
+  showDataTypes = true,
+  cellBorderWidth = 2
 }: DataTableProps) {
   const [data, setData] = useState<DataRow[]>(initialData || []);
   const [columns, setColumns] = useState<Column[]>(initialColumns || []);
@@ -75,7 +80,42 @@ export default function DataTable({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [calculatedHighlights, setCalculatedHighlights] = useState<HighlightedCell[]>([]);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [dataStats, setDataStats] = useState<{
+    totalCells: number;
+    numericCells: number;
+    limitValues: number;
+    emptyValues: number;
+  }>({ totalCells: 0, numericCells: 0, limitValues: 0, emptyValues: 0 });
   const tableRef = useRef<HTMLDivElement>(null);
+
+  // Calculate data statistics
+  useEffect(() => {
+    if (data.length > 0 && columns.length > 0) {
+      let totalCells = 0;
+      let numericCells = 0;
+      let limitValues = 0;
+      let emptyValues = 0;
+
+      data.forEach(row => {
+        columns.forEach(col => {
+          totalCells++;
+          const value = row[col.id];
+          const processed = processTableCellValue(value);
+          
+          if (processed.isLimitValue) {
+            limitValues++;
+          } else if (processed.numericValue !== null) {
+            numericCells++;
+          } else if (!processed.displayValue) {
+            emptyValues++;
+          }
+        });
+      });
+
+      setDataStats({ totalCells, numericCells, limitValues, emptyValues });
+    }
+  }, [data, columns]);
 
   // Fetch table data if tableId and workspaceId are provided
   useEffect(() => {
@@ -247,12 +287,20 @@ export default function DataTable({
         if (aValue === null) return 1;
         if (bValue === null) return -1;
         
-        if (typeof aValue === 'number' && typeof bValue === 'number') {
-          return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+        // Use enhanced value processing for sorting
+        const processedA = processTableCellValue(aValue);
+        const processedB = processTableCellValue(bValue);
+        
+        // Sort by numeric values when available
+        if (processedA.numericValue !== null && processedB.numericValue !== null) {
+          return sortDirection === 'asc' 
+            ? processedA.numericValue - processedB.numericValue 
+            : processedB.numericValue - processedA.numericValue;
         }
         
-        const aString = String(aValue).toLowerCase();
-        const bString = String(bValue).toLowerCase();
+        // Fallback to string comparison
+        const aString = processedA.displayValue.toLowerCase();
+        const bString = processedB.displayValue.toLowerCase();
         
         return sortDirection === 'asc' 
           ? aString.localeCompare(bString)
@@ -264,7 +312,8 @@ export default function DataTable({
     ? sortedData.filter(row => 
         Object.entries(row).some(([key, value]) => {
           if (key === 'id') return false;
-          return value !== null && String(value).toLowerCase().includes(searchTerm.toLowerCase());
+          const processed = processTableCellValue(value);
+          return processed.displayValue.toLowerCase().includes(searchTerm.toLowerCase());
         })
       )
     : sortedData;
@@ -284,10 +333,85 @@ export default function DataTable({
     setIsFullscreen(!isFullscreen);
   };
 
+  // Advanced PDF export with new service
+  const handleAdvancedPdfExport = async () => {
+    if (!data || !columns || data.length === 0) {
+      setError('PDF oluşturmak için veri bulunamadı');
+      return;
+    }
+
+    setPdfGenerating(true);
+    setError(null);
+
+    try {
+      console.log('📄 Starting advanced PDF generation...');
+      
+      // Transform data to match PDF service interface
+      const tableData = {
+        id: tableId || 'table',
+        name: title,
+        sheetName: title,
+        workspaceId: workspaceId || 'workspace',
+        uploadedAt: new Date(),
+        updatedAt: new Date(),
+        columns: columns.map(col => col.name),
+        data: data.map(row => 
+          columns.map(col => row[col.id])
+        )
+      };
+
+      // Transform formulas to match PDF service interface
+      const pdfFormulas = formulas.map(f => ({
+        id: f.id,
+        name: f.name,
+        description: f.description,
+        formula: f.formula,
+        color: f.color,
+        type: f.type,
+        active: f.active ?? true // Convert undefined to true
+      }));
+
+      const pdfBuffer = await generateAdvancedPDF(
+        tableData,
+        allHighlights,
+        pdfFormulas,
+        {
+          title: title,
+          subtitle: 'Çınar Çevre Laboratuvarı - Veri Analiz Raporu',
+          includeFormulas: true,
+          orientation: 'landscape',
+          cellBorderWidth: cellBorderWidth,
+          userName: 'Kullanıcı'
+        }
+      );
+
+      // Download PDF
+      const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${title.replace(/[^a-zA-Z0-9]/g, '_')}_analiz_raporu.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      console.log('✅ Advanced PDF generation completed');
+      setError('✅ Gelişmiş PDF başarıyla oluşturuldu ve indirildi!');
+      setTimeout(() => setError(null), 3000);
+
+    } catch (err) {
+      console.error('❌ Advanced PDF generation failed:', err);
+      setError(`❌ PDF oluşturma hatası: ${(err as Error).message}`);
+    } finally {
+      setPdfGenerating(false);
+    }
+  };
+
   // Combine provided highlightedCells with calculated ones
   const allHighlights = [...(highlightedCells || []), ...calculatedHighlights];
   
-  if (error) {
+  if (error && !error.startsWith('✅') && !error.startsWith('ℹ️')) {
     return (
       <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
         <p className="text-red-800 font-medium">{error}</p>
@@ -300,62 +424,88 @@ export default function DataTable({
       ref={tableRef}
       className={`bg-white rounded-lg shadow-md overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50 p-4' : ''}`}
     >
-      {/* Table header */}
-      <div className="p-4 border-b">
-        <div className="flex justify-between items-center">
-          <h2 className="text-xl font-semibold text-gray-800">{title}</h2>
-          <div className="flex space-x-2">
-            {/* Search input */}
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Ara..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <AiOutlineSearch className="absolute left-2 top-2.5 text-gray-500" size={18} />
+      {/* Enhanced table header */}
+      <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="flex justify-between items-center mb-3">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-800">{title}</h2>
+            {/* Data statistics */}
+            <div className="flex space-x-4 text-xs text-gray-600 mt-1">
+              <span>📊 Toplam: {dataStats.totalCells} hücre</span>
+              <span>🔢 Sayısal: {dataStats.numericCells}</span>
+              <span>📉 Limit: {dataStats.limitValues}</span>
+              <span>⬜ Boş: {dataStats.emptyValues}</span>
             </div>
-            
-            {/* Action buttons */}
-            <div className="flex space-x-1">
-              {downloadUrl && (
-                <a
-                  href={downloadUrl}
-                  download
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                  title="İndir"
-                >
-                  <FcDownload size={20} />
-                </a>
-              )}
+          </div>
+          <div className="flex flex-col space-y-2">
+            {/* Search and controls row */}
+            <div className="flex space-x-2 items-center">
+              {/* Search input */}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Ara..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-8 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <AiOutlineSearch className="absolute left-2 top-2.5 text-gray-500" size={18} />
+              </div>
               
-              {printable && (
+              {/* Action buttons */}
+              <div className="flex space-x-1">
+                {downloadUrl && (
+                  <a
+                    href={downloadUrl}
+                    download
+                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    title="İndir"
+                  >
+                    <FcDownload size={20} />
+                  </a>
+                )}
+                
+                {printable && (
+                  <button
+                    onClick={handlePrint}
+                    className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                    title="Yazdır"
+                  >
+                    <FcPrint size={20} />
+                  </button>
+                )}
+                
+                {/* Advanced PDF Export */}
                 <button
-                  onClick={handlePrint}
-                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                  title="Yazdır"
+                  onClick={handleAdvancedPdfExport}
+                  disabled={pdfGenerating}
+                  className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 text-sm font-medium"
+                  title="Gelişmiş PDF İndir"
                 >
-                  <FcPrint size={20} />
+                  {pdfGenerating ? '📄 Oluşturuluyor...' : '📄 Gelişmiş PDF'}
                 </button>
-              )}
-              
-              <button
-                onClick={toggleFullscreen}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                title={isFullscreen ? "Küçült" : "Büyüt"}
-              >
-                {isFullscreen ? <FcCollapse size={20} /> : <FcExpand size={20} />}
-              </button>
+                
+                <button
+                  onClick={toggleFullscreen}
+                  className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  title={isFullscreen ? "Küçült" : "Büyüt"}
+                >
+                  {isFullscreen ? <FcCollapse size={20} /> : <FcExpand size={20} />}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
       
-      {/* Error message */}
+      {/* Status message */}
       {error && (
-        <div className="p-4 bg-red-50 text-red-700 border-b">
-          <p>{error}</p>
+        <div className={`p-3 border-b ${
+          error.startsWith('✅') ? 'bg-green-50 text-green-700 border-green-200' :
+          error.startsWith('ℹ️') ? 'bg-blue-50 text-blue-700 border-blue-200' :
+          'bg-red-50 text-red-700 border-red-200'
+        }`}>
+          <p className="text-sm">{error}</p>
         </div>
       )}
       
@@ -367,19 +517,25 @@ export default function DataTable({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full" style={{ borderCollapse: 'collapse' }}>
+            <thead className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
               <tr>
                 {columns.map((column) => (
                   <th
                     key={column.id}
                     onClick={() => handleSort(column.id)}
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                    className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-blue-700 transition-colors"
+                    style={{ 
+                      border: `${cellBorderWidth}px solid #1e40af`,
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 10
+                    }}
                   >
                     <div className="flex items-center">
                       <span>{column.name}</span>
                       {sortColumn === column.id && (
-                        <span className="ml-1">
+                        <span className="ml-1 text-yellow-300">
                           {sortDirection === 'asc' ? '↑' : '↓'}
                         </span>
                       )}
@@ -388,11 +544,11 @@ export default function DataTable({
                 ))}
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredData.map((row) => (
-                <tr key={row.id}>
+            <tbody className="bg-white">
+              {filteredData.map((row, rowIndex) => (
+                <tr key={row.id} className={rowIndex % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
                   {columns.map((column) => (
-                    <TableCell
+                    <EnhancedTableCell
                       key={`${row.id}-${column.id}`}
                       rowId={row.id}
                       colId={column.id}
@@ -400,6 +556,8 @@ export default function DataTable({
                       highlights={allHighlights}
                       onClick={handleCellClick}
                       isSelected={selectedCell?.row === row.id && selectedCell?.col === column.id}
+                      showDataTypes={showDataTypes}
+                      cellBorderWidth={cellBorderWidth}
                     />
                   ))}
                 </tr>

@@ -12,7 +12,8 @@ import {
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  TooltipItem
 } from 'chart.js';
 import { FcAreaChart, FcRules, FcApproval, FcPlus, FcPrint } from 'react-icons/fc';
 import { MdDelete, MdDragIndicator } from 'react-icons/md';
@@ -22,6 +23,7 @@ import autoTable from 'jspdf-autotable';
 import { evaluateFormulasForTable } from '@/lib/enhancedFormulaEvaluator';
 import EditableDataTable from '@/components/tables/EditableDataTable';
 import FormulaBuilder from '@/components/formulas/FormulaBuilder';
+import { exportEnhancedTableToPdf } from '@/lib/pdf/enhanced-pdf-export';
 
 // Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Title, Tooltip, Legend, Filler);
@@ -102,6 +104,9 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
   // State for chart management
   const [charts, setCharts] = useState<ChartConfig[]>([]);
   const [nextChartId, setNextChartId] = useState(1);
+  
+  // ENHANCED: Add chart selection for normal PDF export
+  const [selectedChartsForPDF, setSelectedChartsForPDF] = useState<Set<string>>(new Set());
   
   // State for formula highlighting
   const [formulas, setFormulas] = useState<Formula[]>([]);
@@ -463,7 +468,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
     }
   });
 
-  // Enhanced PDF export with both charts and tables
+  // ENHANCED: Use new PDF export service for comprehensive analysis
   const exportComprehensivePDF = async () => {
     if ((!charts.length && !showTable) || !analysisData) {
       setError('PDF oluşturmak için en az bir grafik veya tablo gereklidir.');
@@ -474,525 +479,162 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       setLoading(true);
       setError(null);
       
-      const pdf = new jsPDF('landscape', 'mm', 'a4');
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
+      console.log('🚀 Starting comprehensive PDF export with enhanced service...');
       
-      // Enhanced Turkish character support for PDF
-      try {
-        // Try to use a Unicode-compatible font if available
-        pdf.setFont('helvetica', 'normal');
-        // Set language for better character support
-        if (typeof (pdf as { setLanguage?: (lang: string) => void }).setLanguage === 'function') {
-          (pdf as { setLanguage: (lang: string) => void }).setLanguage('tr');
-        }
-      } catch (fontError) {
-        console.warn('Font setting failed, using default:', fontError);
-        pdf.setFont('helvetica', 'normal');
-      }
+      // Prepare chart elements for export
+      const chartElements: HTMLElement[] = [];
       
-      // FIXED: Enhanced Turkish text encoding with proper UTF-8 support
-      const encodeTurkishText = (text: string): string => {
-        try {
-          // Ensure the text is properly encoded as UTF-8
-          const utf8Text = decodeURIComponent(encodeURIComponent(text));
-          
-          // Only replace problematic characters that cause PDF issues
-          return utf8Text
-            .replace(/[""]/g, '"')
-            .replace(/['']/g, "'")
-            .replace(/[–—]/g, '-')
-            .replace(/…/g, '...')
-            .replace(/[\u2212]/g, '-') // Unicode minus sign
-            .replace(/[\u2013\u2014]/g, '-') // En dash, Em dash
-            .replace(/[\u201C\u201D]/g, '"') // Smart quotes
-            .replace(/[\u2018\u2019]/g, "'") // Smart apostrophes
-            .replace(/[\u00A0]/g, ' '); // Non-breaking space
-        } catch (error) {
-          console.warn('Text encoding failed, using original:', error);
-          return text;
-        }
-      };
-      
-      // Add title page with proper encoding
-      pdf.setFontSize(20);
-      pdf.text(encodeTurkishText('Çınar Çevre Laboratuvarı'), pageWidth / 2, 30, { align: 'center' });
-      pdf.setFontSize(16);
-      pdf.text(encodeTurkishText('Kapsamlı Analiz Raporu'), pageWidth / 2, 45, { align: 'center' });
-      
-      const selectedTableName = tables.find(t => t.id === selectedTable)?.name || 'Bilinmeyen Tablo';
-      pdf.setFontSize(12);
-      pdf.text(encodeTurkishText(`Tablo: ${selectedTableName}`), pageWidth / 2, 60, { align: 'center' });
-      pdf.text(`Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, pageWidth / 2, 70, { align: 'center' });
-      
-      // Add formulas applied section
-      if (formulas.length > 0) {
-        pdf.setFontSize(14);
-        pdf.text(encodeTurkishText('Uygulanan Formüller:'), 15, 90);
-        
-        const formulaTableData = formulas.map((formula, index) => [
-          (index + 1).toString(),
-          encodeTurkishText(formula.name),
-          encodeTurkishText(formula.formula),
-          encodeTurkishText(formula.active ? 'Aktif' : 'Pasif')
-        ]);
-        
-        autoTable(pdf, {
-          startY: 100,
-          head: [[encodeTurkishText('#'), encodeTurkishText('Formül Adı'), encodeTurkishText('Formül'), encodeTurkishText('Durum')]],
-          body: formulaTableData,
-          styles: { 
-            fontSize: 8,
-            font: 'helvetica'
-          },
-          headStyles: { 
-            fillColor: [41, 128, 185],
-            font: 'helvetica',
-            fontStyle: 'bold'
-          },
-          margin: { left: 15, right: 15 }
-        });
-      }
-      
-      let currentPage = 1;
-      let chartsAdded = 0;
-      
-      // Process each chart with enhanced error handling
       for (let i = 0; i < charts.length; i++) {
         const chart = charts[i];
+        const chartElement = document.getElementById(`chart-${chart.id}`);
         
-        try {
-          console.log(`📊 Processing chart ${i + 1}: ${chart.title}`);
-          
-          // Find the chart element
-          const chartElement = document.getElementById(`chart-${chart.id}`);
-          
-          if (chartElement) {
-            // Add new page for each chart
-            if (currentPage > 1) pdf.addPage();
-            currentPage++;
-            
-            // Add page header
-            pdf.setFontSize(14);
-            pdf.text(encodeTurkishText(`Grafik ${i + 1}: ${chart.title}`), 15, 20);
-            
-            console.log(`📊 Capturing chart ${i + 1}: ${chart.title}`);
-            
-            // Wait for chart to be fully rendered
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // Try Chart.js direct method first (more reliable for charts)
-            let imgData: string | null = null;
-            let captureMethod = 'unknown';
-            
-            try {
-              const chartCanvas = chartElement.querySelector('canvas') as HTMLCanvasElement;
-              if (chartCanvas) {
-                // Try to get Chart.js instance and use toDataURL
-                const chartInstance = ChartJS.getChart(chartCanvas);
-                if (chartInstance) {
-                  imgData = chartCanvas.toDataURL('image/png', 0.95);
-                  captureMethod = 'chartjs-direct';
-                  console.log(`✅ Chart ${i + 1} captured using Chart.js direct method`);
-                }
-              }
-            } catch (directError) {
-              console.warn(`⚠️ Chart.js direct capture failed for chart ${i + 1}:`, directError);
-            }
-            
-            // Fallback to html2canvas if direct method failed
-            if (!imgData) {
-              console.log(`📊 Falling back to html2canvas for chart ${i + 1}`);
-              const canvas = await html2canvas(chartElement, {
-                backgroundColor: '#ffffff',
-                scale: 2, // Increased scale for better quality
-                logging: false,
-                useCORS: true,
-                allowTaint: true,
-                foreignObjectRendering: true,
-                width: chartElement.offsetWidth,
-                height: chartElement.offsetHeight,
-                x: 0,
-                y: 0,
-                scrollX: 0,
-                scrollY: 0,
-                windowWidth: window.innerWidth,
-                windowHeight: window.innerHeight,
-                imageTimeout: 15000,
-                // Enhanced CSS handling for modern color functions
-                ignoreElements: (element) => {
-                  const style = window.getComputedStyle(element);
-                  // Skip elements with problematic CSS functions
-                  if (style.color?.includes('oklch') || 
-                      style.color?.includes('lch') || 
-                      style.color?.includes('lab') ||
-                      style.backgroundColor?.includes('oklch') ||
-                      style.backgroundColor?.includes('lch') ||
-                      style.backgroundColor?.includes('lab')) {
-                    return true;
-                  }
-                  return false;
-                },
-                onclone: (clonedDoc) => {
-                  const allElements = clonedDoc.querySelectorAll('*');
-                  allElements.forEach((el) => {
-                    const element = el as HTMLElement;
-                    const computedStyle = window.getComputedStyle(element);
-                    
-                    // Convert modern color functions to fallback colors
-                    if (computedStyle.color?.includes('oklch') || 
-                        computedStyle.color?.includes('lch') || 
-                        computedStyle.color?.includes('lab')) {
-                      element.style.color = '#333333'; // Fallback to dark gray
-                    }
-                    if (computedStyle.backgroundColor?.includes('oklch') || 
-                        computedStyle.backgroundColor?.includes('lch') ||
-                        computedStyle.backgroundColor?.includes('lab')) {
-                      element.style.backgroundColor = '#ffffff'; // Fallback to white
-                    }
-                    if (computedStyle.borderColor?.includes('oklch') || 
-                        computedStyle.borderColor?.includes('lch') ||
-                        computedStyle.borderColor?.includes('lab')) {
-                      element.style.borderColor = '#cccccc'; // Fallback to light gray
-                    }
-                    
-                    // Also handle any CSS variables that might contain modern color functions
-                    const cssText = element.style.cssText;
-                    if (cssText.includes('oklch') || cssText.includes('lch') || cssText.includes('lab')) {
-                      // Replace with safe fallback colors
-                      element.style.cssText = cssText
-                        .replace(/oklch\([^)]+\)/g, '#333333')
-                        .replace(/lch\([^)]+\)/g, '#333333')
-                        .replace(/lab\([^)]+\)/g, '#333333');
-                    }
-                  });
-                }
-              });
-              
-              console.log(`✅ Chart ${i + 1} captured successfully with html2canvas - ${canvas.width}x${canvas.height}`);
-              imgData = canvas.toDataURL('image/png', 0.95);
-              captureMethod = 'html2canvas';
-            }
-            
-            // Process the captured image
-            if (imgData) {
-              // Create a temporary image to get dimensions
-              const tempImg = new Image();
-              tempImg.src = imgData;
-              
-              // Calculate image dimensions for PDF
-              const imgWidth = pageWidth - 30;
-              const imgHeight = (tempImg.height * imgWidth) / tempImg.width || 150; // fallback height
-              
-              // Ensure image fits on page
-              const maxHeight = pageHeight - 80;
-              const finalHeight = Math.min(imgHeight, maxHeight);
-              const finalWidth = (tempImg.width * finalHeight) / tempImg.height || imgWidth;
-            
-                          // Add chart to PDF
-              pdf.addImage(imgData, 'PNG', 15, 30, finalWidth, finalHeight);
-              
-              // Add chart details with proper encoding
-              pdf.setFontSize(10);
-              pdf.text(encodeTurkishText(`Değişken: ${chart.variable}`), 15, pageHeight - 30);
-              pdf.text(`Tarih Aralığı: ${chart.startDate} - ${chart.endDate}`, 15, pageHeight - 20);
-              pdf.text(encodeTurkishText(`Grafik Türü: ${chart.type === 'line' ? 'Çizgi' : 'Sütun'} Grafik`), 15, pageHeight - 10);
-              
-              chartsAdded++;
-              console.log(`📄 Chart ${i + 1} added to PDF successfully using ${captureMethod}`);
-            } else {
-              console.warn(`⚠️ Failed to capture chart ${i + 1}: chart-${chart.id}`);
-              
-              // Add new page and error message
-              if (currentPage > 1) pdf.addPage();
-              currentPage++;
-              
-              pdf.setFontSize(14);
-              pdf.text(encodeTurkishText(`Grafik ${i + 1}: ${chart.title}`), 15, 20);
-              pdf.setFontSize(12);
-              pdf.setTextColor(255, 140, 0); // Orange color for warnings
-              pdf.text(encodeTurkishText('Grafik yakalama başarısız'), 15, 50);
-              pdf.text(`Grafik ID: chart-${chart.id}`, 15, 65);
-              pdf.setTextColor(0, 0, 0);
-            }
-          } else {
-            console.warn(`⚠️ Chart element not found for chart ${i + 1}: chart-${chart.id}`);
-            
-            // Add new page and error message
-            if (currentPage > 1) pdf.addPage();
-            currentPage++;
-            
-            pdf.setFontSize(14);
-            pdf.text(encodeTurkishText(`Grafik ${i + 1}: ${chart.title}`), 15, 20);
-            pdf.setFontSize(12);
-            pdf.setTextColor(255, 140, 0); // Orange color for warnings
-            pdf.text(encodeTurkishText('Grafik bulunamadı veya yüklenemedi'), 15, 50);
-            pdf.text(`Grafik ID: chart-${chart.id}`, 15, 65);
-            pdf.setTextColor(0, 0, 0);
-          }
-          
-        } catch (chartError) {
-          console.error(`❌ Error capturing chart ${i + 1}:`, chartError);
-          
-          // Add new page and error message
-          if (currentPage > 1) pdf.addPage();
-          currentPage++;
-          
-          pdf.setFontSize(14);
-          pdf.text(encodeTurkishText(`Grafik ${i + 1}: ${chart.title}`), 15, 20);
-          pdf.setFontSize(12);
-          pdf.setTextColor(255, 0, 0);
-          pdf.text(encodeTurkishText(`Grafik yakalama hatası: ${(chartError as Error).message}`), 15, 50);
-          pdf.setTextColor(0, 0, 0);
-          
-          // Try alternative capture method using Chart.js toBase64Image if available
-          try {
-            const chartCanvas = document.querySelector(`#chart-${chart.id} canvas`) as HTMLCanvasElement;
-            if (chartCanvas) {
-              const chartInstance = (window as { Chart?: { getChart?: (canvas: HTMLCanvasElement) => { toBase64Image?: () => string } } }).Chart?.getChart?.(chartCanvas);
-              if (chartInstance && typeof chartInstance.toBase64Image === 'function') {
-                const imgData = chartInstance.toBase64Image();
-                pdf.addImage(imgData, 'PNG', 15, 70, pageWidth - 30, 150);
-                pdf.setTextColor(0, 128, 0);
-                pdf.text(encodeTurkishText('Grafik alternatif yöntemle eklendi'), 15, 65);
-                pdf.setTextColor(0, 0, 0);
-                chartsAdded++;
-                console.log(`📄 Chart ${i + 1} added using Chart.js method`);
-              }
-            }
-          } catch (fallbackError) {
-            console.error(`❌ Fallback capture also failed:`, fallbackError);
-          }
+        if (chartElement) {
+          chartElements.push(chartElement);
+          console.log(`📊 Chart ${i + 1} element found: ${chart.title}`);
+        } else {
+          console.warn(`⚠️ Chart ${i + 1} element not found: ${chart.title}`);
         }
       }
       
-      // Add highlighted table if enabled
+      // Prepare table data if table is shown
+      let tableData = null;
       if (showTable && analysisData.tableData) {
-        if (currentPage > 1) pdf.addPage();
-        currentPage++;
-        
-        // Add table header
-        pdf.setFontSize(14);
-        pdf.text('Veri Tablosu (Formül Vurgulamalı)', 15, 20);
-        
-        if (formulas.length > 0) {
-          pdf.setFontSize(10);
-          pdf.text(`Uygulanan Formüller: ${formulas.map(f => f.name).join(', ')}`, 15, 30);
-        }
-        
-        // FIXED: Prepare table data for PDF with proper encoding and structure
-        const { columns, data } = analysisData.tableData;
-        
-        // Ensure proper table structure and encoding
-        const tableHeaders = columns.map(col => encodeTurkishText(col));
-        
-        const tableData = data.map((row: (string | number | null)[]) => {
-          return row.map((cell: string | number | null) => {
-            if (cell === null || cell === undefined) return '';
-            
-            // Handle different data types properly
-            if (typeof cell === 'number') {
-              return cell.toString();
-            }
-            
-            if (typeof cell === 'string') {
-              // Encode Turkish characters and clean the string
-              return encodeTurkishText(cell.trim());
-            }
-            
-            return encodeTurkishText(String(cell));
-          });
-        });
-        
-        // FIXED: Add table with proper highlighting support and row tracking
-        autoTable(pdf, {
-          startY: 40,
-          head: [tableHeaders],
-          body: tableData,
-          styles: { 
-            fontSize: 8,
-            font: 'helvetica',
-            cellPadding: 2,
-            lineColor: [200, 200, 200],
-            lineWidth: 0.1
-          },
-          headStyles: { 
-            fillColor: [41, 128, 185],
-            font: 'helvetica',
-            fontStyle: 'bold',
-            textColor: [255, 255, 255]
-          },
-          bodyStyles: {
-            textColor: [0, 0, 0]
-          },
-          alternateRowStyles: {
-            fillColor: [245, 245, 245]
-          },
-          margin: { left: 15, right: 15 },
-          // FIXED: Add cell highlighting based on formula results
-          didParseCell: function(data) {
-            const rowIndex = data.row.index;
-            const colIndex = data.column.index;
-            
-            if (data.section === 'body' && rowIndex < tableData.length && colIndex < columns.length) {
-              const rowId = `row-${rowIndex + 1}`;
-              const colId = columns[colIndex];
-              
-              // Check if this cell should be highlighted
-              const highlight = highlightedCells.find(
-                cell => cell.row === rowId && cell.col === colId
-              );
-              
-              if (highlight) {
-                const rgb = hexToRgb(highlight.color);
-                if (rgb) {
-                  // Apply highlight color with transparency
-                  data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b];
-                  data.cell.styles.textColor = [0, 0, 0]; // Ensure text is readable
-                  data.cell.styles.fontStyle = 'bold';
-                }
-              }
-            }
-          }
-        });
-        
-        const lastTableY = (pdf as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 40;
-        
-        // Add legend for highlighted cells
-        if (highlightedCells.length > 0) {
-          let yPos = lastTableY + 15;
-          
-          // Check if we need a new page for the legend
-          if (yPos > pageHeight - 40) {
-            pdf.addPage();
-            yPos = 20;
-          }
-          
-          pdf.setFontSize(12);
-          pdf.text('Formül Vurgulamaları:', 15, yPos);
-          yPos += 10;
-          
-          // Group highlights by color and message
-          const uniqueHighlights = highlightedCells.reduce((acc: Array<{ color: string; message: string }>, cell) => {
-            const existing = acc.find(h => h.color === cell.color && h.message === cell.message);
-            if (!existing) {
-              acc.push({
-                color: cell.color,
-                message: cell.message
-              });
-            }
-            return acc;
-          }, []);
-          
-          uniqueHighlights.forEach((highlight, index) => {
-            if (yPos > pageHeight - 20) {
-              pdf.addPage();
-              yPos = 20;
-            }
-            
-            const rgb = hexToRgb(highlight.color);
-            
-            // Draw color indicator
-            if (rgb) {
-              pdf.setFillColor(rgb.r, rgb.g, rgb.b);
-              pdf.rect(15, yPos - 4, 6, 6, 'F');
-            }
-            
-            // Add message
-            pdf.setFontSize(9);
-            pdf.text(`${index + 1}. ${highlight.message}`, 25, yPos);
-            
-            yPos += 8;
-          });
-        }
+        const selectedTableName = tables.find(t => t.id === selectedTable)?.name || 'Bilinmeyen Tablo';
+        tableData = {
+          name: selectedTableName,
+          columns: analysisData.tableData.columns,
+          data: analysisData.tableData.data
+        };
       }
       
-      // Add formula explanations
-      if (formulas.length > 0) {
-        if (currentPage > 1) pdf.addPage();
-        
-        pdf.setFontSize(14);
-        pdf.text('Kullanılan Formüller:', 15, 20);
-        
-        let yPos = 35;
-        
-        formulas.forEach((formula, index) => {
-          if (yPos > pageHeight - 30) {
-            pdf.addPage();
-            yPos = 20;
-          }
-          
-          const rgb = hexToRgb(formula.color);
-          
-          // Draw color indicator
-          if (rgb) {
-            pdf.setFillColor(rgb.r, rgb.g, rgb.b);
-            pdf.rect(15, yPos - 4, 6, 6, 'F');
-          }
-          
-          // Add formula details
-          pdf.setFontSize(10);
-          pdf.text(`${index + 1}. ${formula.name}`, 25, yPos);
-          
-          if (formula.description) {
-            yPos += 6;
-            pdf.setFontSize(8);
-            pdf.text(`Açıklama: ${formula.description}`, 25, yPos);
-          }
-          
-          yPos += 6;
-          pdf.setFontSize(8);
-          pdf.text(`Formül: ${formula.formula}`, 25, yPos);
-          pdf.text(`Tip: ${formula.type === 'CELL_VALIDATION' ? 'Hücre Doğrulama' : 'İlişkisel'}`, 25, yPos + 6);
-          
-          yPos += 18;
+      // Prepare formula information
+      const formulaInfo = formulas.map(formula => ({
+        id: formula.id,
+        name: formula.name,
+        formula: formula.formula,
+        type: formula.type,
+        color: formula.color,
+        description: formula.description || '',
+        active: formula.active
+      }));
+      
+      // Use enhanced PDF export
+      if (tableData) {
+        await exportEnhancedTableToPdf(tableData, {
+          title: 'Kapsamli Veri Analiz Raporu',
+          subtitle: `Analiz Edilen Tablo: ${tableData.name}`,
+          orientation: 'landscape',
+          includeFormulas: formulas.length > 0,
+          formulas: formulaInfo,
+          includeCharts: chartElements.length > 0,
+          chartElements: chartElements,
+          highlightedCells: highlightedCells,
+          cellBorderWidth: 1.5,
+          userName: 'Sistem Kullanicisi' // You can get this from user context
         });
-      }
-      
-      // Add footer to all pages
-      const pageCount = pdf.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
-        pdf.setPage(i);
-        pdf.setFontSize(8);
-        pdf.setTextColor(100);
-        pdf.text(
-          'Çınar Çevre Laboratuvarı - Kapsamlı Analiz Raporu',
-          15,
-          pageHeight - 10
-        );
         
-        pdf.text(
-          `Sayfa ${i} / ${pageCount}`,
-          pageWidth - 30,
-          pageHeight - 10
-        );
-      }
-      
-      // Save PDF
-      const fileName = `kapsamli-analiz-raporu-${new Date().toISOString().split('T')[0]}.pdf`;
-      pdf.save(fileName);
-      
-      console.log(`✅ PDF başarıyla oluşturuldu: ${fileName}`);
-      console.log(`📊 ${chartsAdded}/${charts.length} grafik başarıyla eklendi`);
-      
-      // Show success message
-      if (chartsAdded === charts.length) {
-        setError(`✅ PDF başarıyla oluşturuldu! ${chartsAdded} grafik ve ${showTable ? '1 tablo' : '0 tablo'} eklendi.`);
+        console.log(`✅ Comprehensive PDF exported successfully`);
+        console.log(`📊 Charts included: ${chartElements.length}`);
+        console.log(`📋 Formulas included: ${formulaInfo.length}`);
+        console.log(`🎯 Highlighted cells: ${highlightedCells.length}`);
+        
+        setError(`Kapsamlı analiz PDF'i başarıyla oluşturuldu! ${chartElements.length} grafik ve ${formulaInfo.length} formül dahil edildi.`);
       } else {
-        setError(`⚠️ PDF oluşturuldu ancak ${charts.length - chartsAdded} grafik eklenemedi. ${chartsAdded} grafik başarıyla eklendi.`);
+        throw new Error('Tablo verisi bulunamadı');
       }
-      
-      // Clear success message after 5 seconds
-      setTimeout(() => {
-        setError(null);
-      }, 5000);
       
     } catch (err) {
-      console.error('❌ PDF oluşturma hatası:', err);
-      setError(`PDF oluşturulurken bir hata oluştu: ${(err as Error).message}`);
+      console.error('❌ Comprehensive PDF generation error:', err);
+      setError(`Kapsamlı analiz PDF'i oluşturulurken bir hata oluştu: ${(err as Error).message}`);
     } finally {
       setLoading(false);
     }
+  };
+
+  // ENHANCED: Use new PDF export service for normal analysis  
+  const exportNormalAnalysisPDF = async () => {
+    const selectedCharts = charts.filter(chart => selectedChartsForPDF.has(chart.id));
+    
+    if (selectedCharts.length === 0) {
+      setError('Normal analiz PDF\'i oluşturmak için en az bir grafik seçmelisiniz.');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      console.log('🚀 Starting normal analysis PDF export with enhanced service...');
+      
+      // Prepare selected chart elements for export
+      const chartElements: HTMLElement[] = [];
+      
+      for (const chart of selectedCharts) {
+        const chartElement = document.getElementById(`chart-${chart.id}`);
+        
+        if (chartElement) {
+          chartElements.push(chartElement);
+          console.log(`📊 Selected chart element found: ${chart.title}`);
+        } else {
+          console.warn(`⚠️ Selected chart element not found: ${chart.title}`);
+        }
+      }
+      
+      // Create a minimal table data structure for the PDF service
+      const selectedTableName = tables.find(t => t.id === selectedTable)?.name || 'Bilinmeyen Tablo';
+      const dummyTableData = {
+        name: selectedTableName,
+        columns: ['Grafik', 'Aciklama'],
+        data: selectedCharts.map((chart, index) => [
+          `Grafik ${index + 1}: ${chart.title}`,
+          `Degisken: ${chart.variable}, Tarih: ${chart.startDate} - ${chart.endDate}`
+        ])
+      };
+      
+      // Use enhanced PDF export with selected charts only
+      await exportEnhancedTableToPdf(dummyTableData, {
+        title: 'Secili Grafik Analiz Raporu',
+        subtitle: `Analiz Edilen Tablo: ${selectedTableName}`,
+        orientation: 'landscape',
+        includeFormulas: false, // Don't include formulas in normal analysis
+        includeCharts: true,
+        chartElements: chartElements,
+        cellBorderWidth: 1.5,
+        userName: 'Sistem Kullanicisi'
+      });
+      
+      console.log(`✅ Normal analysis PDF exported successfully`);
+      console.log(`📊 Selected charts included: ${chartElements.length}`);
+      
+      setError(`Grafik analiz PDF'i başarıyla oluşturuldu! ${chartElements.length} seçili grafik dahil edildi.`);
+      
+    } catch (err) {
+      console.error('❌ Normal analysis PDF generation error:', err);
+      setError(`Grafik analiz PDF'i oluşturulurken bir hata oluştu: ${(err as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to toggle chart selection for PDF export
+  const toggleChartSelection = (chartId: string) => {
+    const newSelection = new Set(selectedChartsForPDF);
+    if (newSelection.has(chartId)) {
+      newSelection.delete(chartId);
+    } else {
+      newSelection.add(chartId);
+    }
+    setSelectedChartsForPDF(newSelection);
+  };
+
+  // Helper function to select all charts
+  const selectAllCharts = () => {
+    setSelectedChartsForPDF(new Set(charts.map(chart => chart.id)));
+  };
+
+  // Helper function to clear all chart selections
+  const clearChartSelection = () => {
+    setSelectedChartsForPDF(new Set());
   };
 
   // Convert table data for EditableDataTable
@@ -1137,18 +779,87 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
               </div>
             )}
 
-            <button
-              onClick={exportComprehensivePDF}
-              disabled={(!charts.length && !showTable) || loading}
-              className={`flex items-center px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-                (!charts.length && !showTable) || loading
-                  ? 'bg-gray-300 cursor-not-allowed text-gray-500'
-                  : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
-              }`}
-            >
-              <FcPrint className="mr-2 h-5 w-5" />
-              {loading ? 'PDF Oluşturuluyor...' : 'Kapsamlı PDF İndir'}
-            </button>
+            {/* ENHANCED: PDF Export Options with Chart Selection */}
+            <div className="flex flex-col space-y-2">
+              {/* Chart Selection for Normal PDF */}
+              {charts.length > 0 && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-gray-700">
+                      Grafik Seçimi ({selectedChartsForPDF.size}/{charts.length})
+                    </span>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={selectAllCharts}
+                        className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                      >
+                        Tümünü Seç
+                      </button>
+                      <button
+                        onClick={clearChartSelection}
+                        className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                      >
+                        Temizle
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {charts.map((chart) => (
+                      <label
+                        key={chart.id}
+                        className="flex items-center space-x-2 text-xs cursor-pointer hover:bg-gray-100 p-1 rounded"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedChartsForPDF.has(chart.id)}
+                          onChange={() => toggleChartSelection(chart.id)}
+                          className="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                        />
+                        <span className="truncate" title={chart.title}>
+                          {chart.title}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* PDF Export Buttons */}
+              <div className="flex flex-wrap gap-3">
+                <button
+                  onClick={exportNormalAnalysisPDF}
+                  disabled={selectedChartsForPDF.size === 0 || loading}
+                  className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                    selectedChartsForPDF.size === 0 || loading
+                      ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                      : 'bg-green-600 hover:bg-green-700 text-white shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
+                  }`}
+                  title="Sadece seçili grafikler dahil edilir"
+                >
+                  <FcPrint className="mr-2 h-4 w-4" />
+                  {loading ? 'PDF Oluşturuluyor...' : 'Grafik PDF İndir'}
+                  {selectedChartsForPDF.size > 0 && (
+                    <span className="ml-1 bg-white text-green-600 px-1.5 py-0.5 rounded-full text-xs font-bold">
+                      {selectedChartsForPDF.size}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={exportComprehensivePDF}
+                  disabled={(!charts.length && !showTable) || loading}
+                  className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
+                    (!charts.length && !showTable) || loading
+                      ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                      : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
+                  }`}
+                  title="Tüm grafikler, formül vurgulamalı tablo ve detaylı analiz dahil edilir"
+                >
+                  <FcPrint className="mr-2 h-4 w-4" />
+                  {loading ? 'PDF Oluşturuluyor...' : 'Kapsamlı PDF İndir'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

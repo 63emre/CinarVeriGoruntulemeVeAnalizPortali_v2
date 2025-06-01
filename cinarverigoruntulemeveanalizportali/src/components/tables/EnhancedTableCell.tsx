@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
+import { processTableCellValue } from '../../lib/pdf/new-pdf-service';
 
 interface FormulaDetail {
   id: string;
@@ -14,7 +15,7 @@ interface HighlightedCell {
   col: string;
   color: string;
   message: string;
-  formulaIds: string[];
+  formulaIds?: string[]; // IDs of formulas that triggered the highlight
   formulaDetails?: FormulaDetail[];
 }
 
@@ -25,7 +26,8 @@ interface EnhancedTableCellProps {
   highlights?: HighlightedCell[];
   onClick?: (rowId: string, colId: string, value: string | number | null) => void;
   isSelected?: boolean;
-  showAnimations?: boolean;
+  showDataTypes?: boolean;
+  cellBorderWidth?: number;
 }
 
 export default function EnhancedTableCell({ 
@@ -35,144 +37,30 @@ export default function EnhancedTableCell({
   highlights = [],
   onClick,
   isSelected = false,
-  showAnimations = true
+  showDataTypes = true,
+  cellBorderWidth = 2
 }: EnhancedTableCellProps) {
   const [showTooltip, setShowTooltip] = useState(false);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
-  const cellRef = useRef<HTMLTableCellElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // Find all highlights that apply to this cell
-  const cellHighlights = highlights.filter(
-    h => h.row === rowId && h.col === colId
+  // Gelişmiş veri işleme
+  const processedValue = useMemo(() => {
+    return processTableCellValue(value);
+  }, [value]);
+  
+  // OPTIMIZED: Memoize cell highlights calculation
+  const cellHighlights = useMemo(() => 
+    highlights.filter(h => h.row === rowId && h.col === colId),
+    [highlights, rowId, colId]
   );
   
-  // Enhanced logging for debugging
-  useEffect(() => {
-    if (cellHighlights.length > 0) {
-      console.log(`🎨 Enhanced cell [${rowId}, ${colId}] has ${cellHighlights.length} highlights:`, {
-        highlights: cellHighlights,
-        formulaCount: cellHighlights.reduce((sum, h) => sum + (h.formulaDetails?.length || 1), 0),
-        colors: cellHighlights.flatMap(h => h.formulaDetails?.map(d => d.color) || [h.color])
-      });
-    }
-  }, [cellHighlights, rowId, colId]);
-
-  // Format cell value
-  const formatCellValue = (val: string | number | null): string => {
-    if (val === null) return '';
-    if (typeof val === 'number') {
-      if (val % 1 === 0) return val.toString();
-      return val.toLocaleString('tr-TR', { 
-        minimumFractionDigits: 2, 
-        maximumFractionDigits: 4 
-      });
-    }
-    return val;
-  };
-
-  // Format numeric value for display
-  const formatNumericValue = (val?: number): string => {
-    if (val === undefined) return 'N/A';
-    if (val % 1 === 0) return val.toString();
-    return val.toLocaleString('tr-TR', { 
-      minimumFractionDigits: 2, 
-      maximumFractionDigits: 4 
-    });
-  };
-
-  // Get all formula details from highlights
-  const getAllFormulaDetails = (): FormulaDetail[] => {
-    return cellHighlights.flatMap(highlight => 
-      highlight.formulaDetails || [{
-        id: highlight.formulaIds[0] || 'unknown',
-        name: highlight.message,
-        formula: '',
-        color: highlight.color
-      }]
-    );
-  };
-
-  // Create pizza slice effect using Canvas
-  const drawPizzaSlices = () => {
-    const canvas = canvasRef.current;
-    if (!canvas || cellHighlights.length <= 1) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const allFormulas = getAllFormulaDetails();
-    if (allFormulas.length <= 1) return;
-
-    // Set canvas size to match cell
-    const rect = cellRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw pizza slices
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const radius = Math.min(canvas.width, canvas.height) / 2 - 2;
-    
-    const sliceAngle = (2 * Math.PI) / allFormulas.length;
-
-    allFormulas.forEach((formula, index) => {
-      const startAngle = index * sliceAngle - Math.PI / 2; // Start from top
-      const endAngle = (index + 1) * sliceAngle - Math.PI / 2;
-
-      ctx.beginPath();
-      ctx.moveTo(centerX, centerY);
-      ctx.arc(centerX, centerY, radius, startAngle, endAngle);
-      ctx.closePath();
-
-      // Fill with formula color
-      ctx.fillStyle = formula.color;
-      ctx.fill();
-
-      // Add border
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Add subtle shadow for depth
-      ctx.shadowColor = 'rgba(0,0,0,0.2)';
-      ctx.shadowBlur = 3;
-      ctx.shadowOffsetX = 1;
-      ctx.shadowOffsetY = 1;
-    });
-
-    // Add center highlight
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, 8, 0, 2 * Math.PI);
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = 'rgba(0,0,0,0.3)';
-    ctx.shadowBlur = 4;
-    ctx.fill();
-    ctx.strokeStyle = '#666666';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    console.log(`🍕 Drew pizza slices for [${rowId}, ${colId}] with ${allFormulas.length} slices`);
-  };
-
-  // Update canvas when highlights change
-  useEffect(() => {
-    if (cellHighlights.length > 1) {
-      // Small delay to ensure DOM is ready
-      setTimeout(drawPizzaSlices, 50);
-    }
-  }, [cellHighlights.length, rowId, colId]);
-
-  // Get cell styling based on highlights
-  const getCellStyle = (): React.CSSProperties => {
+  // OPTIMIZED: Memoize cell style calculation  
+  const cellStyle = useMemo((): React.CSSProperties => {
+    // Temel stil - kalın kenarlık
     const baseStyle: React.CSSProperties = {
-      position: 'relative',
-      transition: showAnimations ? 'all 0.2s ease-in-out' : 'none'
+      border: `${cellBorderWidth}px solid #d1d5db`,
+      transition: 'all 0.15s ease-in-out',
+      position: 'relative'
     };
 
     if (isSelected) {
@@ -180,7 +68,7 @@ export default function EnhancedTableCell({
         ...baseStyle,
         backgroundColor: '#e3f2fd',
         fontWeight: 'bold',
-        border: '2px solid #2196f3'
+        border: `${cellBorderWidth}px solid #1976d2`
       };
     }
 
@@ -189,46 +77,96 @@ export default function EnhancedTableCell({
     }
 
     if (cellHighlights.length === 1) {
-      // Single highlight
       const highlight = cellHighlights[0];
       return {
         ...baseStyle,
-        backgroundColor: highlight.color,
-        color: getContrastColor(highlight.color),
+        backgroundColor: highlight.color + '40', // Lighter for better performance
+        color: '#000',
         fontWeight: 'bold',
-        border: `2px solid ${highlight.color}`,
-        boxShadow: `0 0 8px ${highlight.color}40`,
-        transform: showAnimations ? 'scale(1.02)' : 'none'
+        border: `${cellBorderWidth * 1.5}px solid ${highlight.color}`,
+        boxShadow: `0 0 8px ${highlight.color}40`
       };
     }
 
-    // Multiple highlights - use transparent background for canvas overlay
+    // Multiple highlights - optimized pizza slice effect
+    const formulaColors: string[] = [];
+    
+    cellHighlights.forEach(highlight => {
+      if (highlight.formulaDetails && highlight.formulaDetails.length > 0) {
+        highlight.formulaDetails.forEach(detail => {
+          if (detail.color) {
+            formulaColors.push(detail.color);
+          }
+        });
+      } else {
+        const cleanColor = highlight.color.startsWith('#') ? highlight.color : `#${highlight.color}`;
+        formulaColors.push(cleanColor);
+      }
+    });
+    
+    // Create symmetric pizza slices
+    const totalSlices = formulaColors.length;
+    const sliceAngle = 360 / totalSlices;
+    const gradientStops: string[] = [];
+    
+    formulaColors.forEach((color, index) => {
+      const startAngle = index * sliceAngle;
+      const endAngle = (index + 1) * sliceAngle;
+      gradientStops.push(`${color} ${startAngle}deg ${endAngle}deg`);
+    });
+    
+    const conicGradient = `conic-gradient(from 0deg, ${gradientStops.join(', ')})`;
+    
     return {
       ...baseStyle,
-      backgroundColor: 'transparent',
-      color: '#000000',
+      background: conicGradient,
+      border: `${cellBorderWidth * 2}px solid #333`,
+      borderRadius: totalSlices > 2 ? '8px' : '3px',
       fontWeight: 'bold',
-      border: '3px solid #333333',
-      borderRadius: getAllFormulaDetails().length > 2 ? '50%' : '8px',
-      boxShadow: '0 0 16px rgba(0,0,0,0.4)',
-      transform: showAnimations ? 'scale(1.08)' : 'none',
-      zIndex: 10
+      color: '#000000',
+      textShadow: '1px 1px 1px rgba(255,255,255,0.7)',
+      boxShadow: '0 0 8px rgba(0,0,0,0.3)',
+      transform: 'scale(1.02)',
+      zIndex: 5,
     };
+  }, [cellHighlights, isSelected, cellBorderWidth]);
+
+  // Veri tipini belirleme
+  const getDataTypeInfo = () => {
+    if (!showDataTypes) return null;
+    
+    const { isLimitValue, numericValue, displayValue } = processedValue;
+    
+    if (isLimitValue) {
+      return {
+        type: 'limit',
+        icon: '📉',
+        description: 'Limit değer (< ile başlayan)'
+      };
+    } else if (numericValue !== null) {
+      return {
+        type: 'numeric',
+        icon: '🔢',
+        description: `Sayısal değer: ${numericValue}`
+      };
+    } else if (displayValue && displayValue.trim() !== '') {
+      return {
+        type: 'text',
+        icon: '📝',
+        description: 'Metin değer'
+      };
+    } else {
+      return {
+        type: 'empty',
+        icon: '⬜',
+        description: 'Boş değer'
+      };
+    }
   };
 
-  // Calculate contrast color for text
-  const getContrastColor = (hexColor: string): string => {
-    const color = hexColor.replace('#', '');
-    const r = parseInt(color.substr(0, 2), 16);
-    const g = parseInt(color.substr(2, 2), 16);
-    const b = parseInt(color.substr(4, 2), 16);
-    const brightness = (r * 299 + g * 587 + b * 114) / 1000;
-    return brightness > 128 ? '#000000' : '#ffffff';
-  };
-
-  // Handle mouse enter with position tracking
+  // Handle mouse events
   const handleMouseEnter = (e: React.MouseEvent) => {
-    if (cellHighlights.length > 0) {
+    if (cellHighlights.length > 0 || showDataTypes) {
       const rect = e.currentTarget.getBoundingClientRect();
       const scrollY = window.scrollY || document.documentElement.scrollTop;
       const scrollX = window.scrollX || document.documentElement.scrollLeft;
@@ -245,234 +183,191 @@ export default function EnhancedTableCell({
     setShowTooltip(false);
   };
 
-  // Enhanced tooltip content
+  // OPTIMIZED: Enhanced tooltip content
   const getTooltipContent = () => {
-    if (cellHighlights.length === 0) return null;
+    if (!showTooltip) return null;
 
-    const allFormulas = getAllFormulaDetails();
+    const dataTypeInfo = getDataTypeInfo();
 
     return (
-      <div 
-        className="fixed z-50 bg-gray-900 text-white text-sm rounded-lg py-4 px-5 shadow-2xl border border-gray-700 min-w-[400px] max-w-[700px]"
-        style={{
-          left: `${tooltipPosition.x}px`,
-          top: `${tooltipPosition.y}px`,
-          transform: 'translate(-50%, -100%)'
-        }}
-      >
-        {/* Enhanced Header */}
-        <div className="flex items-center justify-between font-bold mb-3 text-blue-300 border-b border-gray-700 pb-2">
-          <span className="text-base">
-            {allFormulas.length === 1 ? 'Aktif Formül:' : `🍕 ${allFormulas.length} Aktif Formül:`}
-          </span>
-          {allFormulas.length > 1 && (
-            <div className="flex items-center space-x-3">
-              <span className="text-xs text-yellow-300 font-normal">Pizza Dilimi Görünümü</span>
-              <div
-                className="w-8 h-8 rounded-full border-2 border-gray-400"
-                style={{
-                  background: allFormulas.length > 1 ? 
-                    `conic-gradient(from 0deg, ${
-                      allFormulas.map((formula, idx) => {
-                        const angle = 360 / allFormulas.length;
-                        const start = idx * angle;
-                        const end = (idx + 1) * angle;
-                        return `${formula.color} ${start}deg ${end}deg`;
-                      }).join(', ')
-                    })` : allFormulas[0].color,
-                  animation: showAnimations ? 'spin 4s linear infinite' : 'none'
-                }}
-                title="Pizza dilimi görünümü"
-              />
-            </div>
-          )}
-        </div>
+      <div className="fixed z-50 bg-gray-900 text-white text-xs rounded-lg py-3 px-4 shadow-xl border border-gray-700 min-w-[220px] max-w-[400px]"
+           style={{
+             left: `${tooltipPosition.x}px`,
+             top: `${tooltipPosition.y}px`,
+             transform: 'translate(-50%, -100%)',
+           }}>
         
-        {/* Formula details */}
-        <div className="space-y-4">
-          {allFormulas.map((formula, index) => {
-            const totalSlices = allFormulas.length;
-            const sliceAngle = totalSlices > 1 ? 360 / totalSlices : 360;
-            const startAngle = index * sliceAngle;
-            const endAngle = (index + 1) * sliceAngle;
+        {/* Veri Tipi Bilgisi */}
+        {dataTypeInfo && (
+          <div className="mb-3 p-2 bg-gray-800 rounded border border-gray-600">
+            <div className="flex items-center justify-between font-bold mb-1 text-blue-300">
+              <span className="text-xs">Veri Tipi</span>
+              <span className="text-lg">{dataTypeInfo.icon}</span>
+            </div>
+            <div className="text-xs text-gray-300">{dataTypeInfo.description}</div>
             
-            return (
-              <div 
-                key={`${formula.id}-${index}`}
-                className="border-l-4 pl-4 py-2 bg-gray-800 rounded-r-lg transition-all hover:bg-gray-750" 
-                style={{ borderColor: formula.color }}
-              >
-                {/* Formula name with slice info */}
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center">
-                    <div 
-                      className="w-4 h-4 rounded-full mr-3 border-2 border-gray-400 flex-shrink-0" 
-                      style={{ backgroundColor: formula.color }}
-                    />
-                    <span className="font-semibold text-yellow-300 text-base">{formula.name}</span>
-                  </div>
-                  {totalSlices > 1 && (
-                    <div className="text-xs text-gray-400 bg-gray-700 px-2 py-1 rounded">
-                      Dilim {index + 1}/{totalSlices} ({Math.round(startAngle)}°-{Math.round(endAngle)}°)
-                    </div>
-                  )}
+            {/* Orijinal ve işlenmiş değeri göster */}
+            <div className="mt-2 pt-2 border-t border-gray-700">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-blue-400">Orijinal: </span>
+                  <span className="font-mono text-green-300">
+                    {String(processedValue.originalValue || 'boş')}
+                  </span>
                 </div>
-                
-                {/* Formula calculation details */}
-                {(formula.leftResult !== undefined || formula.rightResult !== undefined) && (
-                  <div className="text-xs space-y-2 ml-7 text-gray-300">
-                    <div className="grid grid-cols-2 gap-4 bg-gray-900 p-3 rounded border border-gray-600">
-                      <div className="text-center">
-                        <span className="text-blue-400 font-semibold block">Sol İfade</span>
-                        <span className="ml-1 font-mono text-green-300 text-lg font-bold">
-                          {formatNumericValue(formula.leftResult)}
-                        </span>
-                      </div>
-                      <div className="text-center">
-                        <span className="text-blue-400 font-semibold block">Sağ İfade</span>
-                        <span className="ml-1 font-mono text-green-300 text-lg font-bold">
-                          {formatNumericValue(formula.rightResult)}
-                        </span>
+                <div>
+                  <span className="text-blue-400">Görüntü: </span>
+                  <span className="font-mono text-green-300">
+                    {processedValue.displayValue || 'boş'}
+                  </span>
+                </div>
+              </div>
+              
+              {processedValue.numericValue !== null && (
+                <div className="mt-1">
+                  <span className="text-blue-400">Sayısal: </span>
+                  <span className="font-mono text-green-300">
+                    {processedValue.numericValue.toFixed(4)}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Formül Bilgileri */}
+        {cellHighlights.length > 0 && (
+          <div>
+            <div className="flex items-center justify-between font-bold mb-2 text-blue-300">
+              <span className="text-xs">
+                {cellHighlights.length === 1 ? 'Aktif Formül' : `${cellHighlights.length} Aktif Formül`}
+              </span>
+              {cellHighlights.length > 1 && (
+                <div
+                  className="w-4 h-4 rounded-full border border-gray-400"
+                  style={{
+                    background: cellStyle.background
+                  }}
+                />
+              )}
+            </div>
+            
+            <div className="space-y-2">
+              {cellHighlights.flatMap((highlight, highlightIdx) => 
+                highlight.formulaDetails?.map((formulaDetail, detailIdx) => (
+                  <div key={`formula-${highlightIdx}-${detailIdx}`} 
+                       className="border-l-2 pl-2 py-1 bg-gray-800 rounded-r" 
+                       style={{ borderColor: formulaDetail.color }}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div 
+                          className="w-2 h-2 rounded-full mr-1 border border-gray-400" 
+                          style={{ backgroundColor: formulaDetail.color }}
+                        />
+                        <span className="font-medium text-yellow-300 text-xs">{formulaDetail.name}</span>
                       </div>
                     </div>
-                    {formula.formula && (
-                      <div className="mt-3 p-3 bg-gray-800 rounded text-xs font-mono text-gray-200 border border-gray-600">
-                        <span className="text-blue-400 font-semibold">Formül: </span>
-                        {formula.formula}
+                    
+                    {(formulaDetail.leftResult !== undefined || formulaDetail.rightResult !== undefined) && (
+                      <div className="text-xs ml-3 text-gray-300 mt-1">
+                        <div className="grid grid-cols-2 gap-1 bg-gray-900 p-1 rounded text-xs">
+                          <div className="text-center">
+                            <span className="text-blue-400">Sol: </span>
+                            <span className="font-mono text-green-300">
+                              {formulaDetail.leftResult?.toFixed(2) || 'N/A'}
+                            </span>
+                          </div>
+                          <div className="text-center">
+                            <span className="text-blue-400">Sağ: </span>
+                            <span className="font-mono text-green-300">
+                              {formulaDetail.rightResult?.toFixed(2) || 'N/A'}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        
-        {/* Cell info */}
-        <div className="mt-4 pt-3 border-t border-gray-700 text-xs text-gray-400">
-          <div className="grid grid-cols-2 gap-4 mb-3">
-            <div><strong>Hücre:</strong> {colId} - {rowId}</div>
-            <div><strong>Değer:</strong> {formatCellValue(value)}</div>
-          </div>
-          {allFormulas.length > 1 && (
-            <div className="text-yellow-400 mt-2 p-3 bg-gray-800 rounded border border-yellow-600">
-              <div className="flex items-center mb-2">
-                <span className="text-lg mr-2">🍕</span>
-                <strong>Pizza Dilimi Açıklaması:</strong>
-              </div>
-              <p className="text-sm text-gray-300 leading-relaxed">
-                Bu hücre <strong>{allFormulas.length}</strong> farklı formül koşulunu karşılıyor. 
-                Her renk dilimi farklı bir formülü temsil eder ve hücrenin arka planı 
-                {allFormulas.length > 2 ? ' dairesel' : ' dikdörtgen'} pasta dilimlerine bölünmüştür.
-              </p>
-              {allFormulas.length > 2 && (
-                <p className="text-xs text-gray-400 mt-2">
-                  💡 İpucu: 3 veya daha fazla formül için dairesel görünüm kullanılır.
-                </p>
+                )) || [
+                  <div key={`highlight-${highlightIdx}`} 
+                       className="border-l-2 pl-2 py-1 bg-gray-800 rounded-r" 
+                       style={{ borderColor: highlight.color }}>
+                    <div className="flex items-center">
+                      <div 
+                        className="w-2 h-2 rounded-full mr-1 border border-gray-400" 
+                        style={{ backgroundColor: highlight.color }}
+                      />
+                      <span className="font-medium text-yellow-300 text-xs">{highlight.message}</span>
+                    </div>
+                  </div>
+                ]
               )}
+            </div>
+          </div>
+        )}
+        
+        {/* Hücre Bilgileri */}
+        <div className="mt-3 pt-2 border-t border-gray-700 text-xs text-gray-400">
+          <div className="flex justify-between">
+            <span>Hücre: {colId}[{rowId}]</span>
+            <span>Değer: {processedValue.displayValue}</span>
+          </div>
+          {cellHighlights.length > 1 && (
+            <div className="text-yellow-400 mt-1 text-xs">
+              🍕 {cellHighlights.length} formül aktif (çoklu vurgulama)
             </div>
           )}
         </div>
         
-        {/* Tooltip arrow */}
-        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[8px] border-r-[8px] border-t-[8px] border-transparent border-t-gray-900" />
+        {/* Tooltip ok */}
+        <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[4px] border-transparent border-t-gray-900"></div>
       </div>
     );
   };
   
   return (
     <>
-      {/* Enhanced CSS animations */}
-      <style jsx>{`
-        @keyframes pizza-pulse {
-          0% { 
-            box-shadow: 0 0 16px rgba(0,0,0,0.4);
-            transform: scale(1.08);
-          }
-          50% { 
-            box-shadow: 0 0 20px rgba(0,0,0,0.6);
-            transform: scale(1.12);
-          }
-          100% { 
-            box-shadow: 0 0 16px rgba(0,0,0,0.4);
-            transform: scale(1.08);
-          }
-        }
-        
-        @keyframes slice-glow {
-          0% { opacity: 0.8; }
-          50% { opacity: 1; }
-          100% { opacity: 0.8; }
-        }
-        
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        
-        .multi-formula-cell {
-          animation: ${showAnimations ? 'pizza-pulse 3s infinite' : 'none'};
-        }
-        
-        .enhanced-cell:hover {
-          transform: scale(1.02) !important;
-          z-index: 15 !important;
-          transition: transform 0.2s ease-in-out !important;
-        }
-      `}</style>
-      
       <td
-        ref={cellRef}
-        className={`px-4 py-2 border-b border-gray-200 relative cursor-pointer hover:bg-gray-50 transition-colors enhanced-cell ${
-          cellHighlights.length > 1 ? 'multi-formula-cell' : ''
-        }`}
-        style={getCellStyle()}
+        className={`px-2 py-2 relative cursor-pointer hover:bg-gray-50 transition-all duration-200 text-xs font-medium ${
+          cellHighlights.length > 0 ? 'highlighted-cell' : ''
+        } ${isSelected ? 'selected-cell' : ''}`}
+        style={cellStyle}
         onClick={() => onClick && onClick(rowId, colId, value)}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
-        {/* Canvas overlay for pizza slices */}
-        {cellHighlights.length > 1 && (
-          <canvas
-            ref={canvasRef}
-            className="absolute inset-0 pointer-events-none"
-            style={{ 
-              zIndex: 1,
-              borderRadius: 'inherit'
-            }}
-          />
-        )}
+        <div className="relative z-10 flex items-center justify-between">
+          <span className="truncate block flex-1" style={{ position: 'relative', zIndex: 10 }}>
+            {processedValue.displayValue}
+          </span>
+          
+          {/* Veri tipi göstergesi */}
+          {showDataTypes && (
+            <div className="ml-1 flex items-center">
+              {processedValue.isLimitValue && (
+                <span className="text-orange-500 text-xs" title="Limit değer">📉</span>
+              )}
+              {processedValue.numericValue !== null && !processedValue.isLimitValue && (
+                <span className="text-blue-500 text-xs" title="Sayısal değer">🔢</span>
+              )}
+            </div>
+          )}
+        </div>
         
-        {/* Cell content */}
-        <span 
-          className={isSelected ? 'font-medium' : ''} 
-          style={{ 
-            position: 'relative', 
-            zIndex: 12,
-            textShadow: cellHighlights.length > 1 ? '1px 1px 2px rgba(255,255,255,0.8)' : 'none'
-          }}
-        >
-          {formatCellValue(value)}
-        </span>
-        
-        {/* Multi-formula indicator */}
+        {/* Formula indicators */}
         {cellHighlights.length > 1 && (
-          <div className="absolute top-1 right-1 flex items-center space-x-1" style={{ zIndex: 20 }}>
-            <div className={`w-2 h-2 bg-yellow-400 rounded-full border border-white shadow-sm ${showAnimations ? 'animate-bounce' : ''}`} />
-            <span className="text-xs font-bold text-white bg-red-500 rounded-full px-1.5 py-0.5 min-w-[20px] h-5 flex items-center justify-center shadow-lg border border-white">
+          <div className="absolute top-0 right-0 flex items-center" style={{ zIndex: 15 }}>
+            <span className="text-xs font-bold text-white bg-red-500 rounded-full px-1 py-0 min-w-[16px] h-4 flex items-center justify-center shadow-sm border border-white">
               {cellHighlights.length}
             </span>
           </div>
         )}
         
-        {/* Single formula indicator */}
         {cellHighlights.length === 1 && (
-          <div className="absolute top-1 right-1" style={{ zIndex: 20 }}>
-            <div className={`w-3 h-3 bg-green-400 rounded-full border border-white shadow-md ${showAnimations ? 'animate-pulse' : ''}`} />
+          <div className="absolute top-0 right-0" style={{ zIndex: 15 }}>
+            <div className="w-2 h-2 bg-green-400 rounded-full border border-white shadow-sm"></div>
           </div>
         )}
         
-        {/* Tooltip */}
         {showTooltip && getTooltipContent()}
       </td>
     </>

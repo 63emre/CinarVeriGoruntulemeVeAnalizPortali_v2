@@ -1,5 +1,5 @@
 /**
- * Enhanced Formula Evaluator
+ * Enhanced Formula Evaluator - Ana Formül Değerlendirici
  * 
  * Supports complex expressions like:
  * - (Var1 + Var2) > 0.001
@@ -7,6 +7,7 @@
  * - Variable < 0.001 OR Variable > 1000
  * 
  * FIXED: Proper left/right operand evaluation and highlighting logic
+ * CONSOLIDATED: Merged functionality from formulaEvaluator.ts to eliminate duplication
  */
 
 interface FormulaCondition {
@@ -29,12 +30,17 @@ interface EvaluationResult {
 interface Formula {
   id: string;
   name: string;
+  description?: string | null;
   formula: string;
   color: string;
   active: boolean;
+  tableId?: string | null;
+  workspaceId?: string;
+  type?: 'CELL_VALIDATION' | 'RELATIONAL';
   // ENHANCED: Add scope support
   scope?: 'table' | 'workspace';
-  tableId?: string | null;
+  leftResult?: number;
+  rightResult?: number;
 }
 
 interface HighlightedCell {
@@ -52,6 +58,21 @@ interface HighlightedCell {
     color: string;
   }[];
 }
+
+interface DataRow {
+  id: string;
+  [key: string]: string | number | null;
+}
+
+/**
+ * Cache for parsed formulas to improve performance
+ */
+const formulaCache = new Map<string, {
+  leftExpression: string;
+  operator: string;
+  rightExpression: string;
+  variables: string[];
+}>();
 
 /**
  * ENHANCED: Parse a complex formula into individual conditions
@@ -926,3 +947,106 @@ export function evaluateFormulasForTableWithScope(
 
 // Export for backward compatibility with existing code
 export { evaluateFormulasForTable as evaluateFormulas }; 
+
+/**
+ * Backward Compatibility Functions - Eski formulaEvaluator.ts ile uyumluluk için
+ */
+
+/**
+ * Helper function to extract cell value from a data table (backward compatibility)
+ */
+export function getCellValue(
+  data: DataRow[],
+  variableName: string,
+  columnName: string
+): number | null {
+  const row = data.find(r => r['Variable'] === variableName);
+  if (!row || row[columnName] === null || row[columnName] === undefined) {
+    return null;
+  }
+  const value = Number(row[columnName]);
+  return isNaN(value) ? null : value;
+}
+
+/**
+ * Clears the formula cache (useful for testing or when formulas change)
+ */
+export function clearFormulaCache(): void {
+  formulaCache.clear();
+}
+
+/**
+ * Evaluate formulas with DataRow format (backward compatibility)
+ */
+export function evaluateFormulasWithDataRows(
+  formulas: Formula[],
+  data: DataRow[],
+  columns: string[]
+): HighlightedCell[] {
+  // Convert DataRow format to table format
+  const tableData = {
+    columns: columns,
+    data: data.map(row => columns.map(col => row[col]))
+  };
+  
+  return evaluateFormulasForTable(formulas, tableData);
+}
+
+/**
+ * Parses a simple formula into tokens with caching (backward compatibility)
+ */
+export function parseFormula(formula: string) {
+  // Check cache first
+  if (formulaCache.has(formula)) {
+    return formulaCache.get(formula)!;
+  }
+
+  // Use the enhanced parser for compatibility
+  const conditions = parseComplexFormula(formula);
+  if (conditions.length === 0) {
+    throw new Error('Invalid formula format. Formula must contain exactly one comparison operator.');
+  }
+  
+  const condition = conditions[0];
+  const variables = [
+    ...extractVariables(condition.leftExpression),
+    ...extractVariables(condition.rightExpression)
+  ];
+  
+  const result = {
+    leftExpression: condition.leftExpression,
+    operator: condition.operator,
+    rightExpression: condition.rightExpression,
+    variables: [...new Set(variables)]
+  };
+  
+  // Cache the result
+  formulaCache.set(formula, result);
+  
+  return result;
+}
+
+/**
+ * Blends multiple colors for cells with multiple formula matches (backward compatibility)
+ */
+export function blendColors(colors: string[]): string {
+  if (colors.length === 1) return colors[0];
+  
+  // Convert hex colors to RGB
+  const rgbColors = colors.map(color => {
+    const hex = color.replace('#', '');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    return { r, g, b };
+  });
+  
+  // Calculate average color
+  const avgR = Math.round(rgbColors.reduce((sum, color) => sum + color.r, 0) / rgbColors.length);
+  const avgG = Math.round(rgbColors.reduce((sum, color) => sum + color.g, 0) / rgbColors.length);
+  const avgB = Math.round(rgbColors.reduce((sum, color) => sum + color.b, 0) / rgbColors.length);
+  
+  // Convert back to hex
+  const toHex = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${toHex(avgR)}${toHex(avgG)}${toHex(avgB)}`;
+} 

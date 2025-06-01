@@ -526,51 +526,61 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
   };
 
   const handleCreateFormula = async () => {
-    if (!isFormulaValid || !formulaName.trim() || !formulaExpression.trim()) {
-      setError('Lütfen tüm gerekli alanları doldurun ve geçerli bir formül oluşturun.');
-      return;
-    }
-
-    // ENHANCED: Scope kontrolü
-    if (formulaScope === 'table' && !formulaScopeTableId) {
-      setError('Tablo kapsamı seçildi ama tablo seçilmedi. Lütfen bir tablo seçin veya workspace kapsamını seçin.');
+    if (!formulaName.trim() || !formulaExpression.trim() || !isFormulaValid) {
+      setError('Lütfen tüm gerekli alanları doldurun ve formülün geçerli olduğundan emin olun');
       return;
     }
 
     try {
       setLoading(true);
+      
+      const formulaData = {
+        name: formulaName,
+        description: formulaDescription || null,
+        formula: formulaExpression,
+        type: formulaType,
+        color: formulaColor,
+        active: formulaActive,
+        scope: formulaScope, // ENHANCED: Explicit scope setting
+        tableId: formulaScope === 'table' ? formulaScopeTableId || null : null
+      };
+
       const response = await fetch(`/api/workspaces/${selectedWorkspace}/formulas`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          name: formulaName,
-          description: formulaDescription || null,
-          formula: formulaExpression,
-          type: formulaType,
-          color: formulaColor,
-          active: formulaActive,
-          // ENHANCED: Include scope information
-          scope: formulaScope,
-          tableId: formulaScope === 'table' ? formulaScopeTableId : null,
-        }),
+        body: JSON.stringify(formulaData),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Formül oluşturulurken bir hata oluştu');
+        throw new Error(errorData.error || 'Formül oluşturulurken bir hata oluştu');
       }
 
+      const newFormula = await response.json();
+      setFormulas(prev => [...prev, newFormula]);
       setSuccess('Formül başarıyla oluşturuldu');
       setShowCreateModal(false);
       resetForm();
-      fetchFormulas();
-      
-      // Auto-refresh triggered after successful creation
-      setAutoRefresh(true);
-      setTimeout(() => setAutoRefresh(false), 5000); // Auto-refresh for 5 seconds
-      
+
+      // ENHANCED: Trigger data refresh after formula creation
+      const { formulaService } = await import('@/lib/formula/formulaService');
+      await formulaService.triggerDataRefresh(
+        selectedWorkspace,
+        formulaScope === 'table' ? formulaScopeTableId : undefined,
+        () => {
+          console.log('✅ Data refresh triggered successfully after formula creation');
+          // Force refresh highlights if we have a selected table
+          if (selectedTable) {
+            refreshHighlights();
+          }
+        },
+        (error) => {
+          console.error('❌ Error triggering data refresh:', error);
+        }
+      );
+
     } catch (err) {
       console.error('Error creating formula:', err);
       setError((err as Error).message);
@@ -580,52 +590,62 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
   };
 
   const handleUpdateFormula = async () => {
-    if (!editingFormula || !isFormulaValid || !formulaName.trim() || !formulaExpression.trim()) {
-      setError('Lütfen tüm gerekli alanları doldurun ve geçerli bir formül oluşturun.');
-      return;
-    }
-
-    // ENHANCED: Scope kontrolü
-    if (formulaScope === 'table' && !formulaScopeTableId) {
-      setError('Tablo kapsamı seçildi ama tablo seçilmedi. Lütfen bir tablo seçin veya workspace kapsamını seçin.');
+    if (!editingFormula || !formulaName.trim() || !formulaExpression.trim() || !isFormulaValid) {
+      setError('Lütfen tüm gerekli alanları doldurun ve formülün geçerli olduğundan emin olun');
       return;
     }
 
     try {
       setLoading(true);
+      
+      const formulaData = {
+        name: formulaName,
+        description: formulaDescription || null,
+        formula: formulaExpression,
+        type: formulaType,
+        color: formulaColor,
+        active: formulaActive,
+        scope: formulaScope, // ENHANCED: Explicit scope setting
+        tableId: formulaScope === 'table' ? formulaScopeTableId || null : null
+      };
+
       const response = await fetch(`/api/workspaces/${selectedWorkspace}/formulas/${editingFormula.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          name: formulaName,
-          description: formulaDescription || null,
-          formula: formulaExpression,
-          type: formulaType,
-          color: formulaColor,
-          active: formulaActive,
-          // ENHANCED: Include scope information
-          scope: formulaScope,
-          tableId: formulaScope === 'table' ? formulaScopeTableId : null,
-        }),
+        body: JSON.stringify(formulaData),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Formül güncellenirken bir hata oluştu');
+        throw new Error(errorData.error || 'Formül güncellenirken bir hata oluştu');
       }
 
+      const updatedFormula = await response.json();
+      setFormulas(prev => prev.map(f => f.id === editingFormula.id ? updatedFormula : f));
       setSuccess('Formül başarıyla güncellendi');
       setShowEditModal(false);
       setEditingFormula(null);
       resetForm();
-      fetchFormulas();
-      
-      // Auto-refresh triggered after successful update
-      setAutoRefresh(true);
-      setTimeout(() => setAutoRefresh(false), 5000); // Auto-refresh for 5 seconds
-      
+
+      // ENHANCED: Trigger data refresh after formula update
+      const { formulaService } = await import('@/lib/formula/formulaService');
+      await formulaService.triggerDataRefresh(
+        selectedWorkspace,
+        formulaScope === 'table' ? formulaScopeTableId : undefined,
+        () => {
+          console.log('✅ Data refresh triggered successfully after formula update');
+          // Force refresh highlights if we have a selected table
+          if (selectedTable) {
+            refreshHighlights();
+          }
+        },
+        (error) => {
+          console.error('❌ Error triggering data refresh:', error);
+        }
+      );
+
     } catch (err) {
       console.error('Error updating formula:', err);
       setError((err as Error).message);
@@ -641,18 +661,39 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
 
     try {
       setLoading(true);
+      
       const response = await fetch(`/api/workspaces/${selectedWorkspace}/formulas/${formulaId}`, {
         method: 'DELETE',
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Formül silinirken bir hata oluştu');
+        throw new Error(errorData.error || 'Formül silinirken bir hata oluştu');
       }
 
-      setFormulas(formulas.filter(f => f.id !== formulaId));
+      // Find the formula being deleted to determine its scope
+      const deletedFormula = formulas.find(f => f.id === formulaId);
+      
+      setFormulas(prev => prev.filter(f => f.id !== formulaId));
       setSuccess('Formül başarıyla silindi');
-      setTimeout(() => setSuccess(null), 3000);
+
+      // ENHANCED: Trigger data refresh after formula deletion
+      const { formulaService } = await import('@/lib/formula/formulaService');
+      await formulaService.triggerDataRefresh(
+        selectedWorkspace,
+        deletedFormula?.scope === 'table' ? deletedFormula.tableId || undefined : undefined,
+        () => {
+          console.log('✅ Data refresh triggered successfully after formula deletion');
+          // Force refresh highlights if we have a selected table
+          if (selectedTable) {
+            refreshHighlights();
+          }
+        },
+        (error) => {
+          console.error('❌ Error triggering data refresh:', error);
+        }
+      );
+
     } catch (err) {
       console.error('Error deleting formula:', err);
       setError((err as Error).message);
@@ -1192,7 +1233,115 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
                     setFormulaExpression(formula);
                     setIsFormulaValid(valid);
                   }}
+                  context={formulaScope === 'table' ? 'table' : 'general'}
+                  scope={formulaScope}
+                  tableId={formulaScopeTableId}
                 />
+              </div>
+
+              {/* ENHANCED: Add Scope Selection Controls */}
+              <div className="border-t pt-6 mt-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Formül Kapsamı</h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Kapsam Türü
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="relative flex items-center p-3 bg-blue-50 border-2 border-blue-200 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors">
+                        <input
+                          type="radio"
+                          name="scope"
+                          value="table"
+                          checked={formulaScope === 'table'}
+                          onChange={(e) => setFormulaScope(e.target.value as 'table' | 'workspace')}
+                          className="sr-only"
+                        />
+                        <div className="flex items-center">
+                          <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                            formulaScope === 'table' ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                          }`}>
+                            {formulaScope === 'table' && (
+                              <div className="w-2 h-2 bg-white rounded-full mx-auto mt-[1px]"></div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Tablo Kapsamı</div>
+                            <div className="text-xs text-gray-600">Sadece belirli bir tabloya uygula</div>
+                          </div>
+                        </div>
+                      </label>
+                      
+                      <label className="relative flex items-center p-3 bg-green-50 border-2 border-green-200 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">
+                        <input
+                          type="radio"
+                          name="scope"
+                          value="workspace"
+                          checked={formulaScope === 'workspace'}
+                          onChange={(e) => setFormulaScope(e.target.value as 'table' | 'workspace')}
+                          className="sr-only"
+                        />
+                        <div className="flex items-center">
+                          <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                            formulaScope === 'workspace' ? 'bg-green-600 border-green-600' : 'border-gray-300'
+                          }`}>
+                            {formulaScope === 'workspace' && (
+                              <div className="w-2 h-2 bg-white rounded-full mx-auto mt-[1px]"></div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Workspace Kapsamı</div>
+                            <div className="text-xs text-gray-600">Tüm workspace genelinde uygula</div>
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* ENHANCED: Table Selection for Table Scope */}
+                  {formulaScope === 'table' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Hedef Tablo *
+                      </label>
+                      <select
+                        value={formulaScopeTableId}
+                        onChange={(e) => setFormulaScopeTableId(e.target.value)}
+                        className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
+                        required
+                      >
+                        <option value="">Lütfen bir tablo seçin</option>
+                        {tables.map((table) => (
+                          <option key={table.id} value={table.id}>
+                            {table.name}
+                          </option>
+                        ))}
+                      </select>
+                      {formulaScope === 'table' && !formulaScopeTableId && (
+                        <p className="text-red-600 text-xs mt-1">Tablo kapsamı için hedef tablo seçimi zorunludur</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Scope Information */}
+                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Seçili Kapsam Açıklaması:</h4>
+                    {formulaScope === 'table' ? (
+                      <div className="text-sm text-gray-600">
+                        <p>✅ Bu formül sadece seçili tabloda çalışacak</p>
+                        <p>✅ Tek yönlü kısıtlamalar uygulanacak (sol tarafta tek değişken)</p>
+                        <p>✅ Hücre seviyesinde doğrulama yapılacak</p>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-600">
+                        <p>✅ Bu formül workspace&apos;teki tüm tablolarda çalışacak</p>
+                        <p>✅ Karmaşık koşullar (AND/OR) desteklenir</p>
+                        <p>✅ Çapraz tablo analizleri mümkün</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1315,7 +1464,115 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
                     setFormulaExpression(formula);
                     setIsFormulaValid(valid);
                   }}
+                  context={formulaScope === 'table' ? 'table' : 'general'}
+                  scope={formulaScope}
+                  tableId={formulaScopeTableId}
                 />
+              </div>
+
+              {/* ENHANCED: Add Scope Selection Controls for Edit Modal */}
+              <div className="border-t pt-6 mt-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Formül Kapsamı</h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Kapsam Türü
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="relative flex items-center p-3 bg-blue-50 border-2 border-blue-200 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors">
+                        <input
+                          type="radio"
+                          name="edit-scope"
+                          value="table"
+                          checked={formulaScope === 'table'}
+                          onChange={(e) => setFormulaScope(e.target.value as 'table' | 'workspace')}
+                          className="sr-only"
+                        />
+                        <div className="flex items-center">
+                          <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                            formulaScope === 'table' ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                          }`}>
+                            {formulaScope === 'table' && (
+                              <div className="w-2 h-2 bg-white rounded-full mx-auto mt-[1px]"></div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Tablo Kapsamı</div>
+                            <div className="text-xs text-gray-600">Sadece belirli bir tabloya uygula</div>
+                          </div>
+                        </div>
+                      </label>
+                      
+                      <label className="relative flex items-center p-3 bg-green-50 border-2 border-green-200 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">
+                        <input
+                          type="radio"
+                          name="edit-scope"
+                          value="workspace"
+                          checked={formulaScope === 'workspace'}
+                          onChange={(e) => setFormulaScope(e.target.value as 'table' | 'workspace')}
+                          className="sr-only"
+                        />
+                        <div className="flex items-center">
+                          <div className={`w-4 h-4 rounded-full border-2 mr-3 ${
+                            formulaScope === 'workspace' ? 'bg-green-600 border-green-600' : 'border-gray-300'
+                          }`}>
+                            {formulaScope === 'workspace' && (
+                              <div className="w-2 h-2 bg-white rounded-full mx-auto mt-[1px]"></div>
+                            )}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">Workspace Kapsamı</div>
+                            <div className="text-xs text-gray-600">Tüm workspace genelinde uygula</div>
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* ENHANCED: Table Selection for Table Scope */}
+                  {formulaScope === 'table' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Hedef Tablo *
+                      </label>
+                      <select
+                        value={formulaScopeTableId}
+                        onChange={(e) => setFormulaScopeTableId(e.target.value)}
+                        className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
+                        required
+                      >
+                        <option value="">Lütfen bir tablo seçin</option>
+                        {tables.map((table) => (
+                          <option key={table.id} value={table.id}>
+                            {table.name}
+                          </option>
+                        ))}
+                      </select>
+                      {formulaScope === 'table' && !formulaScopeTableId && (
+                        <p className="text-red-600 text-xs mt-1">Tablo kapsamı için hedef tablo seçimi zorunludur</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Scope Information */}
+                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">Seçili Kapsam Açıklaması:</h4>
+                    {formulaScope === 'table' ? (
+                      <div className="text-sm text-gray-600">
+                        <p>✅ Bu formül sadece seçili tabloda çalışacak</p>
+                        <p>✅ Tek yönlü kısıtlamalar uygulanacak (sol tarafta tek değişken)</p>
+                        <p>✅ Hücre seviyesinde doğrulama yapılacak</p>
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-600">
+                        <p>✅ Bu formül workspace&apos;teki tüm tablolarda çalışacak</p>
+                        <p>✅ Karmaşık koşullar (AND/OR) desteklenir</p>
+                        <p>✅ Çapraz tablo analizleri mümkün</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 

@@ -30,6 +30,7 @@ interface HighlightedCell {
     formula: string;
     leftResult?: number;
     rightResult?: number;
+    color: string;
   }[];
 }
 
@@ -57,6 +58,11 @@ export default function TablePage() {
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [variables, setVariables] = useState<string[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
+
+  // ENHANCED: Auto-refresh state management
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(30); // seconds
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   // Convert table data to the format expected by EditableDataTable component - using useMemo for performance
   const tableColumns = useMemo(() => 
@@ -115,6 +121,50 @@ export default function TablePage() {
     document.addEventListener('keydown', handleEscKey);
     return () => document.removeEventListener('keydown', handleEscKey);
   }, [handleEscKey]);
+
+  // ENHANCED: Auto-refresh effect for formula changes
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    if (autoRefresh && refreshInterval > 0) {
+      intervalId = setInterval(async () => {
+        // Refresh table data
+        if (workspaceId && tableId) {
+          try {
+            const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}`);
+            if (response.ok) {
+              const data = await response.json();
+              setTable(data);
+              console.log('📊 Auto-refresh: Table data updated');
+            }
+          } catch (error) {
+            console.error('Auto-refresh table error:', error);
+          }
+        }
+        
+        // Refresh formulas
+        try {
+          const response = await fetch(`/api/workspaces/${workspaceId}/formulas`);
+          if (response.ok) {
+            const data = await response.json();
+            setFormulas(data);
+            console.log('🔄 Auto-refresh: Formulas updated');
+          }
+        } catch (error) {
+          console.error('Auto-refresh formulas error:', error);
+        }
+        
+        // Update last refresh time
+        setLastRefresh(new Date());
+      }, refreshInterval * 1000);
+    }
+    
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [autoRefresh, refreshInterval, workspaceId, tableId]);
 
   useEffect(() => {
     const fetchTableData = async () => {
@@ -357,6 +407,11 @@ export default function TablePage() {
       setFormulas(prevFormulas => prevFormulas.map(formula =>
         formula.id === formulaId ? updatedFormula : formula
       ));
+      
+      // ENHANCED: Trigger auto-refresh after formula toggle
+      setAutoRefresh(true);
+      setTimeout(() => setAutoRefresh(false), 5000); // Auto-refresh for 5 seconds
+      
     } catch (err) {
       setError((err as Error).message);
       console.error('Error toggling formula:', err);
@@ -382,6 +437,11 @@ export default function TablePage() {
       }
       
       setFormulas(prevFormulas => prevFormulas.filter(formula => formula.id !== formulaId));
+      
+      // ENHANCED: Trigger auto-refresh after formula deletion
+      setAutoRefresh(true);
+      setTimeout(() => setAutoRefresh(false), 5000); // Auto-refresh for 5 seconds
+      
     } catch (err) {
       setError((err as Error).message);
       console.error('Error deleting formula:', err);
@@ -419,6 +479,10 @@ export default function TablePage() {
       
       // Success feedback
       console.log(`✅ Formül "${name}" başarıyla oluşturuldu!`);
+      
+      // ENHANCED: Trigger auto-refresh after formula creation
+      setAutoRefresh(true);
+      setTimeout(() => setAutoRefresh(false), 10000); // Auto-refresh for 10 seconds
       
       // Show temporary success message
       setError(null);
@@ -505,6 +569,36 @@ export default function TablePage() {
             )}
 
             <div className="flex space-x-2">
+              {/* ENHANCED: Auto-refresh controls */}
+              <div className="flex items-center space-x-2 bg-gray-50 rounded-lg p-2">
+                <label className="flex items-center space-x-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={autoRefresh}
+                    onChange={(e) => setAutoRefresh(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600"
+                  />
+                  <span>Otomatik Yenile</span>
+                </label>
+                {autoRefresh && (
+                  <select
+                    value={refreshInterval}
+                    onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                    className="text-xs border-gray-300 rounded"
+                  >
+                    <option value={10}>10s</option>
+                    <option value={30}>30s</option>
+                    <option value={60}>1m</option>
+                    <option value={300}>5m</option>
+                  </select>
+                )}
+                {lastRefresh && (
+                  <span className="text-xs text-gray-500">
+                    Son: {lastRefresh.toLocaleTimeString('tr-TR')}
+                  </span>
+                )}
+              </div>
+              
               <Link
                 href={`/dashboard/workspaces/${workspaceId}/analysis?tableId=${tableId}`}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"

@@ -121,6 +121,9 @@ export async function PUT(
         description: body.description ?? existingFormula.description,
         color: body.color ?? existingFormula.color,
         active: body.active !== undefined ? body.active : existingFormula.active,
+        formula: body.formula ?? existingFormula.formula,
+        type: body.type ?? existingFormula.type,
+        tableId: body.tableId !== undefined ? body.tableId : existingFormula.tableId,
       }
     });
     

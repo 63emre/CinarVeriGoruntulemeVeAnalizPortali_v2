@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FcDownload, FcPrint, FcExpand, FcCollapse } from 'react-icons/fc';
 import { AiOutlineSearch } from 'react-icons/ai';
 import TableCell from './TableCell';
-import { evaluateFormulas } from '../../lib/formulaEvaluator';
+import { evaluateFormulasWithDataRows } from '../../lib/enhancedFormulaEvaluator';
 
 type Column = {
   id: string;
@@ -178,8 +178,11 @@ export default function DataTable({
       if (activeFormulas.length > 0) {
         try {
           console.log('🚀 Starting formula evaluation...');
-          const highlights = evaluateFormulas(
-            activeFormulas,
+          const highlights = evaluateFormulasWithDataRows(
+            activeFormulas.map(f => ({
+              ...f,
+              active: f.active ?? true // undefined'ı true'ya çevir
+            })),
             data,
             columns.map(col => col.id)
           );

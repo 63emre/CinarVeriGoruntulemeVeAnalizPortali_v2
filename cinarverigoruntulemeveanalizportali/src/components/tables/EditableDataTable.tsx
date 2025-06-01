@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { FcPrint, FcFullTrash, FcCheckmark, FcCancel } from 'react-icons/fc';import { AiOutlineSearch, AiOutlineEdit, AiOutlineSave } from 'react-icons/ai';
+import { useState, useEffect, useRef } from 'react';
+import { FcPrint, FcFullTrash, FcCheckmark, FcCancel } from 'react-icons/fc';
+import { AiOutlineSearch, AiOutlineSave } from 'react-icons/ai';
+import TableCell from './TableCell'; // ENHANCED: Import TableCell for pizza slice effect
 
 type Column = {
   id: string;
@@ -15,24 +17,22 @@ type DataRow = {
   id: string;
 };
 
-// Interface for formula-highlighted cells
+// ENHANCED: Updated interface to match TableCell expectations
 interface HighlightedCell {
   row: string;
   col: string;
   color: string;
-  message?: string;
+  message: string;
+  formulaIds?: string[];
+  formulaDetails?: {
+    id: string;
+    name: string;
+    formula: string;
+    leftResult?: number;
+    rightResult?: number;
+    color: string;
+  }[];
 }
-
-// Utility function to convert hex color to RGB
-const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
-  if (!hex) return null;
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result ? {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16)
-  } : null;
-};
 
 interface EditableDataTableProps {
   data?: DataRow[];
@@ -76,7 +76,9 @@ export default function EditableDataTable({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-    const [savingError, setSavingError] = useState<string | null>(null);    const editInputRef = useRef<HTMLInputElement>(null);  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [savingError, setSavingError] = useState<string | null>(null);
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   // Focus the edit input when it becomes visible
   useEffect(() => {
@@ -272,20 +274,6 @@ export default function EditableDataTable({
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
   };
-  // Create a lookup map for O(1) highlight access - performance optimization
-  const highlightLookup = useMemo(() => {
-    const lookup = new Map<string, HighlightedCell>();
-    highlightedCells.forEach(cell => {
-      const key = `${cell.row}-${cell.col}`;
-      lookup.set(key, cell);
-    });
-    return lookup;
-  }, [highlightedCells]);
-
-  // Check if a cell has a highlight - now O(1) instead of O(n)
-  const getCellHighlight = (rowId: string, colId: string) => {
-    return highlightLookup.get(`${rowId}-${colId}`);
-  };
   
   // Save all changes back to the server
   const saveChanges = async () => {
@@ -336,8 +324,6 @@ export default function EditableDataTable({
     setData(JSON.parse(JSON.stringify(originalData)));
     setHasChanges(false);
   };
-
-    // Add resize observer to adjust the table container size  useEffect(() => {    if (!tableContainerRef.current) return;    const resizeObserver = new ResizeObserver(() => {      // Observer is kept for potential future use    });    resizeObserver.observe(tableContainerRef.current);    return () => resizeObserver.disconnect();  }, []);
 
   if (error) {
     return (
@@ -490,132 +476,16 @@ export default function EditableDataTable({
                     const cellValue = row[column.id];
                     const isSelected = selectedCell?.row === row.id && selectedCell?.col === column.id;
                     const isEditing = editingCell?.row === row.id && editingCell?.col === column.id;
-                    const highlight = getCellHighlight(row.id, column.id);
                     const isEditable = column.editable !== false;
                     
-                    // Base styling
-                    let cellStyles = "px-4 py-2 text-sm border truncate transition-all duration-200 ";
-                    
-                    // Base text styling with better readability
-                    cellStyles += column.id === 'Variable' ? "text-blue-900 font-semibold " : "text-gray-900 ";
-                    
-                    // Only add non-conflicting classes when not highlighted
-                    if (!highlight) {
-                      // Handle selection styling
-                      if (isSelected) {
-                        cellStyles += "bg-blue-100 border-blue-300 ring-2 ring-blue-200 ";
-                      } else {
-                        cellStyles += "border-gray-200 ";
-                      }
-                      
-                      // Special column background colors
-                      if (column.id === 'id') {
-                        cellStyles += "bg-gray-50 text-gray-600 ";
-                      } else if (['Data Source', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
-                        cellStyles += "bg-gray-50 ";
-                      }
-                    } else {
-                      // If highlighted, only add border class
-                      cellStyles += "border-2 ";
-                    }
-                    
-                    // Editable styling
-                    if (isEditable && !isEditing) {
-                      cellStyles += "cursor-pointer ";
-                      if (!highlight) {
-                        cellStyles += "hover:bg-yellow-50 ";
-                      }
-                    }
-
-                    // FIXED: Enhanced inline style for highlights with better visibility and pizza slice effect
-                    const inlineStyle: React.CSSProperties = {};
-                    if (highlight) {
-                      // Use the color directly from highlight
-                      const color = highlight.color;
-                      
-                      // Apply background color with appropriate opacity
-                      const rgb = hexToRgb(color);
-                      if (rgb) {
-                        // PIZZA SLICE EFFECT: Create a gradient background that looks like a colored slice
-                        const baseOpacity = 0.4;
-                        const gradientOpacity = 0.1;
-                        
-                        // Create a radial gradient for pizza slice effect
-                        inlineStyle.background = `
-                          radial-gradient(circle at 10% 10%, 
-                            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${baseOpacity + 0.2}) 0%, 
-                            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${baseOpacity}) 30%, 
-                            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${gradientOpacity}) 100%
-                          ),
-                          linear-gradient(135deg, 
-                            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${baseOpacity}) 0%, 
-                            rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${gradientOpacity}) 100%
-                          )
-                        `;
-                        
-                        // Enhanced border with gradient effect
-                        inlineStyle.borderImage = `linear-gradient(45deg, ${color}, ${color}80) 1`;
-                        inlineStyle.borderWidth = '2px';
-                        inlineStyle.borderStyle = 'solid';
-                        inlineStyle.position = 'relative';
-                        
-                        // Add a subtle glow effect with multiple shadows
-                        inlineStyle.boxShadow = `
-                          0 0 8px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6),
-                          inset 0 1px 0 rgba(255, 255, 255, 0.3),
-                          inset 0 -1px 0 rgba(0, 0, 0, 0.1)
-                        `;
-                        
-                        // Ensure text is readable on colored background
-                        const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-                        if (brightness > 180) {
-                          inlineStyle.color = '#1a1a1a';
-                        } else {
-                          inlineStyle.color = '#ffffff';
-                        }
-                        inlineStyle.fontWeight = '700'; // Make text bolder on highlighted cells
-                        inlineStyle.textShadow = brightness > 180 
-                          ? '0 1px 2px rgba(255, 255, 255, 0.8)' 
-                          : '0 1px 2px rgba(0, 0, 0, 0.8)';
-                        
-                        // Add a subtle animation effect
-                        inlineStyle.transition = 'all 0.3s ease-in-out';
-                        
-                      } else {
-                        // Fallback if RGB conversion fails
-                        inlineStyle.backgroundColor = `${color}40`; // 40 = ~0.25 opacity in hex
-                        inlineStyle.borderColor = color;
-                        inlineStyle.borderWidth = '2px';
-                        inlineStyle.borderStyle = 'solid';
-                        inlineStyle.boxShadow = `0 0 4px ${color}60`;
-                      }
-                      
-                      // Override any conflicting styles when highlighted
-                      if (isSelected) {
-                        // Show selection with different visual cue when highlighted
-                        const rgb = hexToRgb(color);
-                        if (rgb) {
-                          inlineStyle.boxShadow = `
-                            0 0 8px rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.6),
-                            0 0 0 3px rgba(59, 130, 246, 0.4),
-                            inset 0 1px 0 rgba(255, 255, 255, 0.3)
-                          `;
-                        } else {
-                          inlineStyle.boxShadow = `0 0 4px ${color}40, 0 0 0 3px #3b82f640`;
-                        }
-                      }
-                    }
-                    
-                    return (
-                      <td
-                        key={`${row.id}-${column.id}`}
-                        className={cellStyles}
-                        style={inlineStyle}
-                        onClick={() => handleCellClick(row.id, column.id, cellValue)}
-                        onDoubleClick={() => handleCellDoubleClick(row.id, column.id, cellValue, isEditable)}
-                        title={highlight?.message || (isEditable ? 'Düzenlemek için çift tıklayın' : '')}
-                      >
-                        {isEditing ? (
+                    // ENHANCED: Use TableCell component for better highlight support and pizza slice effect
+                    if (isEditing) {
+                      // Special case: show inline editing UI
+                      return (
+                        <td
+                          key={`${row.id}-${column.id}`}
+                          className="px-4 py-2 text-sm border border-gray-200"
+                        >
                           <div className="flex items-center">
                             <input
                               ref={editInputRef}
@@ -644,19 +514,34 @@ export default function EditableDataTable({
                               <FcCancel className="h-5 w-5" />
                             </button>
                           </div>
-                        ) : (
-                          <>
-                            {cellValue === null ? (
-                              <span className="text-gray-400">-</span>
-                            ) : (
-                              <span>{String(cellValue)}</span>
-                            )}
-                            {isEditable && (
-                              <AiOutlineEdit className="ml-2 h-4 w-4 text-gray-400 opacity-0 group-hover:opacity-100 inline-block" />
-                            )}
-                          </>
-                        )}
-                      </td>
+                        </td>
+                      );
+                    }
+                    
+                    // ENHANCED: Use TableCell component for all non-editing cells
+                    return (
+                      <TableCell
+                        key={`${row.id}-${column.id}`}
+                        rowId={row.id}
+                        colId={column.id}
+                        value={cellValue}
+                        highlights={highlightedCells}
+                        isSelected={isSelected}
+                        onClick={(rowId, colId, value) => {
+                          handleCellClick(rowId, colId, value);
+                          // Handle double-click for editing
+                          if (isEditable) {
+                            // Simple click detection for edit mode with proper typing
+                            const currentTime = Date.now();
+                            const lastClickTime = (window as Window & { lastClickTime?: number }).lastClickTime || 0;
+                            if (currentTime - lastClickTime < 300) {
+                              // Double click detected
+                              handleCellDoubleClick(rowId, colId, value, isEditable);
+                            }
+                            (window as Window & { lastClickTime?: number }).lastClickTime = currentTime;
+                          }
+                        }}
+                      />
                     );
                   })}
                 </tr>

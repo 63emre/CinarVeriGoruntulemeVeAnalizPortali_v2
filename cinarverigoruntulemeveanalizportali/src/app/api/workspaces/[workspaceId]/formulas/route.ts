@@ -9,10 +9,11 @@ const FormulaSchema = z.object({
   name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
   formula: z.string().min(1, "Formula is required"),
-  tableId: z.string().optional(),
+  tableId: z.string().optional().nullable(),
   color: z.string().optional(),
   type: z.enum(['CELL_VALIDATION', 'RELATIONAL']),
   active: z.boolean().optional(),
+  scope: z.enum(['table', 'workspace']).optional(),
 });
 
 export interface FormulaCondition {
@@ -156,7 +157,22 @@ export async function POST(
     }
 
     // Create the formula
-    const { name, description, formula, tableId, color, type, active } = validation.data;
+    const { name, description, formula, tableId, color, type, active, scope } = validation.data;
+    
+    // ENHANCED: Validate scope and tableId relationship
+    if (scope === 'table' && !tableId) {
+      return NextResponse.json(
+        { message: 'Table ID is required when scope is set to table' },
+        { status: 400 }
+      );
+    }
+    
+    if (scope === 'workspace' && tableId) {
+      return NextResponse.json(
+        { message: 'Table ID should not be provided when scope is set to workspace' },
+        { status: 400 }
+      );
+    }
     
     // Check if tableId exists if provided
     if (tableId) {
@@ -175,17 +191,23 @@ export async function POST(
       }
     }
     
+    // ENHANCED: Set default scope based on tableId if scope not provided
+    const finalScope = scope || (tableId ? 'table' : 'workspace');
+    const finalTableId = finalScope === 'table' ? tableId : null;
+    
     // Create formula
     const newFormula = await prisma.formula.create({
       data: {
         name,
         description: description || null,
         formula,
-        tableId: tableId || null,
+        tableId: finalTableId,
         color: color || '#ef4444',
         type,
         active: active !== undefined ? active : true,
         workspaceId,
+        // ENHANCED: Store scope information (if your database schema supports it)
+        // scope: finalScope, // Uncomment if you add scope column to database
       }
     });
 

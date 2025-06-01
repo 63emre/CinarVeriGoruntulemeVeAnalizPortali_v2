@@ -4,7 +4,7 @@ import { getCurrentUser } from '@/lib/auth/auth';
 
 export async function PUT(
   request: Request,
-  { params }: { params: { formulaId: string } }
+  context: { params: Promise<{ formulaId: string }> }
 ) {
   try {
     const currentUser = await getCurrentUser();
@@ -16,7 +16,7 @@ export async function PUT(
       );
     }
 
-    const { formulaId } = params;
+    const { formulaId } = await context.params;
     const body = await request.json();
     const { name, description, formula, color, type, active, workspaceId, tableId } = body;
 
@@ -111,7 +111,7 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { formulaId: string } }
+  context: { params: Promise<{ formulaId: string }> }
 ) {
   try {
     const currentUser = await getCurrentUser();
@@ -123,7 +123,7 @@ export async function DELETE(
       );
     }
 
-    const { formulaId } = params;
+    const { formulaId } = await context.params;
 
     // Check if formula exists
     const existingFormula = await prisma.formula.findUnique({

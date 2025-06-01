@@ -58,6 +58,7 @@ interface HighlightedCell {
     formula: string;
     leftResult?: number;
     rightResult?: number;
+    color: string;
   }[];
 }
 

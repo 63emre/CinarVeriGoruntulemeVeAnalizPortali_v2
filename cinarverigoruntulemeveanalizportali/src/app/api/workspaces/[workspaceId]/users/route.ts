@@ -4,12 +4,11 @@ import { getCurrentUser } from '@/lib/auth/auth';
 
 // GET: Get users for a workspace
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  request: Request,
+  context: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Use await to properly access params
-    const workspaceId = await params.workspaceId;
+    const { workspaceId } = await context.params;
     console.log(`GET /api/workspaces/${workspaceId}/users called`);
     
     const currentUser = await getCurrentUser();
@@ -86,12 +85,11 @@ export async function GET(
 
 // POST: Add a user to a workspace
 export async function POST(
-  request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  request: Request,
+  context: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Use await to properly access params
-    const workspaceId = await params.workspaceId;
+    const { workspaceId } = await context.params;
     console.log(`POST /api/workspaces/${workspaceId}/users called`);
     
     const currentUser = await getCurrentUser();
@@ -189,12 +187,11 @@ export async function POST(
 
 // DELETE: Remove a user from a workspace
 export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  request: Request,
+  context: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Use await to properly access params
-    const workspaceId = await params.workspaceId;
+    const { workspaceId } = await context.params;
     console.log(`DELETE /api/workspaces/${workspaceId}/users called`);
     
     const currentUser = await getCurrentUser();

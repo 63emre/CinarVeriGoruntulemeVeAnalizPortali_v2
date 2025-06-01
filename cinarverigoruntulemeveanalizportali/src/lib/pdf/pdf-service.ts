@@ -109,6 +109,21 @@ function encodeTurkishText(text: string): string {
       '\u200D': '', // Zero Width Joiner
       '\uFEFF': '', // Byte Order Mark
       '\u00A0': ' ', // Non-breaking space to regular space
+      
+      // ENHANCED: Additional problematic characters often found in Turkish data
+      '\u00AB': '"', // Left-pointing double angle quotation mark
+      '\u00BB': '"', // Right-pointing double angle quotation mark
+      '\u2039': "'", // Single left-pointing angle quotation mark
+      '\u203A': "'", // Single right-pointing angle quotation mark
+      '\u02BC': "'", // Modifier letter apostrophe
+      '\u02C6': '^', // Modifier letter circumflex accent
+      '\u02DC': '~', // Small tilde
+      '\u2010': '-', // Hyphen
+      '\u2011': '-', // Non-breaking hyphen
+      '\u2012': '-', // Figure dash
+      '\u2015': '-', // Horizontal bar
+      '\u2032': "'", // Prime
+      '\u2033': '"', // Double prime
     };
     
     // Apply character normalization
@@ -124,14 +139,22 @@ function encodeTurkishText(text: string): string {
     // Keep Turkish characters but remove any remaining problematic Unicode
     processedText = processedText.replace(/[\u0000-\u001F\u007F-\u009F]/g, ''); // Remove control characters
     
-    console.log(`📝 Turkish text encoding: "${text}" -> "${processedText}"`);
+    // ENHANCED: Additional cleanup for common data issues
+    processedText = processedText
+      .replace(/\s*,\s*,+/g, ',') // Clean up multiple commas
+      .replace(/^\s*,\s*/, '') // Remove leading comma
+      .replace(/\s*,\s*$/, '') // Remove trailing comma
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .trim();
+    
+    console.log(`📝 Enhanced Turkish text encoding: "${text}" -> "${processedText}"`);
     
     return processedText;
     
   } catch (error) {
-    console.warn('Turkish text encoding failed, using fallback:', error);
+    console.warn('Turkish text encoding failed, using enhanced fallback:', error);
     
-    // Enhanced fallback: transliterate Turkish characters to ASCII
+    // Enhanced fallback: transliterate Turkish characters to ASCII with better handling
     const fallbackMap: { [key: string]: string } = {
       'ş': 's', 'Ş': 'S',
       'ğ': 'g', 'Ğ': 'G', 
@@ -139,6 +162,12 @@ function encodeTurkishText(text: string): string {
       'ç': 'c', 'Ç': 'C',
       'ı': 'i', 'İ': 'I',
       'ö': 'o', 'Ö': 'O',
+      // Additional fallbacks
+      'â': 'a', 'Â': 'A',
+      'î': 'i', 'Î': 'I',
+      'û': 'u', 'Û': 'U',
+      'ê': 'e', 'Ê': 'E',
+      'ô': 'o', 'Ô': 'O',
     };
     
     let fallbackText = text;
@@ -147,7 +176,11 @@ function encodeTurkishText(text: string): string {
       fallbackText = fallbackText.replace(regex, replacement);
     });
     
-    return fallbackText.replace(/[^\x00-\x7F]/g, ''); // Remove any remaining non-ASCII
+    // Clean up and return ASCII-only text
+    return fallbackText
+      .replace(/[^\x00-\x7F]/g, '') // Remove any remaining non-ASCII
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 }
 

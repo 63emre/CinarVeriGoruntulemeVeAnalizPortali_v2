@@ -3,16 +3,16 @@ import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
 
 interface RouteParams {
-  params: {
+  params: Promise<{
     workspaceId: string;
     tableId: string;
-  };
+  }>;
 }
 
 // GET /api/workspaces/[workspaceId]/tables/[tableId]/formulas
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(request: NextRequest, context: RouteParams) {
   try {
-    const { workspaceId, tableId } = params;
+    const { workspaceId, tableId } = await context.params;
     const currentUser = await getCurrentUser();
     
     // Check authentication

@@ -4,8 +4,8 @@ import prisma from '@/lib/db';
 
 // GET /api/workspaces/[workspaceId]/tables/[tableId]/analysis
 export async function GET(
-  request: NextRequest,
-  { params }: { params: { workspaceId: string; tableId: string } }
+  request: Request,
+  context: { params: Promise<{ workspaceId: string; tableId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -14,7 +14,7 @@ export async function GET(
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
     
-    const { workspaceId, tableId } = params;
+    const { workspaceId, tableId } = await context.params;
     
     // Check if user has access to this workspace
     const workspaceUser = await prisma.workspaceUser.findFirst({

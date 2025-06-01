@@ -269,21 +269,24 @@ function addHeaderFooter(
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   
-  // Header
-  doc.setFontSize(20);
+  // FIXED: Better logo positioning - ensure logo doesn't interfere with text
+  const logoSpace = 50; // Reserve space for logo
+  
+  // Header - start text after logo space
+  doc.setFontSize(18);
   doc.setTextColor(40, 40, 40);
-  doc.text('Cinar Cevre Laboratuvari', 70, 25);
+  doc.text('Cinar Cevre Laboratuvari', logoSpace + 10, 25);
   
   if (title) {
-    doc.setFontSize(16);
+    doc.setFontSize(14);
     doc.setTextColor(60, 60, 60);
-    doc.text(title, 70, 35);
+    doc.text(title, logoSpace + 10, 35);
   }
   
   if (subtitle) {
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setTextColor(80, 80, 80);
-    doc.text(subtitle, 70, 45);
+    doc.text(subtitle, logoSpace + 10, 45);
   }
   
   // Date and time in top-right
@@ -298,7 +301,7 @@ function addHeaderFooter(
     minute: '2-digit'
   });
   
-  doc.setFontSize(10);
+  doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
   doc.text(`Rapor Tarihi: ${formattedDate}`, pageWidth - 15, 20, { align: 'right' });
   doc.text(`Olusturma Saati: ${formattedTime}`, pageWidth - 15, 30, { align: 'right' });
@@ -335,6 +338,51 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   } catch {
     return null;
   }
+}
+
+// ENHANCED: Dynamic column width calculation to fit all columns
+function calculateOptimalColumnWidths(headers: string[], pageWidth: number) {
+  const availableWidth = pageWidth - 20; // Subtract margins
+  const numColumns = headers.length;
+  const minColumnWidth = Math.max(8, availableWidth / numColumns); // Minimum width per column
+  const maxColumnWidth = 25; // Maximum width per column
+  
+  // Calculate initial widths based on header text length
+  const columnWidths: Record<number, any> = {};
+  
+  headers.forEach((header, index) => {
+    let baseWidth = Math.min(maxColumnWidth, Math.max(minColumnWidth, header.length * 1.5));
+    
+    // Special handling for specific column types
+    if (header.toLowerCase().includes('variable') || header.toLowerCase().includes('değişken')) {
+      baseWidth = Math.min(35, baseWidth * 1.5); // Variable names can be longer
+    } else if (header.toLowerCase().includes('data source') || header.toLowerCase().includes('method')) {
+      baseWidth = Math.min(30, baseWidth * 1.2);
+    } else if (header.toLowerCase().includes('unit') || header.toLowerCase().includes('birim')) {
+      baseWidth = Math.min(15, baseWidth);
+    } else if (/^\d{4}/.test(header) || header.includes('/')) {
+      // Date columns - smaller width
+      baseWidth = Math.min(18, baseWidth);
+    }
+    
+    columnWidths[index] = { 
+      cellWidth: baseWidth,
+      minCellWidth: Math.max(8, baseWidth * 0.7)
+    };
+  });
+  
+  // Ensure total width doesn't exceed available space
+  const totalWidth = Object.values(columnWidths).reduce((sum: number, col: any) => sum + col.cellWidth, 0);
+  if (totalWidth > availableWidth) {
+    const scaleFactor = availableWidth / totalWidth;
+    Object.keys(columnWidths).forEach(key => {
+      const index = parseInt(key);
+      columnWidths[index].cellWidth *= scaleFactor;
+      columnWidths[index].minCellWidth *= scaleFactor;
+    });
+  }
+  
+  return columnWidths;
 }
 
 // Enhanced table export with better highlighting
@@ -412,15 +460,11 @@ export async function exportEnhancedTableToPdf(
       alternateRowStyles: {
         fillColor: [248, 249, 250]
       },
-      columnStyles: {
-        // Dynamic column width based on content
-        ...tableHeaders.reduce((acc, _, index) => {
-          if (index === 0) acc[index] = { cellWidth: 'auto', minCellWidth: 15 };
-          else acc[index] = { cellWidth: 'auto', minCellWidth: 20 };
-          return acc;
-        }, {} as Record<number, any>)
-      },
+      // FIXED: Use calculated optimal column widths
+      columnStyles: calculateOptimalColumnWidths(tableHeaders, pageWidth),
       margin: { left: 10, right: 10, top: 10, bottom: 20 },
+      // ENHANCED: Force table to fit within page width
+      tableWidth: 'wrap',
       // Enhanced cell highlighting
       didParseCell: function(data) {
         if (data.section === 'body' && options.highlightedCells) {

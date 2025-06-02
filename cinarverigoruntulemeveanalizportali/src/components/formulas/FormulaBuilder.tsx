@@ -5,9 +5,11 @@ import { FcCancel, FcRules } from 'react-icons/fc';
 
 interface FormulaBuilderProps {
   variables: string[];
-  onSave: (formula: string, name: string, color: string) => void;
+  onSave: (formula: string, name: string, color: string, scope: 'table' | 'workspace', tableId?: string) => void;
   onCancel: () => void;
   isVisible: boolean;
+  availableTables?: Array<{ id: string; name: string; }>;
+  currentTableId?: string;
 }
 
 interface FormulaCondition {
@@ -32,7 +34,14 @@ interface FormulaCondition {
   };
 }
 
-export default function FormulaBuilder({ variables, onSave, onCancel, isVisible }: FormulaBuilderProps) {
+export default function FormulaBuilder({ 
+  variables, 
+  onSave, 
+  onCancel, 
+  isVisible, 
+  availableTables = [], 
+  currentTableId 
+}: FormulaBuilderProps) {
   const [conditions, setConditions] = useState<FormulaCondition[]>([
     {
       leftOperand: { type: 'variable', value: variables[0] || '' },
@@ -42,6 +51,9 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
   ]);
   const [formulaName, setFormulaName] = useState('');
   const [formulaColor, setFormulaColor] = useState('#ff4444');
+  
+  const [formulaScope, setFormulaScope] = useState<'table' | 'workspace'>('table');
+  const [selectedTableId, setSelectedTableId] = useState<string>(currentTableId || '');
 
   // Reset form when visibility changes
   useEffect(() => {
@@ -53,8 +65,10 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
       }]);
       setFormulaName('');
       setFormulaColor('#ff4444');
+      setFormulaScope('table');
+      setSelectedTableId(currentTableId || '');
     }
-  }, [isVisible, variables]);
+  }, [isVisible, variables, currentTableId]);
 
   // Update conditions when variables change
   useEffect(() => {
@@ -156,8 +170,19 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
       return;
     }
     
+    if (formulaScope === 'table' && !selectedTableId) {
+      alert('Lütfen hedef tablo seçin');
+      return;
+    }
+    
     const formulaString = generateFormulaString();
-    onSave(formulaString, formulaName, formulaColor);
+    onSave(
+      formulaString, 
+      formulaName, 
+      formulaColor, 
+      formulaScope, 
+      formulaScope === 'table' ? selectedTableId : undefined
+    );
     
     // Reset form
     setConditions([{
@@ -167,6 +192,8 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
     }]);
     setFormulaName('');
     setFormulaColor('#ff4444');
+    setFormulaScope('table');
+    setSelectedTableId(currentTableId || '');
   };
 
   if (!isVisible) return null;
@@ -187,8 +214,8 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
         </button>
       </div>
 
-      {/* Formül Adı ve Renk */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      {/* ENHANCED: Formül Adı, Renk ve Kapsam */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-2">Formül Adı</label>
           <input
@@ -211,6 +238,77 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
             <span className="text-sm text-gray-600 font-mono">{formulaColor}</span>
           </div>
         </div>
+        
+        {/* ENHANCED: Formula Scope Selection */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">🎯 Uygulama Kapsamı</label>
+          <select
+            value={formulaScope}
+            onChange={(e) => {
+              const newScope = e.target.value as 'table' | 'workspace';
+              setFormulaScope(newScope);
+              if (newScope === 'workspace') {
+                setSelectedTableId('');
+              } else {
+                setSelectedTableId(currentTableId || '');
+              }
+            }}
+            className="w-full text-base font-medium text-gray-800 border-2 border-purple-300 rounded-lg px-4 py-3 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 bg-purple-50"
+          >
+            <option value="table">📊 Belirli Tablo</option>
+            <option value="workspace">🌐 Tüm Workspace</option>
+          </select>
+        </div>
+      </div>
+      
+      {/* ENHANCED: Table Selection (only show when scope is 'table') */}
+      {formulaScope === 'table' && (
+        <div className="mb-6 p-4 bg-purple-50 border-2 border-purple-200 rounded-lg">
+          <label className="block text-sm font-semibold text-purple-700 mb-2">
+            🎯 Hedef Tablo Seçimi
+          </label>
+          <select
+            value={selectedTableId}
+            onChange={(e) => setSelectedTableId(e.target.value)}
+            className="w-full text-base font-medium text-gray-800 border-2 border-purple-300 rounded-lg px-4 py-3 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+          >
+            <option value="">Tablo seçin...</option>
+            {availableTables.map(table => (
+              <option key={table.id} value={table.id}>
+                {table.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-sm text-purple-600 mt-2">
+            Formül sadece seçilen tabloda uygulanacak ve o tablonun verilerine göre değerlendirilecek.
+          </p>
+        </div>
+      )}
+      
+      {/* ENHANCED: Scope Information Box */}
+      <div className="mb-6 p-4 border-2 border-blue-200 rounded-lg bg-blue-50">
+        <h4 className="text-base font-bold text-blue-800 mb-2">ℹ️ Kapsam Açıklaması:</h4>
+        {formulaScope === 'table' ? (
+          <div className="text-sm text-blue-700">
+            <p className="mb-2"><strong>📊 Belirli Tablo Kapsamı:</strong></p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Formül sadece seçilen tabloda çalışır</li>
+              <li>O tablonun değişken ve verilerine erişim sağlar</li>
+              <li>Diğer tablolar etkilenmez</li>
+              <li>Performans açısından daha hızlı</li>
+            </ul>
+          </div>
+        ) : (
+          <div className="text-sm text-blue-700">
+            <p className="mb-2"><strong>🌐 Tüm Workspace Kapsamı:</strong></p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Formül workspace içindeki tüm tablolarda çalışır</li>
+              <li>Tüm tabloların değişken ve verilerine erişim</li>
+              <li>Yeni eklenen tablolarda da otomatik çalışır</li>
+              <li>Genel kurallar için idealdir</li>
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Koşullar */}

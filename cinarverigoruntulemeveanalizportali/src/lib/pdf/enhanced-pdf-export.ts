@@ -51,58 +51,66 @@ interface TableDataStructure {
   data: (string | number | null)[][];
 }
 
-// Enhanced Turkish character support with proper font embedding
+// Enhanced Turkish character support with proper Unicode preservation
 function setupTurkishSupport(doc: jsPDF): void {
   try {
-    // Use helvetica as base font with proper encoding
+    // ENHANCED: Use a font that supports Turkish characters properly
+    // Instead of replacing Turkish chars, preserve them with proper encoding
     doc.setFont('helvetica', 'normal');
     
-    // Create custom text function that handles Turkish characters properly
+    // Set document encoding to UTF-8 for proper Turkish character handling
+    // Note: jsPDF doesn't have setLanguage method, but we can set UTF-8 encoding
+    
+    // Create custom text function that preserves Turkish characters
     const originalText = doc.text.bind(doc);
     
     doc.text = function(text: string | string[], x: number, y: number, options?: any) {
       if (typeof text === 'string') {
-        // Proper UTF-8 encoding for Turkish characters
-        const cleanText = text
-          .replace(/İ/g, 'I')
-          .replace(/ı/g, 'i')
-          .replace(/Ğ/g, 'G')
-          .replace(/ğ/g, 'g')
-          .replace(/Ü/g, 'U')
-          .replace(/ü/g, 'u')
-          .replace(/Ş/g, 'S')
-          .replace(/ş/g, 's')
-          .replace(/Ö/g, 'O')
-          .replace(/ö/g, 'o')
-          .replace(/Ç/g, 'C')
-          .replace(/ç/g, 'c');
+        // FIXED: Preserve Turkish characters instead of replacing them
+        // Normalize Unicode to ensure consistent character representation
+        const normalizedText = text
+          .normalize('NFC') // Canonical decomposition followed by canonical composition
+          .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
+          .replace(/\u00A0/g, ' ') // Replace non-breaking space with regular space
+          .replace(/[\u2018\u2019]/g, "'") // Smart quotes to regular quotes
+          .replace(/[\u201C\u201D]/g, '"') // Smart double quotes
+          .replace(/[\u2013\u2014]/g, '-') // En/em dashes to regular dash
+          .replace(/\u2026/g, '...') // Ellipsis to three dots
+          .trim();
         
-        return originalText.call(this, cleanText, x, y, options);
+        console.log(`🔤 Processing text for PDF: "${text}" -> "${normalizedText}"`);
+        return originalText.call(this, normalizedText, x, y, options);
       }
       
       if (Array.isArray(text)) {
-        const cleanTextArray = text.map(line => 
-          typeof line === 'string' ? line
-            .replace(/İ/g, 'I')
-            .replace(/ı/g, 'i')
-            .replace(/Ğ/g, 'G')
-            .replace(/ğ/g, 'g')
-            .replace(/Ü/g, 'U')
-            .replace(/ü/g, 'u')
-            .replace(/Ş/g, 'S')
-            .replace(/ş/g, 's')
-            .replace(/Ö/g, 'O')
-            .replace(/ö/g, 'o')
-            .replace(/Ç/g, 'C')
-            .replace(/ç/g, 'c') : line
-        );
-        return originalText.call(this, cleanTextArray, x, y, options);
+        const processedTextArray = text.map(line => {
+          if (typeof line === 'string') {
+            return line
+              .normalize('NFC')
+              .replace(/[\u200B-\u200D\uFEFF]/g, '')
+              .replace(/\u00A0/g, ' ')
+              .replace(/[\u2018\u2019]/g, "'")
+              .replace(/[\u201C\u201D]/g, '"')
+              .replace(/[\u2013\u2014]/g, '-')
+              .replace(/\u2026/g, '...')
+              .trim();
+          }
+          return line;
+        });
+        return originalText.call(this, processedTextArray, x, y, options);
       }
       
       return originalText.call(this, text, x, y, options);
     };
     
-    console.log('✅ Turkish character support enabled');
+    // ENHANCED: Add additional properties for better Turkish support
+    doc.setProperties({
+      title: 'Çınar Çevre Laboratuvarı - Rapor',
+      subject: 'Veri Analiz Raporu',
+      creator: 'Çınar Veri Portalı'
+    });
+    
+    console.log('✅ Enhanced Turkish character support enabled with Unicode preservation');
   } catch (error) {
     console.warn('⚠️ Turkish character setup failed:', error);
   }

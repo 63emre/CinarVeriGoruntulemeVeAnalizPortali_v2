@@ -1,5 +1,49 @@
 import React, { useState, useMemo } from 'react';
-import { processTableCellValue } from '../../lib/pdf/new-pdf-service';
+
+// Local helper function to process table cell values
+function processTableCellValue(value: string | number | null): {
+  displayValue: string;
+  numericValue: number | null;
+  isLimitValue: boolean;
+  originalValue: string | number | null;
+} {
+  if (value === null || value === undefined) {
+    return { displayValue: '', numericValue: null, isLimitValue: false, originalValue: value };
+  }
+  
+  const stringValue = String(value).trim();
+  
+  // Check for limit values like "<0.001", ">1000" etc.
+  const limitMatch = stringValue.match(/^(<|>|<=|>=)\s*(\d+(?:\.\d+)?)/);
+  if (limitMatch) {
+    const numericPart = parseFloat(limitMatch[2]);
+    return {
+      displayValue: stringValue,
+      numericValue: numericPart,
+      isLimitValue: true,
+      originalValue: value
+    };
+  }
+  
+  // Try to parse as number
+  const numericValue = parseFloat(stringValue);
+  if (!isNaN(numericValue)) {
+    return {
+      displayValue: stringValue,
+      numericValue: numericValue,
+      isLimitValue: false,
+      originalValue: value
+    };
+  }
+  
+  // Return as string
+  return {
+    displayValue: stringValue,
+    numericValue: null,
+    isLimitValue: false,
+    originalValue: value
+  };
+}
 
 interface FormulaDetail {
   id: string;

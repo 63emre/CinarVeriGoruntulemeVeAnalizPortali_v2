@@ -5,7 +5,6 @@ import { FcDownload, FcPrint, FcExpand, FcCollapse } from 'react-icons/fc';
 import { AiOutlineSearch } from 'react-icons/ai';
 import EnhancedTableCell from './EnhancedTableCell';
 import { evaluateFormulasWithDataRows } from '../../lib/enhancedFormulaEvaluator';
-import { generateAdvancedPDF, processTableCellValue } from '../../lib/pdf/new-pdf-service';
 
 type Column = {
   id: string;
@@ -54,6 +53,47 @@ interface DataTableProps {
   cellBorderWidth?: number;
 }
 
+// Local helper function to process table cell values
+function processTableCellValue(value: string | number | null): {
+  displayValue: string;
+  numericValue: number | null;
+  isLimitValue: boolean;
+} {
+  if (value === null || value === undefined) {
+    return { displayValue: '', numericValue: null, isLimitValue: false };
+  }
+  
+  const stringValue = String(value).trim();
+  
+  // Check for limit values like "<0.001", ">1000" etc.
+  const limitMatch = stringValue.match(/^(<|>|<=|>=)\s*(\d+(?:\.\d+)?)/);
+  if (limitMatch) {
+    const numericPart = parseFloat(limitMatch[2]);
+    return {
+      displayValue: stringValue,
+      numericValue: numericPart,
+      isLimitValue: true
+    };
+  }
+  
+  // Try to parse as number
+  const numericValue = parseFloat(stringValue);
+  if (!isNaN(numericValue)) {
+    return {
+      displayValue: stringValue,
+      numericValue: numericValue,
+      isLimitValue: false
+    };
+  }
+  
+  // Return as string
+  return {
+    displayValue: stringValue,
+    numericValue: null,
+    isLimitValue: false
+  };
+}
+
 export default function DataTable({ 
   data: initialData, 
   columns: initialColumns, 
@@ -80,7 +120,6 @@ export default function DataTable({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [calculatedHighlights, setCalculatedHighlights] = useState<HighlightedCell[]>([]);
-  const [pdfGenerating, setPdfGenerating] = useState(false);
   const [dataStats, setDataStats] = useState<{
     totalCells: number;
     numericCells: number;
@@ -333,81 +372,6 @@ export default function DataTable({
     setIsFullscreen(!isFullscreen);
   };
 
-  // Advanced PDF export with new service
-  const handleAdvancedPdfExport = async () => {
-    if (!data || !columns || data.length === 0) {
-      setError('PDF oluşturmak için veri bulunamadı');
-      return;
-    }
-
-    setPdfGenerating(true);
-    setError(null);
-
-    try {
-      console.log('📄 Starting advanced PDF generation...');
-      
-      // Transform data to match PDF service interface
-      const tableData = {
-        id: tableId || 'table',
-        name: title,
-        sheetName: title,
-        workspaceId: workspaceId || 'workspace',
-        uploadedAt: new Date(),
-        updatedAt: new Date(),
-        columns: columns.map(col => col.name),
-        data: data.map(row => 
-          columns.map(col => row[col.id])
-        )
-      };
-
-      // Transform formulas to match PDF service interface
-      const pdfFormulas = formulas.map(f => ({
-        id: f.id,
-        name: f.name,
-        description: f.description,
-        formula: f.formula,
-        color: f.color,
-        type: f.type,
-        active: f.active ?? true // Convert undefined to true
-      }));
-
-      const pdfBuffer = await generateAdvancedPDF(
-        tableData,
-        allHighlights,
-        pdfFormulas,
-        {
-          title: title,
-          subtitle: 'Çınar Çevre Laboratuvarı - Veri Analiz Raporu',
-          includeFormulas: true,
-          orientation: 'landscape',
-          cellBorderWidth: cellBorderWidth,
-          userName: 'Kullanıcı'
-        }
-      );
-
-      // Download PDF
-      const blob = new Blob([pdfBuffer], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${title.replace(/[^a-zA-Z0-9]/g, '_')}_analiz_raporu.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      console.log('✅ Advanced PDF generation completed');
-      setError('✅ Gelişmiş PDF başarıyla oluşturuldu ve indirildi!');
-      setTimeout(() => setError(null), 3000);
-
-    } catch (err) {
-      console.error('❌ Advanced PDF generation failed:', err);
-      setError(`❌ PDF oluşturma hatası: ${(err as Error).message}`);
-    } finally {
-      setPdfGenerating(false);
-    }
-  };
-
   // Combine provided highlightedCells with calculated ones
   const allHighlights = [...(highlightedCells || []), ...calculatedHighlights];
   
@@ -474,16 +438,6 @@ export default function DataTable({
                     <FcPrint size={20} />
                   </button>
                 )}
-                
-                {/* Advanced PDF Export */}
-                <button
-                  onClick={handleAdvancedPdfExport}
-                  disabled={pdfGenerating}
-                  className="px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 text-sm font-medium"
-                  title="Gelişmiş PDF İndir"
-                >
-                  {pdfGenerating ? '📄 Oluşturuluyor...' : '📄 Gelişmiş PDF'}
-                </button>
                 
                 <button
                   onClick={toggleFullscreen}

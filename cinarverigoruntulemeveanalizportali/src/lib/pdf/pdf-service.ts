@@ -74,100 +74,50 @@ function encodeTurkishText(text: string): string {
   if (typeof text !== 'string') return '';
   
   try {
-    // First, ensure the text is properly encoded as UTF-8
-    let processedText = decodeURIComponent(encodeURIComponent(text));
+    // ENHANCED: Preserve Turkish characters instead of replacing them
+    // Unicode normalizasyonu ve sadece problemli karakterleri temizle
+    let processedText = text.normalize('NFC');
     
-    // ENHANCED: Keep Turkish characters but normalize problematic Unicode variants
-    const turkishCharacterMap: { [key: string]: string } = {
-      // Normalize different Unicode representations of Turkish characters
-      '\u0131': 'ı', // LATIN SMALL LETTER DOTLESS I
-      '\u0130': 'İ', // LATIN CAPITAL LETTER I WITH DOT ABOVE
-      '\u011F': 'ğ', // LATIN SMALL LETTER G WITH BREVE
-      '\u011E': 'Ğ', // LATIN CAPITAL LETTER G WITH BREVE
-      '\u015F': 'ş', // LATIN SMALL LETTER S WITH CEDILLA
-      '\u015E': 'Ş', // LATIN CAPITAL LETTER S WITH CEDILLA
-      '\u00E7': 'ç', // LATIN SMALL LETTER C WITH CEDILLA
-      '\u00C7': 'Ç', // LATIN CAPITAL LETTER C WITH CEDILLA
-      '\u00FC': 'ü', // LATIN SMALL LETTER U WITH DIAERESIS
-      '\u00DC': 'Ü', // LATIN CAPITAL LETTER U WITH DIAERESIS
-      '\u00F6': 'ö', // LATIN SMALL LETTER O WITH DIAERESIS
-      '\u00D6': 'Ö', // LATIN CAPITAL LETTER O WITH DIAERESIS
-      
-      // Remove or replace problematic typographic characters
-      '\u201C': '"', // Left double quotation mark
-      '\u201D': '"', // Right double quotation mark  
-      '\u2018': "'", // Left single quotation mark
-      '\u2019': "'", // Right single quotation mark
-      '\u2013': '-', // En dash
-      '\u2014': '-', // Em dash
+    // Sadece PDF'de sorun çıkaran özel karakterleri temizle, Türkçe karakterleri koru
+    const problematicCharacterMap: { [key: string]: string } = {
+      // Normalize different Unicode representations that may cause issues
+      // But KEEP Turkish characters intact
+      '\u201C': '"', '\u201D': '"', // Left/right double quotation marks
+      '\u2018': "'", '\u2019': "'", // Left/right single quotation marks  
+      '\u2013': '-', '\u2014': '-', // En dash, Em dash
       '\u2026': '...', // Horizontal ellipsis
       '\u2212': '-', // Minus sign (different from hyphen)
+      '\u00A0': ' ', // Non-breaking space -> regular space
       
       // Remove zero-width characters that can cause rendering issues
       '\u200B': '', // Zero Width Space
       '\u200C': '', // Zero Width Non-Joiner
       '\u200D': '', // Zero Width Joiner
-      '\uFEFF': '', // Byte Order Mark
-      '\u00A0': ' ', // Non-breaking space to regular space
-      
-      // ENHANCED: Additional problematic characters often found in Turkish data
-      '\u00AB': '"', // Left-pointing double angle quotation mark
-      '\u00BB': '"', // Right-pointing double angle quotation mark
-      '\u2039': "'", // Single left-pointing angle quotation mark
-      '\u203A': "'", // Single right-pointing angle quotation mark
-      '\u02BC': "'", // Modifier letter apostrophe
-      '\u02C6': '^', // Modifier letter circumflex accent
-      '\u02DC': '~', // Small tilde
-      '\u2010': '-', // Hyphen
-      '\u2011': '-', // Non-breaking hyphen
-      '\u2012': '-', // Figure dash
-      '\u2015': '-', // Horizontal bar
-      '\u2032': "'", // Prime
-      '\u2033': '"', // Double prime
+      '\uFEFF': '', // Zero Width No-Break Space (BOM)
+      '\u00AD': ''  // Soft hyphen
     };
     
-    // Apply character normalization
-    Object.entries(turkishCharacterMap).forEach(([char, replacement]) => {
+    // Apply character map - only problematic chars, keep Turkish intact
+    Object.entries(problematicCharacterMap).forEach(([char, replacement]) => {
       const regex = new RegExp(char, 'g');
       processedText = processedText.replace(regex, replacement);
     });
     
-    // Clean up extra whitespace
-    processedText = processedText.trim().replace(/\s+/g, ' ');
+    // Clean up excessive whitespace
+    processedText = processedText.replace(/\s+/g, ' ').trim();
     
-    // ENHANCED: Final validation - ensure only printable characters remain
-    // Keep Turkish characters but remove any remaining problematic Unicode
-    processedText = processedText.replace(/[\u0000-\u001F\u007F-\u009F]/g, ''); // Remove control characters
-    
-    // ENHANCED: Additional cleanup for common data issues
-    processedText = processedText
-      .replace(/\s*,\s*,+/g, ',') // Clean up multiple commas
-      .replace(/^\s*,\s*/, '') // Remove leading comma
-      .replace(/\s*,\s*$/, '') // Remove trailing comma
-      .replace(/\s+/g, ' ') // Normalize spaces
-      .trim();
-    
-    console.log(`📝 Enhanced Turkish text encoding: "${text}" -> "${processedText}"`);
+    console.log(`🔤 Turkish text preserved for PDF: "${text}" -> "${processedText}"`);
     
     return processedText;
     
   } catch (error) {
-    console.warn('Turkish text encoding failed, using enhanced fallback:', error);
+    console.warn('Turkish text encoding failed, using fallback:', error);
     
-    // Enhanced fallback: transliterate Turkish characters to ASCII with better handling
+    // FALLBACK ONLY: Replace Turkish chars as last resort
     const fallbackMap: { [key: string]: string } = {
-      'ş': 's', 'Ş': 'S',
-      'ğ': 'g', 'Ğ': 'G', 
-      'ü': 'u', 'Ü': 'U',
-      'ç': 'c', 'Ç': 'C',
-      'ı': 'i', 'İ': 'I',
-      'ö': 'o', 'Ö': 'O',
-      // Additional fallbacks
-      'â': 'a', 'Â': 'A',
-      'î': 'i', 'Î': 'I',
-      'û': 'u', 'Û': 'U',
-      'ê': 'e', 'Ê': 'E',
-      'ô': 'o', 'Ô': 'O',
+      'ş': 's', 'Ş': 'S', 'ğ': 'g', 'Ğ': 'G',
+      'ü': 'u', 'Ü': 'U', 'ç': 'c', 'Ç': 'C',
+      'ı': 'i', 'İ': 'I', 'ö': 'o', 'Ö': 'O'
     };
     
     let fallbackText = text;
@@ -176,11 +126,7 @@ function encodeTurkishText(text: string): string {
       fallbackText = fallbackText.replace(regex, replacement);
     });
     
-    // Clean up and return ASCII-only text
-    return fallbackText
-      .replace(/[^\x00-\x7F]/g, '') // Remove any remaining non-ASCII
-      .replace(/\s+/g, ' ')
-      .trim();
+    return fallbackText.replace(/[^\x00-\x7F]/g, '').trim();
   }
 }
 
@@ -348,28 +294,50 @@ export async function exportTableToPdf(
     startY: 45,
     margin: { top: 45, left: 14, right: 14 },
     styles: {
-      fontSize: 8,
-      cellPadding: 3,
+      fontSize: 9,
+      cellPadding: { top: 4, right: 3, bottom: 4, left: 3 },
       font: 'helvetica',
       textColor: [40, 40, 40],
       lineColor: [200, 200, 200],
       lineWidth: 0.5,
+      halign: 'center',
+      valign: 'middle',
+      overflow: 'linebreak',
+      cellWidth: 'wrap',
     },
     headStyles: {
       fillColor: [41, 128, 185],
       textColor: [255, 255, 255],
       fontStyle: 'bold',
-      fontSize: 9,
+      fontSize: 10,
+      halign: 'center',
+      valign: 'middle',
+      cellPadding: { top: 5, right: 3, bottom: 5, left: 3 },
+    },
+    columnStyles: {
+      0: { cellWidth: 'auto', halign: 'left' },
+      1: { cellWidth: 'auto', halign: 'left', minCellWidth: 25 },
     },
     alternateRowStyles: {
       fillColor: [248, 249, 250],
     },
     tableLineColor: [200, 200, 200],
     tableLineWidth: 0.5,
-    // @ts-expect-error - type definition issue with jspdf-autotable
+    theme: 'grid',
+    showHead: 'everyPage',
+    tableWidth: 'auto',
+    // @ts-expect-error - autoTable tip tanımları ile uyumluluk sorunu
     didParseCell: cellHooks.didParseCell,
-    // @ts-expect-error - type definition issue with jspdf-autotable
+    // @ts-expect-error - autoTable tip tanımları ile uyumluluk sorunu  
     willDrawCell: cellHooks.willDrawCell,
+    // @ts-expect-error - autoTable tip tanımları ile uyumluluk sorunu
+    didDrawPage: function() {
+      // Add page numbers
+      const pageCount = doc.internal.pages.length - 1;
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(`Sayfa ${pageCount}`, doc.internal.pageSize.width - 20, doc.internal.pageSize.height - 10);
+    }
   });
 
   // ENHANCED: Add comprehensive formula explanations with proper encoding
@@ -605,7 +573,9 @@ export async function generateTablePDF(
       }) => void 
     }).autoTable({
       head: [columns],
-      body: data,
+      body: data.map(row => 
+        row.map(cell => cell === null || cell === undefined ? '' : cell)
+      ),
       startY: 45,
       theme: 'grid',
       styles: {

@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth/auth';
 import * as z from 'zod';
 import prisma from '@/lib/db';
 import { deleteFormula } from '@/lib/formula/formula-service';
+import { validateUnidirectionalFormula } from '@/lib/enhancedFormulaEvaluator';
 
 // Schema for formula creation
 const FormulaSchema = z.object({
@@ -103,7 +104,6 @@ export async function POST(
   { params }: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
-    // Next.js 15: await params
     const { workspaceId } = await params;
     
     const currentUser = await getCurrentUser();
@@ -114,16 +114,9 @@ export async function POST(
       );
     }
 
-    // Check if workspace exists
+    // Check workspace access
     const workspace = await prisma.workspace.findUnique({
-      where: { id: workspaceId },
-      include: {
-        users: {
-          where: {
-            userId: currentUser.id
-          }
-        }
-      }
+      where: { id: workspaceId }
     });
 
     if (!workspace) {
@@ -133,89 +126,120 @@ export async function POST(
       );
     }
 
-    // Check if user has access to this workspace
+    // Check access permissions - simplified version
     const isAdmin = currentUser.role === 'ADMIN';
     const isCreator = workspace.createdBy === currentUser.id;
-    const hasAccess = workspace.users.length > 0;
     
-    if (!isAdmin && !isCreator && !hasAccess) {
-      return NextResponse.json(
-        { message: 'You do not have access to this workspace' },
-        { status: 403 }
-      );
-    }
-
-    // Parse and validate request body
-    const body = await request.json();
-    const validation = FormulaSchema.safeParse(body);
-    
-    if (!validation.success) {
-      return NextResponse.json(
-        { message: 'Invalid formula data', errors: validation.error.errors },
-        { status: 400 }
-      );
-    }
-
-    // Create the formula
-    const { name, description, formula, tableId, color, type, active, scope } = validation.data;
-    
-    // ENHANCED: Validate scope and tableId relationship
-    if (scope === 'table' && !tableId) {
-      return NextResponse.json(
-        { message: 'Table ID is required when scope is set to table' },
-        { status: 400 }
-      );
-    }
-    
-    if (scope === 'workspace' && tableId) {
-      return NextResponse.json(
-        { message: 'Table ID should not be provided when scope is set to workspace' },
-        { status: 400 }
-      );
-    }
-    
-    // Check if tableId exists if provided
-    if (tableId) {
-      const table = await prisma.dataTable.findUnique({
-        where: { 
-          id: tableId,
-          workspaceId 
-        }
+    if (!isAdmin && !isCreator) {
+      const userWorkspace = await prisma.workspaceUser.findFirst({
+        where: {
+          userId: currentUser.id,
+          workspaceId,
+        },
       });
       
-      if (!table) {
+      if (!userWorkspace) {
         return NextResponse.json(
-          { message: 'Table not found' },
+          { message: 'You do not have access to this workspace' },
+          { status: 403 }
+        );
+      }
+    }
+
+    // ENHANCED: Parse request body with scope support
+    const body = await request.json();
+    const { 
+      name, 
+      description, 
+      formula, 
+      color, 
+      type = 'CELL_VALIDATION',
+      scope = 'workspace', // ENHANCED: Default to workspace scope for backward compatibility
+      tableId // ENHANCED: Optional table ID for table-scoped formulas
+    } = body;
+
+    // Validate required fields
+    if (!name || !formula) {
+      return NextResponse.json(
+        { message: 'Name and formula are required' },
+        { status: 400 }
+      );
+    }
+
+    // ENHANCED: Validate scope-specific requirements
+    if (scope === 'table' && !tableId) {
+      return NextResponse.json(
+        { message: 'Table ID is required for table-scoped formulas' },
+        { status: 400 }
+      );
+    }
+
+    // ENHANCED: If table scope, verify table exists and belongs to workspace
+    if (scope === 'table' && tableId) {
+      const targetTable = await prisma.dataTable.findUnique({
+        where: {
+          id: tableId,
+          workspaceId: workspaceId
+        }
+      });
+
+      if (!targetTable) {
+        return NextResponse.json(
+          { message: 'Target table not found or does not belong to this workspace' },
           { status: 404 }
         );
       }
     }
+
+    // ENHANCED: Validate formula syntax using enhanced evaluator
+    const testVariables = ['TestVar1', 'TestVar2', 'TestVar3'];
+    const validationResult = validateUnidirectionalFormula(formula, testVariables);
     
-    // ENHANCED: Set default scope based on tableId if scope not provided
-    const finalScope = scope || (tableId ? 'table' : 'workspace');
-    const finalTableId = finalScope === 'table' ? tableId : null;
-    
-    // Create formula
+    if (!validationResult.isValid) {
+      return NextResponse.json(
+        { 
+          message: 'Invalid formula', 
+          error: validationResult.error,
+          details: {
+            leftVariables: validationResult.leftVariables,
+            rightVariables: validationResult.rightVariables,
+            missingVariables: validationResult.missingVariables
+          }
+        },
+        { status: 400 }
+      );
+    }
+
+    // Create the formula with enhanced scope support
     const newFormula = await prisma.formula.create({
       data: {
         name,
-        description: description || null,
+        description,
         formula,
-        tableId: finalTableId,
-        color: color || '#ef4444',
-        type,
-        active: active !== undefined ? active : true,
+        color: color || '#ff4444',
+        type: type as 'CELL_VALIDATION' | 'RELATIONAL',
         workspaceId,
-        // ENHANCED: Store scope information (if your database schema supports it)
-        // scope: finalScope, // Uncomment if you add scope column to database
+        tableId: scope === 'table' ? tableId : null, // ENHANCED: Set tableId only for table scope
+        active: true
       }
     });
 
-    return NextResponse.json(newFormula);
+    console.log(`✅ Created ${scope}-scoped formula: "${name}" ${tableId ? `for table ${tableId}` : 'for entire workspace'}`);
+
+    return NextResponse.json({
+      formula: newFormula,
+      validation: {
+        isValid: true,
+        targetVariable: validationResult.targetVariable,
+        scope: scope,
+        appliedTo: scope === 'table' ? `Table: ${tableId}` : 'All tables in workspace'
+      }
+    }, { status: 201 });
+
   } catch (error) {
     console.error('Error creating formula:', error);
     return NextResponse.json(
-      { message: 'Server error', error: (error as Error).message },
+      { message: 'Failed to create formula', error: (error as Error).message },
       { status: 500 }
     );
   }

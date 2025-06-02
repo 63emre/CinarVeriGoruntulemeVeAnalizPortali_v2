@@ -88,8 +88,18 @@ export function parseComplexFormula(formula: string): FormulaCondition[] {
   // Clean the formula first
   let cleanFormula = formula.trim();
   
-  // Handle square brackets for variables (convert to standard format)
+  // FIXED: Check for incomplete formulas like ">0", "<320" etc.
+  // These should be invalid as they have no left side variable
+  if (/^\s*[><=!]+\s*/.test(cleanFormula)) {
+    console.warn(`❌ Invalid formula detected - missing left side: "${cleanFormula}"`);
+    return []; // Return empty array to indicate invalid formula
+  }
+  
+  // ENHANCED: Handle square brackets for variables (convert to standard format)
+  // Remove brackets but keep the variable name: [İletkenlik] -> İletkenlik
   cleanFormula = cleanFormula.replace(/\[([^\]]+)\]/g, '$1');
+  
+  console.log(`🔧 Cleaned formula: "${formula}" -> "${cleanFormula}"`);
   
   // Split by AND/OR operators while preserving them
   const parts = cleanFormula.split(/\s+(AND|OR)\s+/i);
@@ -109,6 +119,12 @@ export function parseComplexFormula(formula: string): FormulaCondition[] {
       left = left.trim();
       right = right.trim();
       operator = operator.trim();
+      
+      // FIXED: Validate that we have meaningful expressions on both sides
+      if (!left || left === '' || !right || right === '') {
+        console.warn(`❌ Invalid formula detected - empty left or right side: "${conditionStr}"`);
+        continue; // Skip this invalid condition
+      }
       
       // FIXED: Better handling of parentheses and complex expressions
       // If expression contains arithmetic operators but no parentheses, add them for clarity
@@ -136,15 +152,23 @@ export function parseComplexFormula(formula: string): FormulaCondition[] {
         return cleaned.replace(/([+\-*/])/g, ' $1 ').replace(/\s+/g, ' ').trim();
       };
       
+      const leftProcessed = processExpression(left);
+      const rightProcessed = processExpression(right);
+      
+      console.log(`🔧 Processed condition: "${leftProcessed}" ${operator} "${rightProcessed}"`);
+      
       conditions.push({
-        leftExpression: processExpression(left),
+        leftExpression: leftProcessed,
         operator: operator,
-        rightExpression: processExpression(right),
+        rightExpression: rightProcessed,
         logicalOperator: logicalOp
       });
+    } else {
+      console.warn(`❌ Invalid condition format: "${conditionStr}"`);
     }
   }
   
+  console.log(`🔧 Parsed ${conditions.length} conditions from formula: "${formula}"`);
   return conditions;
 }
 
@@ -444,9 +468,205 @@ function cleanAndParseValue(value: string | number | null): number | null {
 }
 
 /**
- * FIXED: Main function to evaluate formulas for table highlighting
- * Now properly highlights cells only when formula conditions are TRUE
- * FIXED: Row locking issue - now uses proper row identification
+ * ENHANCED: Validate if formula follows unidirectional rule
+ * Tek taraf değişken kuralı: Formülün bir tarafında tek değişken, diğer tarafında kombinasyon olmalı
+ * Örnekler:
+ * - "A < B + C" ✓ (A tek, B+C kombinasyon → A vurgulanır)
+ * - "B + C > A" ✓ (A tek, B+C kombinasyon → A vurgulanır) 
+ * - "A + B > C + D" ✗ (Her iki taraf kombinasyon → geçersiz)
+ * - "A > 312" ✓ (A tek, 312 sabit → A vurgulanır)
+ */
+export function validateUnidirectionalFormula(formula: string, availableVariables: string[]): {
+  isValid: boolean;
+  error?: string;
+  missingVariables?: string[];
+  leftVariables?: string[];
+  rightVariables?: string[];
+  targetVariable?: string; // ENHANCED: Hangi değişkenin vurgulanacağını belirtir
+} {
+  try {
+    const conditions = parseComplexFormula(formula);
+    
+    if (conditions.length === 0) {
+      return {
+        isValid: false,
+        error: 'No valid conditions found in formula'
+      };
+    }
+    
+    // Check each condition for unidirectional rule
+    for (const condition of conditions) {
+      const leftVars = extractVariables(condition.leftExpression);
+      const rightVars = extractVariables(condition.rightExpression);
+      
+      // ENHANCED: Flexible variable matching for Turkish characters and different naming conventions
+      const findMatchingVariable = (formulaVar: string): string | undefined => {
+        // Clean the formula variable
+        const cleanFormulaVar = formulaVar.replace(/,+$/, '').trim();
+        
+        return availableVariables.find(availableVar => {
+          const cleanAvailableVar = availableVar.replace(/,+$/, '').trim();
+          
+          // 1. Exact match
+          if (cleanAvailableVar === cleanFormulaVar) return true;
+          
+          // 2. Case-insensitive match
+          if (cleanAvailableVar.toLowerCase() === cleanFormulaVar.toLowerCase()) return true;
+          
+          // 3. Normalize Turkish characters and compare
+          const normalizeText = (text: string) => text
+            .toLowerCase()
+            .replace(/ı/g, 'i')
+            .replace(/ğ/g, 'g')
+            .replace(/ü/g, 'u')
+            .replace(/ş/g, 's')
+            .replace(/ö/g, 'o')
+            .replace(/ç/g, 'c')
+            .replace(/İ/g, 'i')
+            .replace(/Ğ/g, 'g')
+            .replace(/Ü/g, 'u')
+            .replace(/Ş/g, 's')
+            .replace(/Ö/g, 'o')
+            .replace(/Ç/g, 'c')
+            .replace(/\s+/g, '')
+            .replace(/[^\w]/g, '');
+          
+          const normalizedAvailable = normalizeText(cleanAvailableVar);
+          const normalizedFormula = normalizeText(cleanFormulaVar);
+          
+          if (normalizedAvailable === normalizedFormula) return true;
+          
+          // 4. Partial match (contains)
+          if (normalizedAvailable.includes(normalizedFormula) || 
+              normalizedFormula.includes(normalizedAvailable)) return true;
+          
+          // 5. Token-based matching (split by spaces/punctuation and check overlap)
+          const availableTokens = cleanAvailableVar.split(/[\s\-_.,()]+/).filter(t => t.length > 1);
+          const formulaTokens = cleanFormulaVar.split(/[\s\-_.,()]+/).filter(t => t.length > 1);
+          
+          if (availableTokens.length > 0 && formulaTokens.length > 0) {
+            const normalizedAvailableTokens = availableTokens.map(normalizeText);
+            const normalizedFormulaTokens = formulaTokens.map(normalizeText);
+            
+            // Check if any significant token matches
+            const hasSignificantMatch = normalizedFormulaTokens.some(fToken => 
+              fToken.length >= 3 && normalizedAvailableTokens.some(aToken => 
+                aToken === fToken || aToken.includes(fToken) || fToken.includes(aToken)
+              )
+            );
+            
+            if (hasSignificantMatch) return true;
+          }
+          
+          return false;
+        });
+      };
+      
+      // Check if variables exist with flexible matching
+      const allFormulaVars = [...leftVars, ...rightVars];
+      const missingVars: string[] = [];
+      const matchedVars: Record<string, string> = {}; // formulaVar -> actualVar mapping
+      
+      for (const formulaVar of allFormulaVars) {
+        const matchedVar = findMatchingVariable(formulaVar);
+        if (matchedVar) {
+          matchedVars[formulaVar] = matchedVar;
+        } else {
+          missingVars.push(formulaVar);
+        }
+      }
+      
+      if (missingVars.length > 0) {
+        console.log(`🔍 Missing variables analysis for formula "${formula}":`);
+        console.log(`   Formula variables: [${allFormulaVars.join(', ')}]`);
+        console.log(`   Available variables: [${availableVariables.join(', ')}]`);
+        console.log(`   Missing: [${missingVars.join(', ')}]`);
+        console.log(`   Matched: ${JSON.stringify(matchedVars)}`);
+        
+        return {
+          isValid: false,
+          error: 'Missing variables',
+          missingVariables: missingVars
+        };
+      }
+      
+      // ENHANCED: Apply unidirectional rule with matched variables
+      const leftIsConstant = leftVars.length === 0; // Only constants/numbers
+      const rightIsConstant = rightVars.length === 0; // Only constants/numbers
+      const leftIsSingle = leftVars.length === 1; // Single variable
+      const rightIsSingle = rightVars.length === 1; // Single variable
+      const leftIsMultiple = leftVars.length > 1; // Multiple variables
+      const rightIsMultiple = rightVars.length > 1; // Multiple variables
+      
+      let targetVariable: string | undefined;
+      
+      // Case 1: Single variable vs constant (OK)
+      // Example: "A > 312" → target A
+      if (leftIsSingle && rightIsConstant) {
+        targetVariable = matchedVars[leftVars[0]] || leftVars[0];
+      }
+      // Example: "312 < A" → target A  
+      else if (rightIsSingle && leftIsConstant) {
+        targetVariable = matchedVars[rightVars[0]] || rightVars[0];
+      }
+      
+      // Case 2: Single variable vs multiple variables/expression (OK)
+      // Example: "A < B + C" → target A
+      else if (leftIsSingle && (rightIsMultiple || rightIsConstant)) {
+        targetVariable = matchedVars[leftVars[0]] || leftVars[0];
+      }
+      // Example: "B + C > A" → target A
+      else if (rightIsSingle && (leftIsMultiple || leftIsConstant)) {
+        targetVariable = matchedVars[rightVars[0]] || rightVars[0];
+      }
+      
+      // Case 3: Multiple variables on both sides (NOT OK)
+      // Example: "A + B > C + D" → invalid
+      else if (leftIsMultiple && rightIsMultiple) {
+        return {
+          isValid: false,
+          error: 'Both sides contain multiple variables. Formula must have one side with a single variable.',
+          leftVariables: leftVars,
+          rightVariables: rightVars
+        };
+      }
+      
+      // Case 4: No variables (invalid)
+      else if (leftIsConstant && rightIsConstant) {
+        return {
+          isValid: false,
+          error: 'Formula contains no variables'
+        };
+      }
+      
+      // If we found a valid condition, return success with target
+      if (targetVariable) {
+        console.log(`✅ Formula validation successful. Target variable: "${targetVariable}"`);
+        return {
+          isValid: true,
+          leftVariables: leftVars,
+          rightVariables: rightVars,
+          targetVariable: targetVariable
+        };
+      }
+    }
+    
+    return {
+      isValid: false,
+      error: 'Formula does not follow unidirectional rule'
+    };
+    
+  } catch (error) {
+    return {
+      isValid: false,
+      error: `Error validating formula: ${(error as Error).message}`
+    };
+  }
+}
+
+/**
+ * ENHANCED: Main function to evaluate formulas with unidirectional rule
+ * Sadece hedef değişkenin hücresini vurgular, diğer değişkenleri değil
  */
 export function evaluateFormulasForTable(
   formulas: Formula[],
@@ -471,11 +691,18 @@ export function evaluateFormulasForTable(
     return highlightedCells;
   }
   
+  // Get all available variables
+  const availableVariables = data
+    .map(row => row[variableColumnIndex] as string)
+    .filter(v => v && typeof v === 'string')
+    .map(v => v.replace(/,+$/, '').trim())
+    .filter(v => v.length > 0);
+  
   // Find date columns (exclude standard columns)
   const standardColumns = ['id', 'Variable', 'Data Source', 'Method', 'Unit', 'LOQ'];
   const dateColumns = columns.filter(col => !standardColumns.includes(col));
   
-  // FIXED: Create a mapping of variable names to their row indices for proper row identification
+  // Create a mapping of variable names to their row indices for proper row identification
   const variableToRowMap = new Map<string, number>();
   data.forEach((row, rowIndex) => {
     const rawVarName = row[variableColumnIndex] as string;
@@ -487,141 +714,203 @@ export function evaluateFormulasForTable(
     }
   });
   
-  // Process each date column
-  dateColumns.forEach((dateCol) => {
-    const dateColIndex = columns.indexOf(dateCol);
-    if (dateColIndex === -1) return;
-    
-    // Create variables map for this date column
-    const variables: Record<string, number> = {};
-    
-    data.forEach((row) => {
-      const rawVarName = row[variableColumnIndex] as string;
-      const value = row[dateColIndex];
+  // Process each active formula
+  activeFormulas.forEach((formula) => {
+    try {
+      console.log(`🔍 Processing formula: "${formula.formula}" (${formula.name})`);
       
-      if (rawVarName && value !== null && value !== undefined) {
-        // Clean the variable name by removing trailing commas and trimming whitespace
-        const cleanVarName = rawVarName.replace(/,+$/, '').trim();
-        
-        // Use the new cleaning function to handle special values
-        const numValue = cleanAndParseValue(value);
-        if (numValue !== null && cleanVarName) {
-          variables[cleanVarName] = numValue;
-        }
+      // ENHANCED: Validate formula against unidirectional rule
+      const validation = validateUnidirectionalFormula(formula.formula, availableVariables);
+      
+      if (!validation.isValid) {
+        console.warn(`❌ Formula "${formula.formula}" is invalid: ${validation.error}`);
+        return; // Skip this formula
       }
-    });
-    
-    // Skip if no valid variables for this column
-    if (Object.keys(variables).length === 0) return;
-    
-    // Evaluate each formula for this date column
-    activeFormulas.forEach(formula => {
-      try {
-        const result = evaluateComplexFormula(formula.formula, variables);
+      
+      if (!validation.targetVariable) {
+        console.warn(`❌ Formula "${formula.formula}" has no target variable`);
+        return; // Skip this formula
+      }
+      
+      console.log(`✅ Formula "${formula.formula}" is valid. Target variable: ${validation.targetVariable}`);
+      
+      // Find the target variable's row index
+      const targetRowIndex = variableToRowMap.get(validation.targetVariable);
+      if (targetRowIndex === undefined) {
+        console.warn(`❌ Target variable "${validation.targetVariable}" not found in table`);
+        return;
+      }
+      
+      const targetRowIndexNumber = targetRowIndex as number; // Type assertion after undefined check
+      
+      // Process each date column
+      dateColumns.forEach((dateCol) => {
+        const dateColIndex = columns.indexOf(dateCol);
+        if (dateColIndex === -1) return;
         
-        // FIXED: Only highlight when formula condition is TRUE (result.result === true)
-        if (result.isValid && result.result === true) {
-          // Get all variables used in the formula
-          const allFormulaVariables = extractVariables(formula.formula);
+        // Create variables map for this date column
+        const variables: Record<string, number> = {};
+        
+        data.forEach((row) => {
+          const rawVarName = row[variableColumnIndex] as string;
+          const value = row[dateColIndex];
           
-          // Only highlight variables that exist in the data
-          const existingVariables = allFormulaVariables.filter(varName => 
-            variables.hasOwnProperty(varName) && !isNaN(variables[varName])
+          if (rawVarName && value !== null && value !== undefined) {
+            const cleanVarName = rawVarName.replace(/,+$/, '').trim();
+            const numValue = typeof value === 'number' ? value : parseFloat(String(value));
+            
+            if (!isNaN(numValue) && cleanVarName) {
+              variables[cleanVarName] = numValue;
+            }
+          }
+        });
+        
+        // ENHANCED: Better debug logging
+        console.log(`📊 Variables map for column "${dateCol}":`, variables);
+        console.log(`🎯 Available variables: [${Object.keys(variables).join(', ')}]`);
+        console.log(`🔍 Formula variables needed: Left=[${validation.leftVariables?.join(', ')}], Right=[${validation.rightVariables?.join(', ')}]`);
+        
+        // ENHANCED: Use the same flexible matching logic as in validation
+        const findVariableMatch = (formulaVar: string): string | undefined => {
+          const cleanFormulaVar = formulaVar.replace(/,+$/, '').trim();
+          
+          return Object.keys(variables).find(availableVar => {
+            const cleanAvailableVar = availableVar.replace(/,+$/, '').trim();
+            
+            // 1. Exact match
+            if (cleanAvailableVar === cleanFormulaVar) return true;
+            
+            // 2. Case-insensitive match
+            if (cleanAvailableVar.toLowerCase() === cleanFormulaVar.toLowerCase()) return true;
+            
+            // 3. Normalize Turkish characters and compare
+            const normalizeText = (text: string) => text
+              .toLowerCase()
+              .replace(/ı/g, 'i').replace(/İ/g, 'i')
+              .replace(/ğ/g, 'g').replace(/Ğ/g, 'g')
+              .replace(/ü/g, 'u').replace(/Ü/g, 'u')
+              .replace(/ş/g, 's').replace(/Ş/g, 's')
+              .replace(/ö/g, 'o').replace(/Ö/g, 'o')
+              .replace(/ç/g, 'c').replace(/Ç/g, 'c')
+              .replace(/\s+/g, '').replace(/[^\w]/g, '');
+            
+            const normalizedAvailable = normalizeText(cleanAvailableVar);
+            const normalizedFormula = normalizeText(cleanFormulaVar);
+            
+            if (normalizedAvailable === normalizedFormula) return true;
+            
+            // 4. Partial match (contains)
+            if (normalizedAvailable.includes(normalizedFormula) || 
+                normalizedFormula.includes(normalizedAvailable)) return true;
+            
+            return false;
+          });
+        };
+        
+        // Check if all required variables are available with flexible matching
+        const allFormulaVars = [...(validation.leftVariables || []), ...(validation.rightVariables || [])];
+        const missingVars: string[] = [];
+        const variableMappings: Record<string, string> = {}; // formulaVar -> actualVar
+        
+        allFormulaVars.forEach(formulaVar => {
+          const matchedVar = findVariableMatch(formulaVar);
+          if (matchedVar) {
+            variableMappings[formulaVar] = matchedVar;
+          } else {
+            missingVars.push(formulaVar);
+          }
+        });
+        
+        if (missingVars.length > 0) {
+          console.log(`⚠️ Missing variables for formula "${formula.name}" in column "${dateCol}":`, missingVars);
+          console.log(`🔧 Available variables for matching:`, Object.keys(variables));
+          console.log(`🔗 Variable mappings found:`, variableMappings);
+          return;
+        }
+        
+        // ENHANCED: Create enhanced variables map using the mappings
+        const enhancedVariables: Record<string, number> = {};
+        
+        // First, add direct mappings from the variable mappings
+        Object.entries(variableMappings).forEach(([formulaVar, actualVar]) => {
+          if (variables[actualVar] !== undefined) {
+            enhancedVariables[formulaVar] = variables[actualVar];
+            console.log(`🔧 Mapped "${formulaVar}" to "${actualVar}" = ${variables[actualVar]}`);
+          }
+        });
+        
+        // Also keep the original variable names for any exact matches
+        Object.entries(variables).forEach(([varName, value]) => {
+          if (enhancedVariables[varName] === undefined) {
+            enhancedVariables[varName] = value;
+          }
+        });
+        
+        // Evaluate the formula for this date column
+        console.log(`⚙️ Evaluating formula with enhanced variables:`, enhancedVariables);
+        const result = evaluateComplexFormula(formula.formula, enhancedVariables);
+        
+        if (result.isValid && result.result === true) {
+          // ENHANCED: Only highlight the TARGET VARIABLE cell, not all variables
+          const rowId = `row-${targetRowIndexNumber + 1}`;
+          
+          // Check if this cell is already highlighted by another formula
+          const existingCellIndex = highlightedCells.findIndex(cell => 
+            cell.row === rowId && cell.col === dateCol
           );
           
-          // FIXED: Highlight cells for variables that are part of the TRUE condition
-          // Use the variable-to-row mapping to ensure correct row identification
-          existingVariables.forEach(varName => {
-            const rowIndex = variableToRowMap.get(varName);
-            if (rowIndex !== undefined) {
-              // FIXED: Use proper row ID format to match TablePage expectations
-              const rowId = `row-${rowIndex + 1}`;
-              
-              // Check if this cell is already highlighted
-              const existingCell = highlightedCells.find(
-                cell => cell.row === rowId && cell.col === dateCol
-              );
-              
-              if (existingCell) {
-                // Merge with existing highlight - ENHANCED for pizza slice effect
-                if (!existingCell.formulaIds.includes(formula.id)) {
-                  existingCell.formulaIds.push(formula.id);
-                  existingCell.message = `${existingCell.message}, ${formula.name}`;
-                  
-                  // PIZZA SLICE: Don't blend colors, keep them separate for gradient
-                  // existingCell.color remains the first formula's color for backward compatibility
-                  
-                  // Add formula details for pizza slice rendering
-                  if (existingCell.formulaDetails) {
-                    existingCell.formulaDetails.push({
-                      id: formula.id,
-                      name: formula.name,
-                      formula: formula.formula,
-                      leftResult: result.leftResult,
-                      rightResult: result.rightResult,
-                      color: formula.color // IMPORTANT: Keep individual formula colors
-                    });
-                  }
-                  
-                  console.log(`🍕 PIZZA SLICE SETUP: Cell [${rowId}, ${dateCol}] now has ${existingCell.formulaIds.length} formulas:`, {
-                    formulaNames: existingCell.formulaDetails?.map(d => d.name),
-                    formulaColors: existingCell.formulaDetails?.map(d => d.color)
-                  });
-                }
-              } else {
-                // Create new highlight
-                highlightedCells.push({
-                  row: rowId,
-                  col: dateCol,
-                  color: formula.color,
-                  message: formula.name,
-                  formulaIds: [formula.id],
-                  formulaDetails: [{
-                    id: formula.id,
-                    name: formula.name,
-                    formula: formula.formula,
-                    leftResult: result.leftResult,
-                    rightResult: result.rightResult,
-                    color: formula.color // IMPORTANT: Store individual formula color
-                  }]
-                });
-                
-                console.log(`🎨 NEW HIGHLIGHT: Cell [${rowId}, ${dateCol}] created for formula: ${formula.name}`);
-              }
-            }
-          });
-        }
-      } catch (error) {
-        console.error(`Error evaluating formula ${formula.name}:`, error);
-        // For formulas that completely fail to evaluate, we might want to highlight all involved variables
-        // but only if they exist in the data
-        const allFormulaVariables = extractVariables(formula.formula);
-        const existingVariables = allFormulaVariables.filter(varName => 
-          variables.hasOwnProperty(varName) && !isNaN(variables[varName])
-        );
-        
-        existingVariables.forEach(varName => {
-          const rowIndex = variableToRowMap.get(varName);
-          if (rowIndex !== undefined) {
-            highlightedCells.push({
-              row: `row-${rowIndex + 1}`,
+          if (existingCellIndex !== -1) {
+            // Merge with existing highlight (multiple formulas affecting same cell)
+            const existingCell = highlightedCells[existingCellIndex];
+            existingCell.formulaIds.push(formula.id);
+            existingCell.message += `, ${formula.name}`;
+            
+            // Add formula details
+            existingCell.formulaDetails = existingCell.formulaDetails || [];
+            existingCell.formulaDetails.push({
+              id: formula.id,
+              name: formula.name,
+              formula: formula.formula,
+              leftResult: result.leftResult,
+              rightResult: result.rightResult,
+              color: formula.color
+            });
+            
+            // For multiple formulas, keep the first color or blend if needed
+            // User requested visual slicing, but for now we'll use the first color
+            console.log(`🔄 Merged formula "${formula.name}" with existing highlight for cell [${rowId}, ${dateCol}]`);
+          } else {
+            // Create new highlighted cell - ONLY for the target variable
+            const targetVariableValue = variables[validation.targetVariable!];
+            
+            const highlightCell: HighlightedCell = {
+              row: rowId,
               col: dateCol,
-              color: '#ff6b6b', // Red color for evaluation errors
-              message: `${formula.name} (Değerlendirme Hatası)`,
+              color: formula.color || '#ff0000',
+              message: `${formula.name}: ${validation.targetVariable!} = ${targetVariableValue}`,
               formulaIds: [formula.id],
               formulaDetails: [{
                 id: formula.id,
                 name: formula.name,
                 formula: formula.formula,
-                color: '#ff6b6b' // Add required color property
+                leftResult: result.leftResult,
+                rightResult: result.rightResult,
+                color: formula.color
               }]
-            });
+            };
+            
+            highlightedCells.push(highlightCell);
+            console.log(`✅ Added highlight for TARGET cell [${rowId}, ${dateCol}] - Variable: ${validation.targetVariable!}`);
           }
-        });
-      }
-    });
+        }
+      });
+      
+    } catch (error) {
+      console.error(`❌ Error processing formula "${formula.name}":`, error);
+    }
   });
   
+  console.log(`📊 Generated ${highlightedCells.length} highlighted cells using unidirectional rule`);
   return highlightedCells;
 }
 
@@ -682,150 +971,6 @@ export function validateFormula(formula: string, availableVariables: string[]): 
     return {
       isValid: false,
       error: (error as Error).message
-    };
-  }
-}
-
-/**
- * ENHANCED: Tek yönlü formül kısıtlaması validatörü
- * Tablo görüntüleme ekranında kullanılmak üzere, formülün sol tarafında 
- * yalnızca tek bir değişken olmasını sağlar
- */
-export function validateUnidirectionalFormula(formula: string, availableVariables: string[]): {
-  isValid: boolean;
-  error?: string;
-  missingVariables?: string[];
-  leftVariables?: string[];
-  rightVariables?: string[];
-  targetVariable?: string; // YENI: Hangi değişkenin vurgulanacağını belirtir
-} {
-  try {
-    const conditions = parseComplexFormula(formula);
-    
-    if (conditions.length === 0) {
-      return {
-        isValid: false,
-        error: 'Formülde geçerli koşul bulunamadı'
-      };
-    }
-    
-    // ENHANCED: Tek yönlü kısıtlama - Sadece tek bir karşılaştırma koşuluna izin ver
-    if (conditions.length > 1) {
-      return {
-        isValid: false,
-        error: 'Tablo görüntüleme modunda birden fazla koşul (AND/OR) desteklenmez. Her formül tek bir karşılaştırma içermelidir. Örnek: "İletkenlik > 300" ✓, "İletkenlik > 300 AND pH < 7" ✗'
-      };
-    }
-    
-    const condition = conditions[0];
-    
-    // Sol ve sağ taraftaki değişkenleri çıkar
-    const leftVars = extractVariables(condition.leftExpression);
-    const rightVars = extractVariables(condition.rightExpression);
-    
-    // TEK YÖNLÜ KISITLAMA: Sol tarafta yalnızca tek değişken olmalı
-    if (leftVars.length === 0) {
-      return {
-        isValid: false,
-        error: 'Formülün sol tarafında bir değişken bulunmalıdır. Örnek: "İletkenlik > 300"',
-        leftVariables: leftVars,
-        rightVariables: rightVars
-      };
-    }
-    
-    if (leftVars.length > 1) {
-      return {
-        isValid: false,
-        error: `Tablo görüntüleme modunda sol tarafta yalnızca TEK değişken kullanılabilir. Şu anda ${leftVars.length} değişken var: ${leftVars.join(', ')}. Doğru örnek: "İletkenlik > Alkalinite + 3" ✓, Yanlış örnek: "(İletkenlik + pH) > 300" ✗`,
-        leftVariables: leftVars,
-        rightVariables: rightVars
-      };
-    }
-    
-    // ENHANCED: Sol taraftaki ifadenin temiz olması kontrolü
-    const leftExpr = condition.leftExpression.trim().replace(/^\(|\)$/g, '');
-    const hasLeftArithmetic = /[+\-*/]/.test(leftExpr);
-    
-    if (hasLeftArithmetic) {
-      return {
-        isValid: false,
-        error: `Tablo görüntüleme modunda sol tarafta aritmetik işlemler kullanılamaz. Sol taraf: "${leftExpr}". Doğru format: "İletkenlik > 300" ✓ veya "İletkenlik > Alkalinite + 3" ✓, Yanlış format: "(İletkenlik + 50) > 300" ✗`,
-        leftVariables: leftVars,
-        rightVariables: rightVars
-      };
-    }
-    
-    // ENHANCED: Operator kontrolü - desteklenen operatörler
-    const supportedOperators = ['>', '<', '>=', '<=', '==', '!=', '='];
-    if (!supportedOperators.includes(condition.operator)) {
-      return {
-        isValid: false,
-        error: `Desteklenmeyen operatör: "${condition.operator}". Desteklenen operatörler: ${supportedOperators.join(', ')}`,
-        leftVariables: leftVars,
-        rightVariables: rightVars
-      };
-    }
-    
-    // Tüm değişkenlerin mevcut olup olmadığını kontrol et
-    const allVars = [...leftVars, ...rightVars];
-    const missingVariables = allVars.filter(v => !availableVariables.includes(v));
-    
-    if (missingVariables.length > 0) {
-      return {
-        isValid: false,
-        error: `Tanımsız değişkenler: ${missingVariables.join(', ')}. Mevcut değişkenler: ${availableVariables.slice(0, 5).join(', ')}${availableVariables.length > 5 ? '...' : ''}`,
-        missingVariables,
-        leftVariables: leftVars,
-        rightVariables: rightVars
-      };
-    }
-    
-    // ENHANCED: Mantık kontrolü - sol taraftaki değişken sağ tarafta da varsa uyarı
-    if (rightVars.includes(leftVars[0])) {
-      return {
-        isValid: false,
-        error: `"${leftVars[0]}" değişkeni hem sol hem sağ tarafta kullanılıyor. Bu çembersel referans yaratabilir. Örnek düzeltme: "${leftVars[0]} > sabit_değer" veya "${leftVars[0]} > başka_değişken + sabit"`,
-        leftVariables: leftVars,
-        rightVariables: rightVars
-      };
-    }
-    
-    // ENHANCED: Sentaks kontrolü için dummy verilerle test et
-    const dummyVariables: Record<string, number> = {};
-    availableVariables.forEach(v => {
-      dummyVariables[v] = Math.random() * 100 + 1; // Realistic test values
-    });
-    
-    try {
-      const result = evaluateComplexFormula(formula, dummyVariables);
-      if (!result.isValid) {
-        return {
-          isValid: false,
-          error: `Formül değerlendirme hatası: ${result.message}`,
-          leftVariables: leftVars,
-          rightVariables: rightVars
-        };
-      }
-    } catch (evalError) {
-      return {
-        isValid: false,
-        error: `Formül test hatası: ${(evalError as Error).message}`,
-        leftVariables: leftVars,
-        rightVariables: rightVars
-      };
-    }
-    
-    return {
-      isValid: true,
-      leftVariables: leftVars,
-      rightVariables: rightVars,
-      targetVariable: leftVars[0] // Vurgulanacak hedef değişken
-    };
-    
-  } catch (error) {
-    return {
-      isValid: false,
-      error: `Formül analiz hatası: ${(error as Error).message}`
     };
   }
 }

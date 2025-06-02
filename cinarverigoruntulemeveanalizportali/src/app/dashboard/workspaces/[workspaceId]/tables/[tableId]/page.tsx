@@ -451,7 +451,13 @@ export default function TablePage() {
   };
 
   // Handle formula creation with FormulaBuilder
-  const handleFormulaCreate = async (formula: string, name: string, color: string) => {
+  const handleFormulaCreate = async (
+    formula: string, 
+    name: string, 
+    color: string, 
+    scope: 'table' | 'workspace', 
+    tableId?: string
+  ) => {
     try {
       setLoading(true);
       const response = await fetch(`/api/workspaces/${workspaceId}/formulas`, {
@@ -464,21 +470,26 @@ export default function TablePage() {
           formula,
           color,
           type: 'CELL_VALIDATION',
-          description: `Variable kolonundan oluşturulan formül: ${formula}`,
-          active: true
+          description: `${scope === 'table' ? 'Tablo' : 'Workspace'} kapsamından oluşturulan formül: ${formula}`,
+          active: true,
+          scope: scope, // ENHANCED: Include scope
+          tableId: scope === 'table' ? (tableId || table?.id) : null // ENHANCED: Include tableId for table scope
         }),
       });
       
       if (!response.ok) {
-        throw new Error(`Error creating formula: ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Error creating formula: ${response.statusText}`);
       }
       
-      const newFormula = await response.json();
+      const result = await response.json();
+      const newFormula = result.formula || result; // Handle different response formats
       setFormulas(prev => [...prev, newFormula]);
       setShowCreateForm(false); // Close the creation form
       
-      // Success feedback
-      console.log(`✅ Formül "${name}" başarıyla oluşturuldu!`);
+      // Success feedback with scope information
+      const scopeInfo = scope === 'table' ? 'bu tabloya' : 'tüm workspace\'e';
+      console.log(`✅ Formül "${name}" başarıyla oluşturuldu ve ${scopeInfo} uygulandı!`);
       
       // ENHANCED: Trigger auto-refresh after formula creation
       setAutoRefresh(true);
@@ -486,7 +497,7 @@ export default function TablePage() {
       
       // Show temporary success message
       setError(null);
-      const successMessage = `Formül "${name}" başarıyla oluşturuldu ve mevcut formüller listesine eklendi.`;
+      const successMessage = `Formül "${name}" başarıyla oluşturuldu (${scopeInfo}) ve mevcut formüller listesine eklendi.`;
       
       // Clear success message after 3 seconds
       setTimeout(() => {
@@ -712,6 +723,8 @@ export default function TablePage() {
                         onSave={handleFormulaCreate}
                         onCancel={() => setShowCreateForm(false)}
                         isVisible={true}
+                        availableTables={[{ id: table?.id || '', name: table?.name || '' }]} // ENHANCED: Pass current table
+                        currentTableId={table?.id} // ENHANCED: Pass current table ID
                       />
                     </div>
                   )}

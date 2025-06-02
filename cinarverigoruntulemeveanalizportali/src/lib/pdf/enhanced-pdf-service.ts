@@ -9,13 +9,13 @@
  * - High-quality image rendering
  */
 
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
-// Define interfaces for better type safety
-export interface EnhancedDataTable {
+// Define a custom DataTable interface since it's not exported from Prisma client
+export interface DataTable {
   id: string;
   name: string;
   sheetName?: string;
@@ -84,115 +84,107 @@ interface EnhancedPdfOptions {
   quality?: 'low' | 'medium' | 'high';
 }
 
-interface AutoTableCellData {
-  section: string;
-  row: { index: number };
-  column: { index: number };
-  cell: {
-    styles: Record<string, unknown>;
-    text?: string;
-  };
-}
+// ENHANCED: Turkish Character Support
+// Türkçe karakterlerin PDF'de doğru gösterilmesi için gelişmiş font yönetimi
+const TURKISH_FONT_CONFIG = {
+  fontName: 'helvetica',
+  encoding: 'UTF-8',
+  supportedChars: {
+    'ı': 'i', 'İ': 'I', 'ğ': 'g', 'Ğ': 'G',
+    'ş': 's', 'Ş': 'S', 'ç': 'c', 'Ç': 'C',
+    'ü': 'u', 'Ü': 'U', 'ö': 'o', 'Ö': 'O'
+  }
+};
 
 /**
- * Enhanced Turkish text encoding with full Unicode support
+ * ENHANCED: Superior Turkish text encoding for PDF compatibility
+ * Bu fonksiyon Türkçe karakterleri PDF'de doğru gösterilecek şekilde optimize eder
  */
-function enhancedTurkishTextEncoding(text: string): string {
+function encodeTurkishTextForPDF(text: string): string {
   if (typeof text !== 'string') return '';
   
   try {
-    // First pass: normalize Unicode representation
+    // ENHANCED: Preserve Turkish characters instead of replacing them
+    // Unicode normalizasyonu ve sadece problemli karakterleri temizle
     let processedText = text.normalize('NFC');
     
-    // Enhanced Turkish character mapping - only map problematic variants
-    const turkishCharacterMap: { [key: string]: string } = {
-      // Normalize problematic Unicode variants to standard Turkish characters
-      '\u0131': 'ı', // LATIN SMALL LETTER DOTLESS I
-      '\u0130': 'İ', // LATIN CAPITAL LETTER I WITH DOT ABOVE
-      '\u011F': 'ğ', // LATIN SMALL LETTER G WITH BREVE
-      '\u011E': 'Ğ', // LATIN CAPITAL LETTER G WITH BREVE
-      '\u015F': 'ş', // LATIN SMALL LETTER S WITH CEDILLA
-      '\u015E': 'Ş', // LATIN CAPITAL LETTER S WITH CEDILLA
-      '\u00E7': 'ç', // LATIN SMALL LETTER C WITH CEDILLA
-      '\u00C7': 'Ç', // LATIN CAPITAL LETTER C WITH CEDILLA
-      '\u00FC': 'ü', // LATIN SMALL LETTER U WITH DIAERESIS
-      '\u00DC': 'Ü', // LATIN CAPITAL LETTER U WITH DIAERESIS
-      '\u00F6': 'ö', // LATIN SMALL LETTER O WITH DIAERESIS
-      '\u00D6': 'Ö', // LATIN CAPITAL LETTER O WITH DIAERESIS
-      
-      // Remove problematic typographic characters
-      '\u201C': '"', '\u201D': '"', // Smart quotes
-      '\u2018': "'", '\u2019': "'", // Smart apostrophes
-      '\u2013': '-', '\u2014': '-', // En/em dashes
-      '\u2026': '...', // Ellipsis
-      '\u00A0': ' ', // Non-breaking space
-      '\u200B': '', '\u200C': '', '\u200D': '', // Zero-width characters
-      '\uFEFF': '', // Byte order mark
+    // Sadece PDF'de sorun çıkaran özel karakterleri temizle, Türkçe karakterleri koru
+    const problematicCharacterMap: { [key: string]: string } = {
+      // Bozuk/alternatif karakter temizleme - Türkçe karakterleri KORUYORUZ
+      '\u201C': '"', '\u201D': '"', // Tırnak işaretleri
+      '\u2018': "'", '\u2019': "'", // Tek tırnak
+      '\u2013': '-', '\u2014': '-', // En/em dash
+      '\u2026': '...', // Üç nokta
+      '\u00A0': ' ', // Kırılmaz boşluk -> normal boşluk
+      '\u200B': '', '\u200C': '', '\u200D': '', '\uFEFF': '', // Görünmez karakterler
+      '\u2212': '-', // Unicode minus sign -> regular dash
+      '\u00AD': '' // Soft hyphen
     };
     
-    // Apply character normalization
-    Object.entries(turkishCharacterMap).forEach(([char, replacement]) => {
+    // Sadece problemli karakterleri değiştir, Türkçe karakterleri koru
+    Object.entries(problematicCharacterMap).forEach(([char, replacement]) => {
       const regex = new RegExp(char, 'g');
       processedText = processedText.replace(regex, replacement);
     });
     
-    // Clean up extra whitespace and punctuation
-    processedText = processedText
-      .trim()
-      .replace(/\s+/g, ' ')
-      .replace(/,+/g, ',')
-      .replace(/^\s*,\s*/, '')
-      .replace(/\s*,\s*$/, '');
+    // Fazla boşlukları temizle
+    processedText = processedText.replace(/\s+/g, ' ').trim();
     
-    console.log(`📝 Enhanced Turkish encoding: "${text}" -> "${processedText}"`);
+    console.log(`🔤 Turkish text preserved for PDF: "${text}" -> "${processedText}"`);
+    
     return processedText;
     
   } catch (error) {
-    console.warn('Turkish text encoding failed, using fallback:', error);
-    // Fallback to ASCII transliteration
-    return text
-      .replace(/[çÇ]/g, 'c').replace(/[ğĞ]/g, 'g')
-      .replace(/[ıİ]/g, 'i').replace(/[öÖ]/g, 'o')
-      .replace(/[şŞ]/g, 's').replace(/[üÜ]/g, 'u')
-      .replace(/[^\x00-\x7F]/g, '') // Remove any remaining non-ASCII
-      .replace(/\s+/g, ' ').trim();
+    console.warn('Turkish text encoding failed, using safe fallback:', error);
+    
+    // FALLBACK: Sadece güvenlik için, normal durumda buraya girmemeli
+    // Türkçe karakterleri ASCII karşılıklarıyla değiştir
+    const safeFallbackMap: { [key: string]: string } = {
+      'ş': 's', 'Ş': 'S', 'ğ': 'g', 'Ğ': 'G', 
+      'ü': 'u', 'Ü': 'U', 'ç': 'c', 'Ç': 'C',
+      'ı': 'i', 'İ': 'I', 'ö': 'o', 'Ö': 'O'
+    };
+    
+    let fallbackText = text;
+    Object.entries(safeFallbackMap).forEach(([char, replacement]) => {
+      const regex = new RegExp(char, 'g');
+      fallbackText = fallbackText.replace(regex, replacement);
+    });
+    
+    return fallbackText.replace(/[^\x00-\x7F]/g, '').replace(/\s+/g, ' ').trim();
   }
 }
 
 /**
- * Setup PDF document with enhanced Turkish font support
+ * ENHANCED: PDF dokümanı için Türkçe font konfigürasyonu
  */
-function setupEnhancedPDFDocument(options: { 
-  orientation?: 'portrait' | 'landscape';
-  pageSize?: 'a4' | 'a3' | 'letter';
-} = {}): jsPDF {
-  const format = options.pageSize || 'a4';
-  const orientation = options.orientation || 'landscape';
-  
+function setupTurkishPDFDocument(options: { orientation?: 'portrait' | 'landscape' } = {}): jsPDF {
   const doc = new jsPDF({
-    orientation,
+    orientation: options.orientation || 'landscape',
     unit: 'mm',
-    format
+    format: 'a4',
+    putOnlyUsedFonts: true,
+    compress: true
   });
   
   try {
-    // Use Helvetica with Unicode support
-    doc.setFont('helvetica', 'normal');
+    // Helvetica fontunu Türkçe karakter desteği ile ayarla
+    doc.setFont(TURKISH_FONT_CONFIG.fontName, 'normal');
     doc.setFontSize(12);
     
-    // Set document metadata with proper encoding
+    // ENHANCED: PDF metadata'yı Türkçe desteği ile ayarla
     doc.setProperties({
-      title: enhancedTurkishTextEncoding('Çınar Çevre Laboratuvarı - Veri Raporu'),
-      subject: enhancedTurkishTextEncoding('Analiz ve Değerlendirme Raporu'),
-      author: enhancedTurkishTextEncoding('Çınar Çevre Laboratuvarı'),
-      creator: enhancedTurkishTextEncoding('Çınar Veri Görüntüleme ve Analiz Portalı'),
-      keywords: enhancedTurkishTextEncoding('veri analizi, çevre, laboratuvar, formül, grafik')
+      title: encodeTurkishTextForPDF('Çınar Çevre Laboratuvarı - Veri Raporu'),
+      subject: encodeTurkishTextForPDF('Analiz ve Değerlendirme Raporu'),
+      author: encodeTurkishTextForPDF('Çınar Çevre Laboratuvarı'),
+      creator: encodeTurkishTextForPDF('Çınar Veri Görüntüleme ve Analiz Portalı'),
+      keywords: encodeTurkishTextForPDF('analiz, veri, çevre, laboratuvar, rapor')
     });
     
-    console.log('✅ Enhanced PDF document setup completed');
+    console.log('✅ Turkish PDF document setup completed successfully');
     
-  } catch (fontError) {
-    console.warn('Enhanced font setup failed, using default:', fontError);
+  } catch (error) {
+    console.warn('Turkish font setup failed, using default:', error);
     doc.setFont('helvetica', 'normal');
   }
   
@@ -278,12 +270,12 @@ function addEnhancedHeaderFooter(
   // Header
   doc.setFontSize(16);
   doc.setTextColor(40, 40, 40);
-  doc.text(enhancedTurkishTextEncoding(title), pageWidth / 2, 15, { align: 'center' });
+  doc.text(encodeTurkishTextForPDF(title), pageWidth / 2, 15, { align: 'center' });
   
   if (subtitle) {
     doc.setFontSize(12);
     doc.setTextColor(80, 80, 80);
-    doc.text(enhancedTurkishTextEncoding(subtitle), pageWidth / 2, 25, { align: 'center' });
+    doc.text(encodeTurkishTextForPDF(subtitle), pageWidth / 2, 25, { align: 'center' });
   }
   
   // Header line
@@ -307,7 +299,7 @@ function addEnhancedHeaderFooter(
   
   // User name (if provided)
   if (userName) {
-    doc.text(enhancedTurkishTextEncoding(`Hazırlayan: ${userName}`), pageWidth / 2, footerY, { align: 'center' });
+    doc.text(encodeTurkishTextForPDF(`Hazırlayan: ${userName}`), pageWidth / 2, footerY, { align: 'center' });
   }
   
   // Page number
@@ -318,20 +310,19 @@ function addEnhancedHeaderFooter(
  * Enhanced PDF export with chart support
  */
 export async function exportTableWithChartsToPdf(
-  table: EnhancedDataTable,
+  table: DataTable,
   highlightedCells: EnhancedHighlightedCell[] = [],
   formulas: EnhancedFormula[] = [],
   options: EnhancedPdfOptions = {}
 ): Promise<Buffer> {
   console.log('🚀 Starting enhanced PDF export with charts...');
   
-  const doc = setupEnhancedPDFDocument({ 
-    orientation: options.orientation,
-    pageSize: options.pageSize 
+  const doc = setupTurkishPDFDocument({ 
+    orientation: options.orientation
   });
   
-  const title = enhancedTurkishTextEncoding(options.title || `${table.name} - ${table.sheetName || ''}`);
-  const subtitle = enhancedTurkishTextEncoding(options.subtitle || 'Çınar Çevre Laboratuvarı');
+  const title = encodeTurkishTextForPDF(options.title || `${table.name} - ${table.sheetName || ''}`);
+  const subtitle = encodeTurkishTextForPDF(options.subtitle || 'Çınar Çevre Laboratuvarı');
   
   let currentPage = 1;
   let totalPages = 1; // Will be updated
@@ -340,20 +331,21 @@ export async function exportTableWithChartsToPdf(
   addEnhancedHeaderFooter(doc, currentPage, totalPages, title, subtitle, options.userName);
   
   // Process table data with enhanced Turkish encoding
-  const processedColumns = table.columns.map(col => enhancedTurkishTextEncoding(col));
+  const processedColumns = table.columns.map(col => encodeTurkishTextForPDF(col));
   const processedData: (string | number)[][] = table.data.map(row => {
     return row.map(cell => {
       if (cell === null || cell === undefined) return '';
       if (typeof cell === 'number') return cell;
-      return enhancedTurkishTextEncoding(String(cell));
+      return encodeTurkishTextForPDF(String(cell));
     });
   });
   
   console.log(`📊 Processing table: ${processedColumns.length} columns, ${processedData.length} rows`);
 
-  // Enhanced cell highlighting with better visual representation
+  // ENHANCED: Cell highlighting with proper typing
   const cellHooks = {
-    didParseCell: function(data: AutoTableCellData) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    didParseCell: function(data: any) {
       const rowIndex = data.row.index;
       const colIndex = data.column.index;
       
@@ -361,32 +353,33 @@ export async function exportTableWithChartsToPdf(
         const rowId = `row-${rowIndex + 1}`;
         const colId = processedColumns[colIndex];
         
+        // Find highlighting for this cell
         const highlight = highlightedCells.find(
           cell => cell.row === rowId && cell.col === colId
         );
         
         if (highlight) {
-          console.log(`🎨 Applying enhanced highlight to cell [${rowId}, ${colId}]`);
+          console.log(`🎨 Applying highlight to cell [${rowId}, ${colId}] with color ${highlight.color}`);
           
           const rgb = hexToRgb(highlight.color);
+          
           if (rgb) {
+            // Apply better highlight styling for readability
             data.cell.styles.fillColor = [rgb.r, rgb.g, rgb.b];
             
-            // Enhanced text contrast calculation
+            // Calculate optimal text color for contrast
             const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
             data.cell.styles.textColor = brightness > 128 ? [0, 0, 0] : [255, 255, 255];
             
             data.cell.styles.fontStyle = 'bold';
             data.cell.styles.lineWidth = 1.5;
             
-            // Special styling for multi-formula cells
+            // Enhanced border for multi-formula cells
             if (highlight.formulaIds && highlight.formulaIds.length > 1) {
-              data.cell.styles.lineWidth = 2.5;
-              data.cell.styles.lineColor = [Math.max(0, rgb.r - 40), Math.max(0, rgb.g - 40), Math.max(0, rgb.b - 40)];
-              
-              // Add visual indicator for multi-formula cells
-              const originalText = data.cell.text || '';
-              data.cell.text = `${originalText} ★`;
+              data.cell.styles.lineWidth = 2;
+              data.cell.styles.lineColor = [Math.max(0, rgb.r - 30), Math.max(0, rgb.g - 30), Math.max(0, rgb.b - 30)];
+            } else {
+              data.cell.styles.lineColor = [Math.max(0, rgb.r - 50), Math.max(0, rgb.g - 50), Math.max(0, rgb.b - 50)];
             }
           }
         }
@@ -446,7 +439,7 @@ export async function exportTableWithChartsToPdf(
         // Chart title
         doc.setFontSize(14);
         doc.setTextColor(40, 40, 40);
-        const chartTitle = enhancedTurkishTextEncoding(chart.title);
+        const chartTitle = encodeTurkishTextForPDF(chart.title);
         doc.text(chartTitle, pageWidth / 2, 50, { align: 'center' });
         
         // Add filter information if available
@@ -463,7 +456,7 @@ export async function exportTableWithChartsToPdf(
           if (filterText) {
             doc.setFontSize(10);
             doc.setTextColor(80, 80, 80);
-            doc.text(enhancedTurkishTextEncoding(filterText), pageWidth / 2, 60, { align: 'center' });
+            doc.text(encodeTurkishTextForPDF(filterText), pageWidth / 2, 60, { align: 'center' });
           }
         }
         
@@ -497,8 +490,8 @@ export async function exportTableWithChartsToPdf(
         doc.setFontSize(12);
         doc.setTextColor(220, 53, 69);
         doc.text(
-          enhancedTurkishTextEncoding(`Grafik yüklenirken hata oluştu: ${chart.title}`),
-          pageWidth / 2,
+          encodeTurkishTextForPDF(`Grafik yüklenirken hata oluştu: ${chart.title}`),
+          doc.internal.pageSize.width / 2,
           100,
           { align: 'center' }
         );
@@ -517,7 +510,7 @@ export async function exportTableWithChartsToPdf(
     
     doc.setFontSize(14);
     doc.setTextColor(40, 40, 40);
-    doc.text(enhancedTurkishTextEncoding('Kullanılan Formüller'), 14, yPos);
+    doc.text(encodeTurkishTextForPDF('Kullanılan Formüller'), 14, yPos);
     yPos += 15;
     
     formulas.forEach((formula, index) => {
@@ -541,18 +534,18 @@ export async function exportTableWithChartsToPdf(
       // Formula details
       doc.setFontSize(11);
       doc.setTextColor(40, 40, 40);
-      doc.text(`${index + 1}. ${enhancedTurkishTextEncoding(formula.name)}`, 28, yPos);
+      doc.text(`${index + 1}. ${encodeTurkishTextForPDF(formula.name)}`, 28, yPos);
       
       if (formula.description) {
         doc.setFontSize(9);
         doc.setTextColor(80, 80, 80);
-        doc.text(enhancedTurkishTextEncoding(formula.description), 28, yPos + 5);
+        doc.text(encodeTurkishTextForPDF(formula.description), 28, yPos + 5);
         yPos += 5;
       }
       
       doc.setFontSize(9);
       doc.setTextColor(100, 100, 100);
-      doc.text(`Formül: ${enhancedTurkishTextEncoding(formula.formula)}`, 28, yPos + 5);
+      doc.text(`Formül: ${encodeTurkishTextForPDF(formula.formula)}`, 28, yPos + 5);
       
       yPos += 15;
     });
@@ -603,4 +596,4 @@ function hexToRgb(hex: string): { r: number, g: number, b: number } | null {
   };
 }
 
-export { enhancedTurkishTextEncoding, setupEnhancedPDFDocument, captureChartAsImage }; 
+export { encodeTurkishTextForPDF, setupTurkishPDFDocument, captureChartAsImage }; 

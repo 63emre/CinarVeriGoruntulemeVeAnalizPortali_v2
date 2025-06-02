@@ -204,11 +204,11 @@ const EnhancedFormulaEditor = ({
         <p className="text-xs text-blue-700">
           {scope === 'table' && context === 'table' && (
             <>Bu modda formüller tek yönlü olmalıdır: Sol tarafta sadece bir değişken, sağ tarafta karşılaştırma ifadesi.
-            Örnek: &quot;İletkenlik &gt; 300&quot; veya &quot;pH &lt; Alkalinite + 2&quot;</>
+            Örnek: &quot;İletkenlik {'>'} 300&quot; veya &quot;pH {'<'} Alkalinite + 2&quot;</>
           )}
           {scope === 'workspace' && (
             <>Bu formül tüm workspace&apos;teki tablolara uygulanacaktır. Karmaşık koşullar (AND/OR) kullanabilirsiniz.
-            Örnek: &quot;İletkenlik &gt; 300 AND pH &lt; 7&quot;</>
+            Örnek: &quot;İletkenlik {'>'} 300 AND pH {'<'} 7&quot;</>
           )}
           {scope === 'table' && context !== 'table' && (
             <>Bu formül sadece seçili tabloya uygulanacaktır. Genel analiz kuralları için kullanışlıdır.</>
@@ -308,21 +308,21 @@ const EnhancedFormulaEditor = ({
             <div className="space-y-1 text-xs text-blue-700">
               {scope === 'table' && context === 'table' ? (
                 <>
-                  <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] &gt; 300</div>
-                  <div className="font-mono bg-blue-100 p-1 rounded">[pH] &lt; [Alkalinite] + 2</div>
-                  <div className="font-mono bg-blue-100 p-1 rounded">[Toplam Fosfor] &gt;= 0.5</div>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] {'>'} 300</div>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[pH] {'<'} [Alkalinite] + 2</div>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[Toplam Fosfor] {'>='} 0.5</div>
                 </>
               ) : scope === 'workspace' ? (
                 <>
-                  <div className="font-mono bg-green-100 p-1 rounded">[İletkenlik] &gt; 300 AND [pH] &lt; 7</div>
-                  <div className="font-mono bg-green-100 p-1 rounded">[Toplam Fosfor] + [Orto Fosfat] &gt; 5</div>
-                  <div className="font-mono bg-green-100 p-1 rounded">[pH] &gt;= 7 OR [Alkalinite] &lt; 100</div>
+                  <div className="font-mono bg-green-100 p-1 rounded">[İletkenlik] {'>'} 300 AND [pH] {'<'} 7</div>
+                  <div className="font-mono bg-green-100 p-1 rounded">[Toplam Fosfor] + [Orto Fosfat] {'>'} 5</div>
+                  <div className="font-mono bg-green-100 p-1 rounded">[pH] {'>='} 7 OR [Alkalinite] {'<'} 100</div>
                 </>
               ) : (
                 <>
-                  <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] &gt; 300</div>
-                  <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] + [Toplam Fosfor] &gt; [Orto Fosfat]</div>
-                  <div className="font-mono bg-blue-100 p-1 rounded">[pH] &gt;= 7 AND [pH] &lt;= 8.5</div>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] {'>'} 300</div>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[İletkenlik] + [Toplam Fosfor] {'>'} [Orto Fosfat]</div>
+                  <div className="font-mono bg-blue-100 p-1 rounded">[pH] {'>='} 7 AND [pH] {'<='} 8.5</div>
                 </>
               )}
             </div>
@@ -883,7 +883,11 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Durum
             </label>
-                                      <select               value={statusFilter}               onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}               className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"             >
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
+              className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
+            >
               <option value="all">Tümü</option>
               <option value="active">Aktif</option>
               <option value="inactive">Pasif</option>
@@ -896,7 +900,7 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
             </label>
             <select
               value={typeFilter}
-                             onChange={(e) => setTypeFilter(e.target.value as 'all' | 'CELL_VALIDATION' | 'RELATIONAL')}
+              onChange={(e) => setTypeFilter(e.target.value as 'all' | 'CELL_VALIDATION' | 'RELATIONAL')}
               className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200"
             >
               <option value="all">Tümü</option>

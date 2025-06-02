@@ -1,0 +1,1 @@
+<li>• Karşılaştırma: <code className="bg-blue-100 px-1 rounded">{'>'}</code> <code className="bg-blue-100 px-1 rounded">{'<'}</code> <code className="bg-blue-100 px-1 rounded">{'>='}</code> <code className="bg-blue-100 px-1 rounded">{'<='}</code> <code className="bg-blue-100 px-1 rounded">==</code></li> 

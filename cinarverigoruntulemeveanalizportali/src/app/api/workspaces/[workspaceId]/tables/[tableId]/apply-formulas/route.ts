@@ -369,19 +369,44 @@ export async function POST(
       return rowData;
     });
 
-    return NextResponse.json({
-      tableId,
-      formulaResults,
-      highlightedCells,
-      tableData: tableRows,  // Add tableData for frontend compatibility
-      columns: tableColumns   // Add columns for frontend compatibility
-    }, {
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      }
-    });
+    if (highlightedCells.length > 0) {
+      // Group by formula for detailed response
+      const formulaResults = formulas.map(formula => {
+        const formulaCells = highlightedCells.filter(cell => 
+          cell.formulaIds?.includes(formula.id)
+        );
+        return {
+          formulaId: formula.id,
+          formulaName: formula.name,
+          matchedCells: formulaCells.length,
+          color: formula.color
+        };
+      });
+      
+      const totalMatches = highlightedCells.length;
+      const formulaNames = formulaResults.map(result => result.formulaName).join(', ');
+      
+      return NextResponse.json({
+        success: true,
+        message: `✅ ${totalMatches} hücre ${formulaNames} formül(ler)i ile vurgulandı. Tabloda renkli hücreler formül kriterlerini karşılayan değerleri gösteriyor.`,
+        highlightedCells,
+        formulaResults,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      return NextResponse.json({
+        success: true,
+        message: `ℹ️ Aktif formüller için hiçbir hücre kriterleri karşılamadı. Formül koşullarını kontrol edin.`,
+        highlightedCells: [],
+        formulaResults: formulas.map(formula => ({
+          formulaId: formula.id,
+          formulaName: formula.name,
+          matchedCells: 0,
+          color: formula.color
+        })),
+        timestamp: new Date().toISOString()
+      });
+    }
   } catch (error) {
     console.error('Error applying formulas:', error);
     return NextResponse.json(

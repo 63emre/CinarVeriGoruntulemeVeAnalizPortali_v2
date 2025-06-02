@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { FcPrint, FcFullTrash, FcCheckmark, FcCancel } from 'react-icons/fc';
+import { FcPrint, FcFullTrash, FcCheckmark, FcCancel, FcRules, FcDocument } from 'react-icons/fc';
 import { AiOutlineSearch, AiOutlineSave } from 'react-icons/ai';
 import { FiDownload } from 'react-icons/fi';
 import TableCell from './TableCell'; // ENHANCED: Import TableCell for pizza slice effect
-import { exportEnhancedTableToPdf } from '@/lib/pdf/enhanced-pdf-export';
 
 type Column = {
   id: string;
@@ -327,41 +326,59 @@ export default function EditableDataTable({
     setHasChanges(false);
   };
 
-  // ENHANCED: New PDF export using enhanced service
-  const exportEnhancedPDF = async () => {
+  // Keep only the regular PDF export function
+  const exportToPdf = async () => {
     if (!Array.isArray(filteredData) || filteredData.length === 0) {
       alert('PDF oluşturmak için tablo verisi gereklidir.');
       return;
     }
     
     try {
-      console.log('🚀 Starting enhanced PDF export from EditableDataTable...');
+      console.log('🚀 Starting PDF export from EditableDataTable...');
       
-      // Prepare table data structure
-      const tableData = {
-        name: title,
-        columns: columns.filter(col => col.id !== 'id').map(col => col.name),
-        data: filteredData.map(row => 
-          columns.filter(col => col.id !== 'id').map(col => row[col.id])
-        )
-      };
-      
-      // Use enhanced PDF export
-      await exportEnhancedTableToPdf(tableData, {
-        title: 'Tablo Veri Raporu',
-        subtitle: `Tablo: ${title}`,
-        orientation: 'landscape',
-        includeFormulas: false, // Could be enhanced to include formulas if available
-        includeCharts: false,
-        highlightedCells: highlightedCells,
-        cellBorderWidth: 2, // Thicker borders as requested
-        userName: 'Tablo Kullanicisi'
+      const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/pdf`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          includeDate: true,
+          highlightedCells: highlightedCells,
+          title: `${title} - Tablo Raporu`,
+          subtitle: 'Çınar Çevre Laboratuvarı Veri Görüntüleme ve Analiz Portalı',
+          orientation: 'landscape',
+          includeFormulas: false,
+          userName: 'Portal Kullanıcısı'
+        }),
       });
       
-      console.log('✅ Enhanced PDF export completed from EditableDataTable');
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ PDF API error:', errorText);
+        throw new Error(`PDF oluşturulamadı (${response.status}): ${errorText}`);
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Create proper Turkish filename
+      const currentDate = new Date();
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const timeStr = currentDate.toTimeString().split(' ')[0].replace(/:/g, '-');
+      const cleanTableName = title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+      a.download = `Cinar_Tablo_${cleanTableName}_${dateStr}_${timeStr}.pdf`;
+      
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      console.log('✅ PDF export completed from EditableDataTable');
       
     } catch (error) {
-      console.error('❌ Enhanced PDF export error:', error);
+      console.error('❌ PDF export error:', error);
       alert(`PDF oluşturulurken hata: ${(error as Error).message}`);
     }
   };
@@ -449,11 +466,12 @@ export default function EditableDataTable({
           )}
           
           <button
-            onClick={exportEnhancedPDF}
-            className="bg-orange-100 text-orange-800 hover:bg-orange-200 px-4 py-2 rounded-md flex items-center transition"
+            onClick={exportToPdf}
+            className="flex items-center px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition text-xs"
+            title="PDF olarak indir"
           >
-            <FiDownload className="mr-1" />
-            Gelişmiş PDF
+            <FcDocument className="mr-1 h-3 w-3" />
+            PDF İndir
           </button>
         </div>
       </div>

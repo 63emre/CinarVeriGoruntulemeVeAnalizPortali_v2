@@ -261,15 +261,61 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
     
     try {
       setApplyingFormulas(true);
+      setError(null); // Clear any previous errors
+      
+      console.log(`🔧 APPLYING FORMULAS IN ANALYSIS:`, {
+        activeFormulaCount: formulas.length,
+        formulaNames: formulas.map(f => f.name),
+        tableDataStructure: {
+          columns: analysisData.tableData.columns.length,
+          rows: analysisData.tableData.data.length
+        }
+      });
       
       // Use the enhanced formula evaluator
       const highlighted = evaluateFormulasForTable(formulas, analysisData.tableData);
       setHighlightedCells(highlighted);
       
-      console.log(`Applied ${formulas.length} formulas, got ${highlighted.length} highlighted cells`);
+      console.log(`🎯 ANALYSIS FORMULA RESULT:`, {
+        inputFormulas: formulas.length,
+        outputHighlights: highlighted.length,
+        sampleHighlight: highlighted[0]
+      });
+      
+      // Enhanced feedback with proper success/info messaging like table page
+      const formulaNames = formulas.map(f => f.name).join(', ');
+
+      if (highlighted.length > 0) {
+        console.log(`✅ SUCCESS: ${highlighted.length} cells highlighted for formulas: ${formulaNames}`);
+        
+        // Show success message with auto-clear (same as table page)
+        const successMessage = `✅ ${highlighted.length} hücre ${formulaNames} formül(ler)i ile vurgulandı. Grafiklerde renkli hücreler formül kriterlerini karşılayan değerleri gösteriyor.`;
+        setError(successMessage);
+        
+        // Clear success message after 5 seconds
+        setTimeout(() => {
+          setError(null);
+        }, 5000);
+      } else {
+        console.log(`✅ APPLIED: Formulas applied but no cells match criteria: ${formulaNames}`);
+        
+        // Show info message for no matches (same as table page)
+        const infoMessage = `ℹ️ ${formulaNames} formül(ler)i uygulandı ancak hiçbir hücre belirtilen kriterleri karşılamadı. Bu normal bir durumdur.`;
+        setError(infoMessage);
+        
+        // Clear info message after 4 seconds
+        setTimeout(() => {
+          setError(null);
+        }, 4000);
+      }
+      
     } catch (err) {
-      console.error('Error applying formulas:', err);
-      setError('Formüller uygulanırken bir hata oluştu');
+      const errorMessage = (err as Error).message;
+      console.error('❌ ANALYSIS FORMULA APPLICATION ERROR:', {
+        error: errorMessage,
+        stack: (err as Error).stack
+      });
+      setError(`Formül uygulama hatası: ${errorMessage}`);
     } finally {
       setApplyingFormulas(false);
     }
@@ -505,95 +551,12 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
     };
   };
 
-  // ENHANCED: Use new PDF export service for comprehensive analysis
-  const exportComprehensivePDF = async () => {
-    if ((!charts.length && !showTable) || !analysisData) {
-      setError('PDF oluşturmak için en az bir grafik veya tablo gereklidir.');
-      return;
-    }
-    
-    try {
-      setLoading(true);
-      setError(null);
-      
-      console.log('🚀 Starting comprehensive PDF export with enhanced service...');
-      
-      // Prepare chart elements for export
-      const chartElements: HTMLElement[] = [];
-      
-      for (let i = 0; i < charts.length; i++) {
-        const chart = charts[i];
-        const chartElement = document.getElementById(`chart-${chart.id}`);
-        
-        if (chartElement) {
-          chartElements.push(chartElement);
-          console.log(`📊 Chart ${i + 1} element found: ${chart.title}`);
-        } else {
-          console.warn(`⚠️ Chart ${i + 1} element not found: ${chart.title}`);
-        }
-      }
-      
-      // Prepare table data if table is shown
-      let tableData = null;
-      if (showTable && analysisData.tableData) {
-        const selectedTableName = tables.find(t => t.id === selectedTable)?.name || 'Bilinmeyen Tablo';
-        tableData = {
-          name: selectedTableName,
-          columns: analysisData.tableData.columns,
-          data: analysisData.tableData.data
-        };
-      }
-      
-      // Prepare formula information
-      const formulaInfo = formulas.map(formula => ({
-        id: formula.id,
-        name: formula.name,
-        formula: formula.formula,
-        type: formula.type,
-        color: formula.color,
-        description: formula.description || '',
-        active: formula.active
-      }));
-      
-      // Use enhanced PDF export
-      if (tableData) {
-        await exportEnhancedTableToPdf(tableData, {
-          title: 'Kapsamli Veri Analiz Raporu',
-          subtitle: `Analiz Edilen Tablo: ${tableData.name}`,
-          orientation: 'landscape',
-          includeFormulas: formulas.length > 0,
-          formulas: formulaInfo,
-          includeCharts: chartElements.length > 0,
-          chartElements: chartElements,
-          highlightedCells: highlightedCells,
-          cellBorderWidth: 1.5,
-          userName: 'Sistem Kullanicisi' // You can get this from user context
-        });
-        
-        console.log(`✅ Comprehensive PDF exported successfully`);
-        console.log(`📊 Charts included: ${chartElements.length}`);
-        console.log(`📋 Formulas included: ${formulaInfo.length}`);
-        console.log(`🎯 Highlighted cells: ${highlightedCells.length}`);
-        
-        setError(`Kapsamlı analiz PDF'i başarıyla oluşturuldu! ${chartElements.length} grafik ve ${formulaInfo.length} formül dahil edildi.`);
-      } else {
-        throw new Error('Tablo verisi bulunamadı');
-      }
-      
-    } catch (err) {
-      console.error('❌ Comprehensive PDF generation error:', err);
-      setError(`Kapsamlı analiz PDF'i oluşturulurken bir hata oluştu: ${(err as Error).message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ENHANCED: Use new PDF export service for normal analysis  
+  // ENHANCED: Improved normal analysis PDF export using proper API like table page
   const exportNormalAnalysisPDF = async () => {
     const selectedCharts = charts.filter(chart => selectedChartsForPDF.has(chart.id));
     
     if (selectedCharts.length === 0) {
-      setError('Normal analiz PDF\'i oluşturmak için en az bir grafik seçmelisiniz.');
+      setError('PDF oluşturmak için en az bir grafik seçmelisiniz.');
       return;
     }
     
@@ -601,53 +564,76 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
       setLoading(true);
       setError(null);
       
-      console.log('🚀 Starting normal analysis PDF export with enhanced service...');
+      console.log('🚀 Starting enhanced analysis PDF export...');
       
-      // Prepare selected chart elements for export
-      const chartElements: HTMLElement[] = [];
+      // Create proper Turkish filename
+      const currentDate = new Date();
+      const dateStr = currentDate.toISOString().split('T')[0]; // 2025-01-02
+      const timeStr = currentDate.toTimeString().split(' ')[0].replace(/:/g, '-'); // 18-03-41
       
-      for (const chart of selectedCharts) {
-        const chartElement = document.getElementById(`chart-${chart.id}`);
-        
-        if (chartElement) {
-          chartElements.push(chartElement);
-          console.log(`📊 Selected chart element found: ${chart.title}`);
-        } else {
-          console.warn(`⚠️ Selected chart element not found: ${chart.title}`);
-        }
-      }
+      const selectedTableName = tables.find(t => t.id === selectedTable)?.name || 'Analiz';
+      const cleanTableName = selectedTableName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
       
-      // Create a minimal table data structure for the PDF service
-      const selectedTableName = tables.find(t => t.id === selectedTable)?.name || 'Bilinmeyen Tablo';
-      const dummyTableData = {
-        name: selectedTableName,
-        columns: ['Grafik', 'Aciklama'],
-        data: selectedCharts.map((chart, index) => [
-          `Grafik ${index + 1}: ${chart.title}`,
-          `Degisken: ${chart.variable}, Tarih: ${chart.startDate} - ${chart.endDate}`
-        ])
-      };
+      // Prepare chart data for API
+      const chartData = selectedCharts.map(chart => ({
+        id: chart.id,
+        title: chart.title,
+        type: chart.type,
+        variable: chart.variable,
+        startDate: chart.startDate,
+        endDate: chart.endDate,
+        color: chart.color
+      }));
       
-      // Use enhanced PDF export with selected charts only
-      await exportEnhancedTableToPdf(dummyTableData, {
-        title: 'Secili Grafik Analiz Raporu',
-        subtitle: `Analiz Edilen Tablo: ${selectedTableName}`,
-        orientation: 'landscape',
-        includeFormulas: false, // Don't include formulas in normal analysis
-        includeCharts: true,
-        chartElements: chartElements,
-        cellBorderWidth: 1.5,
-        userName: 'Sistem Kullanicisi'
+      // Use the same API pattern as table page
+      const response = await fetch(`/api/workspaces/${selectedWorkspace}/analysis/pdf`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          charts: chartData,
+          tableId: selectedTable,
+          tableName: selectedTableName,
+          title: `${selectedTableName} - Grafik Analizi`,
+          subtitle: 'Çınar Çevre Laboratuvarı Veri Görüntüleme ve Analiz Portalı',
+          orientation: 'landscape',
+          includeDate: true,
+          userName: 'Portal Kullanıcısı'
+        }),
       });
       
-      console.log(`✅ Normal analysis PDF exported successfully`);
-      console.log(`📊 Selected charts included: ${chartElements.length}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Analysis PDF API error:', errorText);
+        throw new Error(`PDF oluşturulamadı (${response.status}): ${errorText}`);
+      }
       
-      setError(`Grafik analiz PDF'i başarıyla oluşturuldu! ${chartElements.length} seçili grafik dahil edildi.`);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Use proper Turkish filename with timestamp
+      a.download = `Cinar_Grafik_Analizi_${cleanTableName}_${dateStr}_${timeStr}.pdf`;
+      
+      document.body.appendChild(a);
+      a.click();
+      
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      console.log(`✅ Analysis PDF başarıyla indirildi: ${a.download}`);
+      setError(`Grafik analizi PDF'i başarıyla oluşturuldu ve indirildi: ${a.download}`);
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setError(null);
+      }, 5000);
       
     } catch (err) {
-      console.error('❌ Normal analysis PDF generation error:', err);
-      setError(`Grafik analiz PDF'i oluşturulurken bir hata oluştu: ${(err as Error).message}`);
+      console.error('❌ Error exporting analysis PDF:', err);
+      setError(`Grafik analizi PDF'i oluşturulurken bir hata oluştu: ${(err as Error).message}`);
     } finally {
       setLoading(false);
     }
@@ -700,15 +686,37 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
   return (
     <div className="container mx-auto p-6">
       {error && (
-        <div className="bg-red-100 border-l-4 border-red-500 p-4 mb-6">
+        <div className={`border-l-4 p-4 mb-6 ${
+          error.startsWith('✅') 
+            ? 'bg-green-100 border-green-500' 
+            : error.startsWith('ℹ️') 
+            ? 'bg-blue-100 border-blue-500'
+            : 'bg-red-100 border-red-500'
+        }`}>
           <div className="flex">
             <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
-              </svg>
+              {error.startsWith('✅') ? (
+                <svg className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+              ) : error.startsWith('ℹ️') ? (
+                <svg className="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+                </svg>
+              )}
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-red-800">{error}</p>
+              <p className={`text-sm font-medium ${
+                error.startsWith('✅') 
+                  ? 'text-green-800' 
+                  : error.startsWith('ℹ️') 
+                  ? 'text-blue-800'
+                  : 'text-red-800'
+              }`}>{error}</p>
             </div>
           </div>
         </div>
@@ -861,7 +869,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
                 </div>
               )}
 
-              {/* PDF Export Buttons */}
+              {/* PDF Export Buttons - REMOVED COMPREHENSIVE PDF BUTTON */}
               <div className="flex flex-wrap gap-3">
                 <button
                   onClick={exportNormalAnalysisPDF}
@@ -880,20 +888,6 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
                       {selectedChartsForPDF.size}
                     </span>
                   )}
-                </button>
-
-                <button
-                  onClick={exportComprehensivePDF}
-                  disabled={(!charts.length && !showTable) || loading}
-                  className={`flex items-center px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                    (!charts.length && !showTable) || loading
-                      ? 'bg-gray-300 cursor-not-allowed text-gray-500'
-                      : 'bg-purple-600 hover:bg-purple-700 text-white shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
-                  }`}
-                  title="Tüm grafikler, formül vurgulamalı tablo ve detaylı analiz dahil edilir"
-                >
-                  <FcPrint className="mr-2 h-4 w-4" />
-                  {loading ? 'PDF Oluşturuluyor...' : 'Kapsamlı PDF İndir'}
                 </button>
               </div>
             </div>

@@ -67,30 +67,34 @@ export default function TableCell({
     // Multiple highlights - enhanced pizza slice effect
     const formulaColors: string[] = [];
     
+    // ENHANCED: Collect all unique colors from formula details
     cellHighlights.forEach(highlight => {
       if (highlight.formulaDetails && highlight.formulaDetails.length > 0) {
         highlight.formulaDetails.forEach(detail => {
           if (detail.color) {
             const cleanColor = detail.color.startsWith('#') ? detail.color : `#${detail.color}`;
-            formulaColors.push(cleanColor);
+            if (!formulaColors.includes(cleanColor)) {
+              formulaColors.push(cleanColor);
+            }
           }
         });
-      } else {
-        const cleanColor = highlight.color.startsWith('#') ? highlight.color : `#${highlight.color}`;
-        formulaColors.push(cleanColor);
+      }
+      
+      // Also add the main highlight color if not already present
+      const mainColor = highlight.color.startsWith('#') ? highlight.color : `#${highlight.color}`;
+      if (!formulaColors.includes(mainColor)) {
+        formulaColors.push(mainColor);
       }
     });
     
-    // Remove duplicates and ensure we have colors
-    const uniqueColors = Array.from(new Set(formulaColors));
-    if (uniqueColors.length === 0) {
-      // Fallback if no colors found
+    // Ensure we have colors
+    if (formulaColors.length === 0) {
       return isSelected ? { backgroundColor: '#e3f2fd', fontWeight: 'bold' } : {};
     }
     
-    if (uniqueColors.length === 1) {
-      // If only one unique color after deduplication, treat as single highlight
-      const color = uniqueColors[0];
+    if (formulaColors.length === 1) {
+      // Single unique color - treat as single highlight
+      const color = formulaColors[0];
       return {
         backgroundColor: color + '40',
         color: '#000',
@@ -101,15 +105,23 @@ export default function TableCell({
       };
     }
     
-    // Multiple unique colors - create pizza slices
-    const totalSlices = uniqueColors.length;
+    // ENHANCED: Multiple unique colors - create improved pizza slices
+    const totalSlices = formulaColors.length;
     const sliceAngle = 360 / totalSlices;
     const gradientStops: string[] = [];
     
-    uniqueColors.forEach((color, index) => {
+    formulaColors.forEach((color, index) => {
       const startAngle = index * sliceAngle;
       const endAngle = (index + 1) * sliceAngle;
-      gradientStops.push(`${color} ${startAngle}deg ${endAngle}deg`);
+      
+      // Create smoother transitions
+      if (index === formulaColors.length - 1) {
+        // Last slice - connect back to first
+        gradientStops.push(`${color} ${startAngle}deg 360deg`);
+        gradientStops.push(`${formulaColors[0]} 0deg ${sliceAngle}deg`);
+      } else {
+        gradientStops.push(`${color} ${startAngle}deg ${endAngle}deg`);
+      }
     });
     
     const conicGradient = `conic-gradient(from 0deg, ${gradientStops.join(', ')})`;
@@ -117,18 +129,18 @@ export default function TableCell({
     return {
       position: 'relative' as const,
       background: conicGradient,
-      border: '2px solid #333',
-      borderRadius: totalSlices > 2 ? '8px' : '4px',
+      border: '3px solid #333',
+      borderRadius: totalSlices > 2 ? '10px' : '6px',
       fontWeight: 'bold' as const,
       transition: 'all 0.2s ease-in-out',
       color: '#000000',
-      textShadow: '1px 1px 2px rgba(255,255,255,0.8)',
-      boxShadow: '0 0 6px rgba(0,0,0,0.3)',
-      transform: 'scale(1.05)',
-      zIndex: 10,
+      textShadow: '1px 1px 3px rgba(255,255,255,0.9)',
+      boxShadow: '0 0 8px rgba(0,0,0,0.4), inset 0 0 20px rgba(255,255,255,0.1)',
+      transform: 'scale(1.08)',
+      zIndex: 15,
       width: '100%',
       height: '100%',
-      minHeight: '28px',
+      minHeight: '32px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',

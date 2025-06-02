@@ -876,9 +876,16 @@ export function evaluateFormulasForTable(
               color: formula.color
             });
             
-            // For multiple formulas, keep the first color or blend if needed
-            // User requested visual slicing, but for now we'll use the first color
+            // ENHANCED: Implement proper multi-coloring for visual slicing
+            // Keep all colors for the EnhancedTableCell component to handle
+            const allColors = existingCell.formulaDetails.map(detail => detail.color);
+            
+            // Set primary color to first formula's color, but keep all colors in formulaDetails
+            // The EnhancedTableCell will use formulaDetails to create the pizza slice effect
+            existingCell.color = existingCell.formulaDetails[0].color;
+            
             console.log(`🔄 Merged formula "${formula.name}" with existing highlight for cell [${rowId}, ${dateCol}]`);
+            console.log(`🎨 Cell now has ${existingCell.formulaDetails.length} formulas with colors: [${allColors.join(', ')}]`);
           } else {
             // Create new highlighted cell - ONLY for the target variable
             const targetVariableValue = variables[validation.targetVariable!];

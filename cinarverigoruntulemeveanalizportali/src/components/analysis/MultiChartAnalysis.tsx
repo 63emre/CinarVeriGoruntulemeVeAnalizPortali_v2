@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Line, Bar, Pie, Doughnut, Radar } from 'react-chartjs-2';
+import { Line, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -13,9 +13,7 @@ import {
   Tooltip,
   Legend,
   Filler,
-  TooltipItem,
-  ArcElement,
-  RadialLinearScale
+  TooltipItem
 } from 'chart.js';
 import { FcAreaChart, FcRules, FcApproval, FcPlus, FcPrint } from 'react-icons/fc';
 import { MdDelete, MdDragIndicator } from 'react-icons/md';
@@ -27,15 +25,13 @@ import EditableDataTable from '@/components/tables/EditableDataTable';
 import FormulaBuilder from '@/components/formulas/FormulaBuilder';
 import { exportEnhancedTableToPdf } from '@/lib/pdf/enhanced-pdf-export';
 
-// Register Chart.js components including new chart types
+// Register Chart.js components - removed pie, doughnut, radar
 ChartJS.register(
   CategoryScale, 
   LinearScale, 
   PointElement, 
   LineElement, 
   BarElement, 
-  ArcElement,
-  RadialLinearScale,
   Title, 
   Tooltip, 
   Legend, 
@@ -80,7 +76,7 @@ interface HighlightedCell {
 
 interface ChartConfig {
   id: string;
-  type: 'line' | 'bar' | 'pie' | 'doughnut' | 'radar';
+  type: 'line' | 'bar';
   variable: string;
   startDate: string;
   endDate: string;
@@ -295,17 +291,11 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
     }
     
     // AUTO-SELECT chart type based on active formulas and highlighted cells
-    let chartType: 'line' | 'bar' | 'pie' | 'doughnut' | 'radar' = 'line';
+    let chartType: 'line' | 'bar' = 'line';
     
     if (formulas.length > 0 && highlightedCells.length > 0) {
-      // Multiple formulas suggest complex analysis - use radar or pie chart
-      if (formulas.length >= 3) {
-        chartType = 'radar'; // Çokgen (Radar) grafik for complex multi-formula analysis
-      } else if (formulas.length === 2) {
-        chartType = 'doughnut'; // Pizza dilimi variation for dual formula comparison
-      } else {
-        chartType = 'pie'; // Pizza dilimi for single formula distribution
-      }
+      // Multiple formulas suggest complex analysis - use bar chart
+      chartType = 'bar';
       
       console.log(`🎯 Auto-selected ${chartType} chart type based on ${formulas.length} active formulas`);
     }
@@ -341,10 +331,7 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
   const getChartTypeDisplayName = (type: string): string => {
     const typeNames = {
       'line': 'Trend Grafiği',
-      'bar': 'Sütun Grafiği', 
-      'pie': 'Pizza Dilimi',
-      'doughnut': 'Halka Grafik',
-      'radar': 'Çokgen (Radar) Grafik'
+      'bar': 'Sütun Grafiği'
     };
     return typeNames[type as keyof typeof typeNames] || 'Grafik';
   };
@@ -362,11 +349,6 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
     if (variableColumnIndex === -1) {
       console.log('Variable column not found in table data');
       return { labels: [], datasets: [] };
-    }
-    
-    // For pie, doughnut, and radar charts with multiple formulas
-    if (['pie', 'doughnut', 'radar'].includes(chartConfig.type) && highlightedCells.length > 0) {
-      return getFormulaDistributionData(chartConfig);
     }
     
     // Original logic for line and bar charts
@@ -482,69 +464,6 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
     };
   };
 
-  // NEW: Get formula distribution data for pie/doughnut/radar charts
-  const getFormulaDistributionData = (chartConfig: ChartConfig) => {
-    if (!highlightedCells.length || !formulas.length) {
-      return { labels: [], datasets: [] };
-    }
-
-    // Group highlighted cells by formula
-    const formulaGroups = new Map<string, number>();
-    const formulaColors = new Map<string, string>();
-    
-    highlightedCells.forEach(cell => {
-      cell.formulaIds.forEach(formulaId => {
-        const formula = formulas.find(f => f.id === formulaId);
-        if (formula) {
-          const count = formulaGroups.get(formula.name) || 0;
-          formulaGroups.set(formula.name, count + 1);
-          formulaColors.set(formula.name, formula.color);
-        }
-      });
-    });
-
-    const labels = Array.from(formulaGroups.keys());
-    const data = Array.from(formulaGroups.values());
-    const backgroundColor = labels.map(label => formulaColors.get(label) || '#3B82F6');
-    
-    if (chartConfig.type === 'radar') {
-      // For radar charts, show normalized data (0-100 scale)
-      const maxValue = Math.max(...data);
-      const normalizedData = data.map(value => (value / maxValue) * 100);
-      
-      return {
-        labels,
-        datasets: [
-          {
-            label: 'Formül Aktivitesi (%)',
-            data: normalizedData,
-            backgroundColor: chartConfig.color + '40',
-            borderColor: chartConfig.color,
-            borderWidth: 2,
-            pointBackgroundColor: chartConfig.color,
-            pointBorderColor: '#fff',
-            pointHoverBackgroundColor: '#fff',
-            pointHoverBorderColor: chartConfig.color
-          }
-        ]
-      };
-    }
-
-    return {
-      labels,
-      datasets: [
-        {
-          label: 'Vurgulanan Hücre Sayısı',
-          data,
-          backgroundColor,
-          borderColor: backgroundColor.map(color => color + 'CC'),
-          borderWidth: 1,
-          hoverOffset: 4
-        }
-      ]
-    };
-  };
-
   // ENHANCED: Chart options with support for new chart types
   const getChartOptions = (chartConfig: ChartConfig): any => {
     const baseOptions = {
@@ -564,46 +483,6 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
         },
       }
     };
-
-    if (chartConfig.type === 'radar') {
-      return {
-        ...baseOptions,
-        scales: {
-          r: {
-            beginAtZero: true,
-            max: 100,
-            ticks: {
-              stepSize: 20
-            },
-            pointLabels: {
-              font: {
-                size: 12
-              }
-            }
-          }
-        }
-      };
-    }
-
-    if (['pie', 'doughnut'].includes(chartConfig.type)) {
-      return {
-        ...baseOptions,
-        plugins: {
-          ...baseOptions.plugins,
-          tooltip: {
-            callbacks: {
-              label: function(context: any) {
-                const label = context.label || '';
-                const value = context.parsed || 0;
-                const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
-                const percentage = ((value / total) * 100).toFixed(1);
-                return `${label}: ${value} (%${percentage})`;
-              }
-            }
-          }
-        }
-      };
-    }
 
     // Line and bar chart options (existing logic)
     return {
@@ -1156,16 +1035,13 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
                   <select
                     value={chart.type}
                     onChange={(e) => updateChart(chart.id, { 
-                      type: e.target.value as 'line' | 'bar' | 'pie' | 'doughnut' | 'radar',
+                      type: e.target.value as 'line' | 'bar',
                       title: `${chart.variable} ${getChartTypeDisplayName(e.target.value)}`
                     })}
                     className="w-full border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 text-sm"
                   >
                     <option value="line">Çizgi Grafik</option>
                     <option value="bar">Sütun Grafik</option>
-                    <option value="pie">Pizza Dilimi</option>
-                    <option value="doughnut">Halka Grafik</option>
-                    <option value="radar">Çokgen (Radar) Grafik</option>
                   </select>
                 </div>
 
@@ -1257,12 +1133,6 @@ export default function MultiChartAnalysis({ workspaceId, tableId }: MultiChartA
                   <Line data={getChartData(chart)} options={getChartOptions(chart)} />
                 ) : chart.type === 'bar' ? (
                   <Bar data={getChartData(chart)} options={getChartOptions(chart)} />
-                ) : chart.type === 'pie' ? (
-                  <Pie data={getChartData(chart)} options={getChartOptions(chart)} />
-                ) : chart.type === 'doughnut' ? (
-                  <Doughnut data={getChartData(chart)} options={getChartOptions(chart)} />
-                ) : chart.type === 'radar' ? (
-                  <Radar data={getChartData(chart)} options={getChartOptions(chart)} />
                 ) : (
                   <Line data={getChartData(chart)} options={getChartOptions(chart)} />
                 )}

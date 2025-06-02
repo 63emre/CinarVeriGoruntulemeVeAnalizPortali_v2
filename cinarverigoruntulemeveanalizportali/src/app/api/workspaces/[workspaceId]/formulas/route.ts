@@ -191,21 +191,20 @@ export async function POST(
       }
     }
 
-    // ENHANCED: Validate formula syntax using enhanced evaluator
-    const testVariables = ['TestVar1', 'TestVar2', 'TestVar3'];
-    const validationResult = validateUnidirectionalFormula(formula, testVariables);
-    
-    if (!validationResult.isValid) {
+    // ENHANCED: Basic formula syntax validation (removed problematic test variables validation)
+    // Real validation will happen when formula is applied to actual table data
+    if (!formula.trim()) {
       return NextResponse.json(
-        { 
-          message: 'Invalid formula', 
-          error: validationResult.error,
-          details: {
-            leftVariables: validationResult.leftVariables,
-            rightVariables: validationResult.rightVariables,
-            missingVariables: validationResult.missingVariables
-          }
-        },
+        { message: 'Formula cannot be empty' },
+        { status: 400 }
+      );
+    }
+
+    // Basic syntax check for comparison operators
+    const hasComparison = /[><=!]+/.test(formula);
+    if (!hasComparison) {
+      return NextResponse.json(
+        { message: 'Formula must contain a comparison operator (>, <, >=, <=, ==, !=)' },
         { status: 400 }
       );
     }
@@ -230,7 +229,6 @@ export async function POST(
       formula: newFormula,
       validation: {
         isValid: true,
-        targetVariable: validationResult.targetVariable,
         scope: scope,
         appliedTo: scope === 'table' ? `Table: ${tableId}` : 'All tables in workspace'
       }

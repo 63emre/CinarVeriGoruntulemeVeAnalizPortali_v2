@@ -58,7 +58,7 @@ interface EnhancedFormula {
 
 export interface ChartElement {
   id: string;
-  type: 'line' | 'bar' | 'scatter' | 'area';
+  type: 'line' | 'bar';
   title: string;
   element: HTMLElement;
   filters?: {

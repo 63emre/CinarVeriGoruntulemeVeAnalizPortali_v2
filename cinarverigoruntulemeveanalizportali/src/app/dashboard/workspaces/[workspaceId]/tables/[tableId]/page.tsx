@@ -339,6 +339,10 @@ export default function TablePage() {
       setLoading(true);
       setError(null);
       
+      console.log('🚀 Starting PDF export...');
+      console.log(`📊 Table: ${table?.name}`);
+      console.log(`🎯 Highlighted cells: ${highlightedCells?.length || 0}`);
+      
       const preparedHighlightedCells = highlightedCells?.map(cell => ({
         row: cell.row,
         col: cell.col,
@@ -346,7 +350,13 @@ export default function TablePage() {
         message: cell.message
       })) || [];
       
-      console.log(`Exporting PDF with ${preparedHighlightedCells.length} highlighted cells`);
+      // Create proper Turkish filename
+      const currentDate = new Date();
+      const dateStr = currentDate.toISOString().split('T')[0]; // 2025-01-02
+      const timeStr = currentDate.toTimeString().split(' ')[0].replace(/:/g, '-'); // 18-03-41
+      
+      // Clean table name for filename
+      const cleanTableName = table?.name?.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') || 'Tablo';
       
       const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/pdf`, {
         method: 'POST',
@@ -357,12 +367,16 @@ export default function TablePage() {
           includeDate: true,
           highlightedCells: preparedHighlightedCells,
           title: `${table?.name} - Formül Analizi`,
-          subtitle: 'Çınar Çevre Laboratuvarı',
+          subtitle: 'Çınar Çevre Laboratuvarı Veri Görüntüleme ve Analiz Portalı',
+          orientation: 'landscape',
+          includeFormulas: formulas.length > 0,
+          userName: 'Portal Kullanıcısı'
         }),
       });
       
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('❌ PDF API error:', errorText);
         throw new Error(`PDF oluşturulamadı (${response.status}): ${errorText}`);
       }
       
@@ -370,18 +384,28 @@ export default function TablePage() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${table?.name || 'table'}_formula_analysis.pdf`;
+      
+      // Use proper Turkish filename with timestamp
+      a.download = `Cinar_Veri_Raporu_${cleanTableName}_${dateStr}_${timeStr}.pdf`;
+      
       document.body.appendChild(a);
       a.click();
       
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
-      console.log('PDF başarıyla indirildi');
+      console.log(`✅ PDF başarıyla indirildi: ${a.download}`);
+      setError(`PDF başarıyla oluşturuldu ve indirildi: ${a.download}`);
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setError(null);
+      }, 5000);
+      
     } catch (err) {
       const errorMessage = (err as Error).message;
+      console.error('❌ Error exporting to PDF:', err);
       setError(errorMessage);
-      console.error('Error exporting to PDF:', err);
     } finally {
       setLoading(false);
     }

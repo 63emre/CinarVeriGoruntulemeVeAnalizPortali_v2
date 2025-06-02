@@ -1,146 +1,165 @@
-# Çınar Veri Görüntüleme ve Analiz Portalı
+# Çınar Veri Görüntüleme ve Analiz Portali
 
-## 📊 Proje Özeti
+<div align="center">
+  <img src="public/company-logo.png" alt="Çınar Çevre Laboratuvarı Logo" width="300"/>
+  <p>Modern, güvenli ve kullanıcı dostu çevre analizi verilerini görüntüleme platformu</p>
+</div>
 
-Çınar Veri Görüntüleme ve Analiz Portalı, su kalitesi ve laboratuvar verilerinin Excel'den otomatik yüklenmesi, gelişmiş formül kurallarıyla analiz edilmesi ve grafiksel raporlanmasını sağlayan profesyonel bir web platformudur. Çok kiracılı workspace yapısı, dinamik formül motoru, hücre bazlı renklendirme sistemi ve PDF rapor oluşturma özellikleriyle laboratuvar veri yönetimini kolaylaştırır. Modern Next.js, TypeScript, Prisma ORM ve PostgreSQL teknolojileriyle güvenli ve ölçeklenebilir mimari sunar.
+## 📑 Proje Hakkında
 
-## 🚀 Son Güncellemeler (2025-01-27)
+Çınar Veri Görüntüleme ve Analiz Portali, çevre laboratuvarı analiz verilerinin yönetilmesi, görüntülenmesi ve analiz edilmesi için geliştirilmiş web tabanlı bir uygulamadır. Bu portal, Excel dosyalarından veri yüklemeyi, formül tanımlamayı ve veri analizini kolaylaştırarak laboratuvar süreçlerini optimize eder.
 
-### ✅ Düzeltilen Kritik Sorunlar
+### 🌟 Özellikler
 
-1. **🔒 Güvenlik Düzeltmeleri**
-   - Hardcode edilmiş JWT_SECRET ve DATABASE_URL kaldırıldı
-   - Environment variable tabanlı güvenli konfigürasyon eklendi
-   - `.env` dosyası şablonu oluşturuldu
+- 🔐 **Rol Tabanlı Erişim Kontrolü**: Admin ve Kullanıcı rolleri
+- 📊 **Excel Veri Yükleme ve Görüntüleme**: Excel verilerini sisteme aktarma ve tablolarda görüntüleme
+- 📝 **Formül Yönetimi**: Değişkenler üzerinde karşılaştırma ve hesaplamalar yapma
+- 📈 **Analiz ve Grafikler**: Veri eğilimleri ve analizler
+- 📋 **PDF Raporlama**: Renkli hücre vurgulamaları ile PDF raporları oluşturma
+- 👥 **Çalışma Alanı Yönetimi**: Farklı projeleri izole etme ve yönetme
+- 🔍 **Veri Arama ve Filtreleme**: Tablolarda arama ve sıralama
 
-2. **⚙️ Konfigürasyon Tutarlılığı**
-   - Çakışan `next.config.js` dosyası kaldırıldı (sadece `next.config.ts` kullanılıyor)
-   - Çakışan `.eslintrc.json` kaldırıldı (modern `eslint.config.mjs` kullanılıyor)
-   - Build sırasında TypeScript ve ESLint kontrolleri aktif
+## 🛠️ Teknolojiler
 
-3. **📝 Kod Duplikasyonu Çözüldü**
-   - `formulaEvaluator.ts` kaldırıldı
-   - `enhancedFormulaEvaluator.ts` ana formül motoru olarak konsolide edildi
-   - Geriye uyumluluk fonksiyonları eklendi
+- **Frontend**: Next.js 15.3.2, React, TypeScript, Tailwind CSS
+- **Backend**: Next.js API Routes, Prisma ORM
+- **Veritabanı**: PostgreSQL
+- **Kimlik Doğrulama**: Özel JWT tabanlı kimlik doğrulama
+- **Excel İşleme**: xlsx
+- **PDF Oluşturma**: jsPDF
+- **Deployment**: Vercel (önerilen)
 
-4. **🔧 Import Düzeltmeleri**
-   - Tüm dosyalarda eski import'lar güncellendi
-   - Type uyumsuzlukları çözüldü
+## ⚙️ Kurulum ve Çalıştırma
 
-## 🛠️ Kurulum
+### Ön Gereksinimler
 
-### 1. Environment Variables
-`.env` dosyası oluşturun:
+- Node.js 18.0 veya üzeri
+- PostgreSQL veritabanı
+- Git
 
-```bash
-DATABASE_URL="postgresql://postgres:your_password@localhost:5432/cinar_portal"
-JWT_SECRET="your-very-secure-secret-key-here-minimum-32-chars"
-NEXT_PUBLIC_APP_URL="http://localhost:3000"
-SHADOW_DATABASE_URL="postgresql://postgres:your_password@localhost:5432/cinar_portal_shadow"
-NODE_ENV="development"
-```
+### Kurulum Adımları
 
-### 2. Bağımlılıkları Yükleyin
-```bash
-npm install
-```
+1. Depoyu klonlayın:
+   ```bash
+   git clone https://github.com/your-username/CinarVeriGoruntulemeveanalizportali.git
+   cd CinarVeriGoruntulemeveanalizportali
+   ```
 
-### 3. Veritabanını Hazırlayın
-```bash
-npm run db:setup
-```
+2. Bağımlılıkları yükleyin:
+   ```bash
+   npm install
+   ```
 
-### 4. Uygulamayı Başlatın
-```bash
-npm run dev
-```
+3. `.env` dosyasını oluşturun:
+   ```
+   DATABASE_URL="postgresql://username:password@localhost:5432/cinar_portal"
+   JWT_SECRET="your-secret-key"
+   NEXT_PUBLIC_APP_URL="http://localhost:3000"
+   ```
 
-## 📋 Özellikler
+4. Veritabanını oluşturun:
+   ```bash
+   npx prisma db push
+   ```
 
-- ✅ Excel dosyası yükleme ve analizi
-- ✅ Dinamik formül sistemi (konsolide edildi)
-- ✅ Gerçek zamanlı veri görselleştirme
-- ✅ Çoklu workspace desteği
-- ✅ PDF export özelliği
-- ✅ Güvenli authentication
-- ✅ Responsive tasarım
+5. (Opsiyonel) Örnek verileri yükleyin:
+   ```bash
+   npm run seed
+   ```
 
-## 🏗️ Teknik Mimari
+6. Geliştirme modunda çalıştırın:
+   ```bash
+   npm run dev
+   ```
 
-### Frontend
-- **Next.js 15** - React framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **Chart.js** - Data visualization
+7. Uygulamaya `http://localhost:3000` adresinden erişebilirsiniz
 
-### Backend
-- **Prisma ORM** - Database management
-- **PostgreSQL** - Primary database
-- **JWT** - Authentication
-- **bcrypt** - Password hashing
+### Üretim Ortamına Dağıtım
 
-### DevOps
-- **ESLint** - Code linting (modern config)
-- **TypeScript** - Build-time checks active
-- **Git** - Version control with proper .gitignore
+1. Uygulamayı derleyin:
+   ```bash
+   npm run build
+   ```
+
+2. Üretim modunda çalıştırın:
+   ```bash
+   npm run start
+   ```
 
 ## 📁 Proje Yapısı
 
 ```
+├── prisma/                  # Veritabanı şeması ve migrationlar
+├── public/                  # Statik dosyalar
 ├── src/
-│   ├── app/            # Next.js App Router
-│   ├── components/     # React Components
-│   ├── lib/           # Utility functions
-│   │   ├── enhancedFormulaEvaluator.ts  # Ana formül motoru
-│   │   ├── auth/      # Authentication utilities
-│   │   └── pdf/       # PDF generation
-│   └── types/         # TypeScript definitions
-├── prisma/            # Database schema & migrations
-├── public/            # Static files
-└── docs/              # Documentation
+│   ├── app/                 # Next.js App Router
+│   │   ├── api/             # API rotaları
+│   │   ├── auth/            # Kimlik doğrulama sayfaları
+│   │   ├── dashboard/       # Kontrol paneli
+│   │   └── ...
+│   ├── components/          # React bileşenleri
+│   │   ├── auth/            # Kimlik doğrulama ile ilgili bileşenler
+│   │   ├── dashboard/       # Kontrol paneli bileşenleri
+│   │   ├── formulas/        # Formül yönetimi bileşenleri
+│   │   ├── tables/          # Tablo görüntüleme bileşenleri
+│   │   └── ...
+│   ├── lib/                 # Yardımcı fonksiyonlar
+│   │   ├── auth/            # Kimlik doğrulama işlevleri
+│   │   ├── db.ts            # Veritabanı bağlantısı
+│   │   ├── excel/           # Excel işleme
+│   │   ├── formula/         # Formül işleme
+│   │   └── pdf/             # PDF oluşturma
+│   ├── styles/              # Global stiller
+│   └── types/               # TypeScript tipleri
+├── .env                     # Ortam değişkenleri
+├── next.config.js           # Next.js yapılandırması
+├── package.json             # Proje bağımlılıkları
+└── tsconfig.json            # TypeScript yapılandırması
 ```
 
-## 🔐 Güvenlik
+## 📊 Veri Modeli
 
-- JWT token tabanlı authentication
-- Environment variable'lar ile güvenli konfigürasyon
-- SQL injection koruması (Prisma ORM)
-- XSS koruması (Next.js built-in)
-- HTTPS ready
+Sistem aşağıdaki ana veri modellerini kullanır:
 
-Daha fazla güvenlik bilgisi için: [SECURITY.md](./SECURITY.md)
+- **User**: Kullanıcı bilgileri ve rol atamaları
+- **Workspace**: Çalışma alanları ve kullanıcı izinleri
+- **DataTable**: Excel'den yüklenen veri tabloları
+- **Formula**: Tanımlanan formül ve koşullar
 
-## 🧪 Test
+## 🔧 Kullanım Örnekleri
 
-```bash
-# Formula evaluator testi
-npm run test:formulas
+### Excel Yükleme
 
-# Database connection testi  
-npm run test:db
-```
+1. Dashboard'dan çalışma alanı seçin
+2. "Excel Yükle" butonuna tıklayın
+3. Excel dosyasını sürükleyin veya seçin
+4. Yükleme tamamlandığında, tablo listesinde görüntülenecektir
 
-## 📈 Performans Optimizasyonları
+### Formül Oluşturma
 
-- Formula cache sistemi
-- Lazy loading components
-- Optimized database queries
-- Image optimization (Next.js)
-- Code splitting
+1. Formül Yönetim ekranını açın
+2. Yeni formül oluştur'a tıklayın
+3. Formül adı ve açıklaması girin
+4. Açılır menülerden değişkenleri ve operatörleri seçin
+5. Formülü kaydedin ve tabloya uygulayın
 
-## 🤝 Katkıda Bulunma
+### PDF Raporu Alma
 
-1. Fork yapın
-2. Feature branch oluşturun
-3. Değişikliklerinizi commit edin
-4. Pull request açın
+1. Görüntülemek istediğiniz tabloyu seçin
+2. "PDF'e Aktar" butonuna tıklayın
+3. PDF, formül renklendirmeleri dahil indirilecektir
 
 ## 📄 Lisans
 
-Bu proje MIT lisansı altında lisanslanmıştır.
+Bu proje [MIT Lisansı](LICENSE) altında lisanslanmıştır.
 
----
+## 👥 Katkıda Bulunanlar
 
-**Son güncellenme**: 27 Ocak 2025  
-**Versiyon**: 2.0.0 (Konsolide edilmiş)  
-**Durum**: ✅ Production Ready
+- Çınar Çevre Laboratuvarı Ekibi
+
+## 📞 İletişim
+
+Sorularınız veya önerileriniz için lütfen iletişime geçin:
+
+- E-posta: info@cinarcevre.com
+- Web sitesi: [www.cinarcevre.com](https://www.cinarcevre.com)

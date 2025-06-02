@@ -115,9 +115,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     },
     { 
       path: '/dashboard/formulas', 
-      name: 'Formüller', 
+      name: 'Formül Yönetimi', 
       icon: FcCalculator,
-      description: 'Veri doğrulama kuralları'
+      description: 'Analiz formüllerini oluştur ve yönet'
     },
     { 
       path: '/dashboard/analysis', 
@@ -223,10 +223,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
               <li>
                 <button 
                   onClick={handleLogout}
-                  className="flex items-center w-full px-3 py-3 rounded-lg text-sm font-medium bg-red-100 text-black hover:bg-red-200 hover:text-red-900 transition-all duration-200 border border-red-200"
+                  className="flex items-center w-full px-3 py-3 rounded-lg text-sm font-medium bg-red-100 text-black hover:bg-red-200 hover:text-black transition-all duration-200 border border-red-200"
                 >
                   <FcExport className="w-6 h-6" />
-                  {isSidebarOpen && <span className="ml-3 font-semibold">Çıkış Yap</span>}
+                  {isSidebarOpen && <span className="ml-3 font-semibold text-black">Çıkış Yap</span>}
                 </button>
               </li>
             </ul>

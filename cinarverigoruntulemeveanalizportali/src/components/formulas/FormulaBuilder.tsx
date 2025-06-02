@@ -343,6 +343,10 @@ export default function FormulaBuilder({
           <div className="text-sm text-gray-600 mt-2">
             💡 Sayılar, değişkenler ([değişken_adı]) ve matematik işlemler (+, -, *, /, parantez) kullanabilirsiniz
           </div>
+          <p className="text-xs text-gray-600 mb-2">
+            Bir değeri alır ve diğeriyle kıyaslar. Büyüktür, küçüktür gibi
+            karşılaştırma operatörleri kullanabilirsiniz.
+          </p>
         </div>
 
         {/* Quick Insert Buttons */}
@@ -411,7 +415,7 @@ export default function FormulaBuilder({
             <span className="text-gray-600 ml-2">- İletkenlik 320'den büyükse</span>
           </div>
           <div>
-            <code className="bg-white px-2 py-1 rounded border">[pH] {'>='} 6.5 AND [pH] {'<='} 8.5</code>
+            <code className="bg-white px-2 py-1 rounded border">[pH] {`>=`} 6.5 AND [pH] {`<=`} 8.5</code>
             <span className="text-gray-600 ml-2">- pH değeri 6.5-8.5 arasındaysa</span>
           </div>
           <div>

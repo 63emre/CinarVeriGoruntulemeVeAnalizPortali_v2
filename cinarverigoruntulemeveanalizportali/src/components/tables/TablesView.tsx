@@ -91,7 +91,7 @@ export default function TablesView({
                     }`}
                     onClick={() => {
                       console.log('🖱️ Table clicked:', table.id, table.name);
-                      onTableSelect && onTableSelect(table.id);
+                      onTableSelect?.(table.id);
                     }}
                   >
                     <div className="flex items-start justify-between">

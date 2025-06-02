@@ -150,6 +150,125 @@ function validateDataQuality(data: ExcelData[]): void {
   }
 }
 
+/**
+ * ENHANCED: Parse special Excel values with Turkish formatting and comparison operators
+ * Handles cases like:
+ * - "0,0005 → Değer 0.0005'ten küçük" → convert to "< 0.0005"
+ * - "100,000 → 100" → convert to 100 (remove unnecessary trailing zeros)
+ * - "Değer 0.05'ten büyük" → convert to "> 0.05"
+ */
+function parseSpecialValue(value: string): string | number | null {
+  if (typeof value !== 'string') return value;
+  
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  
+  // Handle Turkish comparison text patterns
+  const turkishPatterns = [
+    // "0,0005 → Değer 0.0005'ten küçük" patterns
+    {
+      regex: /^(\d+[,.]\d+)\s*→\s*Değer\s+(\d+[,.]\d+)'?ten\s+küçük/i,
+      transform: (match: RegExpMatchArray) => {
+        const numValue = parseFloat(match[2].replace(',', '.'));
+        return `< ${numValue}`;
+      }
+    },
+    // "Değer X'ten küçük" patterns  
+    {
+      regex: /Değer\s+(\d+[,.]\d+)'?ten\s+küçük/i,
+      transform: (match: RegExpMatchArray) => {
+        const numValue = parseFloat(match[1].replace(',', '.'));
+        return `< ${numValue}`;
+      }
+    },
+    // "Değer X'ten büyük" patterns
+    {
+      regex: /Değer\s+(\d+[,.]\d+)'?ten\s+büyük/i,
+      transform: (match: RegExpMatchArray) => {
+        const numValue = parseFloat(match[1].replace(',', '.'));
+        return `> ${numValue}`;
+      }
+    },
+    // "X'ten küçük" patterns
+    {
+      regex: /(\d+[,.]\d+)'?ten\s+küçük/i,
+      transform: (match: RegExpMatchArray) => {
+        const numValue = parseFloat(match[1].replace(',', '.'));
+        return `< ${numValue}`;
+      }
+    },
+    // "X'ten büyük" patterns
+    {
+      regex: /(\d+[,.]\d+)'?ten\s+büyük/i,
+      transform: (match: RegExpMatchArray) => {
+        const numValue = parseFloat(match[1].replace(',', '.'));
+        return `> ${numValue}`;
+      }
+    },
+    // Handle values with arrows like "100,000 → 100"
+    {
+      regex: /^(\d+[,.]\d*)\s*→\s*(\d+[,.]\d*)$/,
+      transform: (match: RegExpMatchArray) => {
+        // Take the simplified value (after arrow)
+        const simplifiedValue = match[2].replace(',', '.');
+        const numValue = parseFloat(simplifiedValue);
+        return isNaN(numValue) ? match[2] : numValue;
+      }
+    }
+  ];
+  
+  // Try each pattern
+  for (const pattern of turkishPatterns) {
+    const match = trimmed.match(pattern.regex);
+    if (match) {
+      try {
+        const result = pattern.transform(match);
+        console.log(`📊 Converted Turkish value: "${trimmed}" → "${result}"`);
+        return result;
+      } catch (error) {
+        console.warn(`⚠️ Error transforming value: "${trimmed}"`, error);
+      }
+    }
+  }
+  
+  // Handle trailing zeros removal for decimal numbers
+  // "100,000" → 100, "5,000" → 5
+  if (/^\d+[,.]\d*0+$/.test(trimmed)) {
+    const normalizedValue = trimmed.replace(',', '.');
+    const numValue = parseFloat(normalizedValue);
+    if (!isNaN(numValue)) {
+      // Remove unnecessary trailing zeros
+      const cleanNumber = numValue.toString();
+      console.log(`🔢 Cleaned trailing zeros: "${trimmed}" → ${cleanNumber}`);
+      return numValue;
+    }
+  }
+  
+  // Handle very small values with scientific notation
+  // "0,0005" should be recognized as a very small number
+  if (/^0[,.]0+\d+$/.test(trimmed)) {
+    const normalizedValue = trimmed.replace(',', '.');
+    const numValue = parseFloat(normalizedValue);
+    if (!isNaN(numValue) && numValue < 0.001) {
+      console.log(`🔬 Detected small value: "${trimmed}" → ${numValue}`);
+      return `< 0.001`;
+    }
+    return numValue;
+  }
+  
+  // Handle standard Turkish decimal format
+  if (/^\d+[,]\d+$/.test(trimmed)) {
+    const normalizedValue = trimmed.replace(',', '.');
+    const numValue = parseFloat(normalizedValue);
+    if (!isNaN(numValue)) {
+      return numValue;
+    }
+  }
+  
+  // Return original value if no special pattern matches
+  return trimmed;
+}
+
 export async function parseExcelFile(file: File): Promise<ExcelData[]> {
   try {
     // Önce dosyayı doğrula
@@ -235,6 +354,12 @@ export async function parseExcelFile(file: File): Promise<ExcelData[]> {
               const trimmed = cellValue.trim();
               if (trimmed === '') return null;
               
+              // ENHANCED: Parse special Turkish values first
+              const specialValue = parseSpecialValue(trimmed);
+              if (specialValue !== trimmed) {
+                return specialValue;
+              }
+              
               // Check if the string represents a date and standardize it
               if (isDateString(trimmed)) {
                 return standardizeDateString(trimmed);
@@ -259,6 +384,11 @@ export async function parseExcelFile(file: File): Promise<ExcelData[]> {
 
     // Veri kalitesi doğrulaması yap
     validateDataQuality(result);
+    
+    console.log(`✅ Excel file parsed successfully with enhanced Turkish value support`);
+    result.forEach(sheet => {
+      console.log(`📊 Sheet "${sheet.sheetName}": ${sheet.columns.length} columns, ${sheet.data.length} rows`);
+    });
     
     return result;
   } catch (error) {

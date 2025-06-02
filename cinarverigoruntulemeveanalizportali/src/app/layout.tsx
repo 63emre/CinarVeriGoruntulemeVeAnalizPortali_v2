@@ -1,12 +1,13 @@
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { Metadata } from 'next';
+import { NotificationContainer } from '@/components/ui/Notification';
 
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Çınar Veri Görüntüleme ve Analiz Portalı',
-  description: 'Çınar Çevre Laboratuvarı veri görüntüleme, işleme ve analiz portalı',
+  title: 'Çınar Çevre Laboratuvarı - Veri Görüntüleme ve Analiz Portalı',
+  description: 'Çevre analiz verilerini görüntüleme ve analiz etme platformu',
   icons: {
     icon: [
       { url: '/favicon.ico' },
@@ -27,6 +28,7 @@ export default function RootLayout({
         <div className="flex flex-col min-h-screen w-full">
           {children}
         </div>
+        <NotificationContainer />
       </body>
     </html>
   );

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 
 // Local helper function to process table cell values
 function processTableCellValue(value: string | number | null): {
@@ -215,10 +216,29 @@ export default function EnhancedTableCell({
       const scrollY = window.scrollY || document.documentElement.scrollTop;
       const scrollX = window.scrollX || document.documentElement.scrollLeft;
       
-      setTooltipPosition({
-        x: rect.left + scrollX + rect.width / 2,
-        y: rect.top + scrollY - 10
-      });
+      // Better positioning logic
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const tooltipWidth = 400; // Estimated tooltip width
+      const tooltipHeight = 200; // Estimated tooltip height
+      
+      let x = rect.left + scrollX + rect.width / 2;
+      let y = rect.top + scrollY - 10;
+      
+      // Ensure tooltip doesn't go off-screen horizontally
+      if (x + tooltipWidth / 2 > viewportWidth) {
+        x = viewportWidth - tooltipWidth / 2 - 20;
+      }
+      if (x - tooltipWidth / 2 < 0) {
+        x = tooltipWidth / 2 + 20;
+      }
+      
+      // Ensure tooltip doesn't go off-screen vertically
+      if (y - tooltipHeight < 0) {
+        y = rect.bottom + scrollY + 10; // Show below if no space above
+      }
+      
+      setTooltipPosition({ x, y });
       setShowTooltip(true);
     }
   };
@@ -229,12 +249,12 @@ export default function EnhancedTableCell({
 
   // OPTIMIZED: Enhanced tooltip content
   const getTooltipContent = () => {
-    if (!showTooltip) return null;
+    if (!showTooltip || typeof window === 'undefined') return null;
 
     const dataTypeInfo = getDataTypeInfo();
 
-    return (
-      <div className="fixed z-50 bg-gray-900 text-white text-xs rounded-lg py-3 px-4 shadow-xl border border-gray-700 min-w-[220px] max-w-[400px]"
+    const tooltipElement = (
+      <div className="fixed z-[9999] bg-gray-900 text-white text-xs rounded-lg py-3 px-4 shadow-xl border border-gray-700 min-w-[220px] max-w-[400px] pointer-events-none"
            style={{
              left: `${tooltipPosition.x}px`,
              top: `${tooltipPosition.y}px`,
@@ -366,6 +386,8 @@ export default function EnhancedTableCell({
         <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-[4px] border-r-[4px] border-t-[4px] border-transparent border-t-gray-900"></div>
       </div>
     );
+
+    return createPortal(tooltipElement, document.body);
   };
   
   return (
@@ -411,9 +433,8 @@ export default function EnhancedTableCell({
             <div className="w-2 h-2 bg-green-400 rounded-full border border-white shadow-sm"></div>
           </div>
         )}
-        
-        {showTooltip && getTooltipContent()}
       </td>
+      {getTooltipContent()}
     </>
   );
 } 

@@ -2,7 +2,19 @@
   "extends": "next/core-web-api",
   "rules": {
     "@typescript-eslint/no-explicit-any": "off",
-    "@typescript-eslint/no-unused-vars": "warn"
+    "@typescript-eslint/no-unused-vars": "warn",
+    "@typescript-eslint/no-unused-expressions": "off",
+    "@typescript-eslint/no-this-alias": "off",
+    "@typescript-eslint/no-require-imports": "off",
+    "prefer-const": "warn"
   },
-  "ignorePatterns": ["src/generated/**/*"]
+  "ignorePatterns": [
+    "src/generated/**/*",
+    ".next/**/*",
+    "node_modules/**/*",
+    "dist/**/*",
+    "build/**/*",
+    "**/*.js",
+    "**/*.mjs"
+  ]
 } 

@@ -475,6 +475,7 @@ function cleanAndParseValue(value: string | number | null): number | null {
  * - "B + C > A" ✓ (A tek, B+C kombinasyon → A vurgulanır) 
  * - "A + B > C + D" ✗ (Her iki taraf kombinasyon → geçersiz)
  * - "A > 312" ✓ (A tek, 312 sabit → A vurgulanır)
+ * - "[Toplam Siyanür Tayini] < [Zayıf Asitte Çözünebilen (WAD) Siyanür]" ✓ (İki değişken karşılaştırması)
  */
 export function validateUnidirectionalFormula(formula: string, availableVariables: string[]): {
   isValid: boolean;
@@ -494,20 +495,28 @@ export function validateUnidirectionalFormula(formula: string, availableVariable
       };
     }
     
+    console.log(`🔍 Validating unidirectional formula: "${formula}"`);
+    console.log(`📋 Available variables: [${availableVariables.slice(0, 5).join(', ')}${availableVariables.length > 5 ? '...' : ''}]`);
+    
     // Check each condition for unidirectional rule
     for (const condition of conditions) {
       const leftVars = extractVariables(condition.leftExpression);
       const rightVars = extractVariables(condition.rightExpression);
+      
+      console.log(`🔍 Condition: "${condition.leftExpression}" ${condition.operator} "${condition.rightExpression}"`);
+      console.log(`   Left variables: [${leftVars.join(', ')}]`);
+      console.log(`   Right variables: [${rightVars.join(', ')}]`);
       
       // ENHANCED: Flexible variable matching for Turkish characters and different naming conventions
       const findMatchingVariable = (formulaVar: string): string | undefined => {
         // Clean the formula variable
         const cleanFormulaVar = formulaVar.replace(/,+$/, '').trim();
         
-        return availableVariables.find(availableVar => {
+        // ENHANCED: More sophisticated matching algorithm
+        const result = availableVariables.find(availableVar => {
           const cleanAvailableVar = availableVar.replace(/,+$/, '').trim();
           
-          // 1. Exact match
+          // 1. Exact match (case sensitive)
           if (cleanAvailableVar === cleanFormulaVar) return true;
           
           // 2. Case-insensitive match
@@ -528,38 +537,67 @@ export function validateUnidirectionalFormula(formula: string, availableVariable
             .replace(/Ş/g, 's')
             .replace(/Ö/g, 'o')
             .replace(/Ç/g, 'c')
-            .replace(/\s+/g, '')
-            .replace(/[^\w]/g, '');
+            .replace(/\s+/g, ' ')
+            .trim();
           
           const normalizedAvailable = normalizeText(cleanAvailableVar);
           const normalizedFormula = normalizeText(cleanFormulaVar);
           
           if (normalizedAvailable === normalizedFormula) return true;
           
-          // 4. Partial match (contains)
+          // 4. Remove common words and parentheses, then compare
+          const removeCommonWords = (text: string) => text
+            .replace(/\b(tayini|analizi|ölçümü|değeri|sonucu|testi)\b/gi, '')
+            .replace(/[()]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          const cleanedAvailable = removeCommonWords(normalizedAvailable);
+          const cleanedFormula = removeCommonWords(normalizedFormula);
+          
+          if (cleanedAvailable === cleanedFormula) return true;
+          
+          // 5. Partial match (contains relationship)
           if (normalizedAvailable.includes(normalizedFormula) || 
               normalizedFormula.includes(normalizedAvailable)) return true;
           
-          // 5. Token-based matching (split by spaces/punctuation and check overlap)
-          const availableTokens = cleanAvailableVar.split(/[\s\-_.,()]+/).filter(t => t.length > 1);
-          const formulaTokens = cleanFormulaVar.split(/[\s\-_.,()]+/).filter(t => t.length > 1);
+          // 6. Token-based matching with improved scoring
+          const availableTokens = cleanAvailableVar.split(/[\s\-_.,()]+/).filter(t => t.length > 2);
+          const formulaTokens = cleanFormulaVar.split(/[\s\-_.,()]+/).filter(t => t.length > 2);
           
           if (availableTokens.length > 0 && formulaTokens.length > 0) {
             const normalizedAvailableTokens = availableTokens.map(normalizeText);
             const normalizedFormulaTokens = formulaTokens.map(normalizeText);
             
-            // Check if any significant token matches
-            const hasSignificantMatch = normalizedFormulaTokens.some(fToken => 
-              fToken.length >= 3 && normalizedAvailableTokens.some(aToken => 
-                aToken === fToken || aToken.includes(fToken) || fToken.includes(aToken)
-              )
-            );
+            // Calculate match score
+            let matchScore = 0;
+            const totalTokens = Math.max(normalizedAvailableTokens.length, normalizedFormulaTokens.length);
             
-            if (hasSignificantMatch) return true;
+            normalizedFormulaTokens.forEach(fToken => {
+              if (fToken.length >= 3) { // Only consider meaningful tokens
+                const hasMatch = normalizedAvailableTokens.some(aToken => 
+                  aToken === fToken || 
+                  (aToken.length > 3 && fToken.length > 3 && (aToken.includes(fToken) || fToken.includes(aToken)))
+                );
+                if (hasMatch) matchScore++;
+              }
+            });
+            
+            // If majority of tokens match, consider it a match
+            const matchRatio = matchScore / totalTokens;
+            if (matchRatio >= 0.6) return true;
           }
           
           return false;
         });
+        
+        if (result) {
+          console.log(`✅ Variable match found: "${cleanFormulaVar}" → "${result}"`);
+        } else {
+          console.log(`❌ No match found for: "${cleanFormulaVar}"`);
+        }
+        
+        return result;
       };
       
       // Check if variables exist with flexible matching
@@ -579,13 +617,13 @@ export function validateUnidirectionalFormula(formula: string, availableVariable
       if (missingVars.length > 0) {
         console.log(`🔍 Missing variables analysis for formula "${formula}":`);
         console.log(`   Formula variables: [${allFormulaVars.join(', ')}]`);
-        console.log(`   Available variables: [${availableVariables.join(', ')}]`);
+        console.log(`   Available variables: [${availableVariables.slice(0, 3).join(', ')}...]`);
         console.log(`   Missing: [${missingVars.join(', ')}]`);
         console.log(`   Matched: ${JSON.stringify(matchedVars)}`);
         
         return {
           isValid: false,
-          error: 'Missing variables',
+          error: `Missing variables: ${missingVars.join(', ')}`,
           missingVariables: missingVars
         };
       }
@@ -600,39 +638,56 @@ export function validateUnidirectionalFormula(formula: string, availableVariable
       
       let targetVariable: string | undefined;
       
+      // ENHANCED: More permissive rules for variable comparison
+      
       // Case 1: Single variable vs constant (OK)
       // Example: "A > 312" → target A
       if (leftIsSingle && rightIsConstant) {
         targetVariable = matchedVars[leftVars[0]] || leftVars[0];
+        console.log(`✅ Case 1: Single variable vs constant - Target: ${targetVariable}`);
       }
       // Example: "312 < A" → target A  
       else if (rightIsSingle && leftIsConstant) {
         targetVariable = matchedVars[rightVars[0]] || rightVars[0];
+        console.log(`✅ Case 1b: Constant vs single variable - Target: ${targetVariable}`);
       }
       
       // Case 2: Single variable vs multiple variables/expression (OK)
       // Example: "A < B + C" → target A
       else if (leftIsSingle && (rightIsMultiple || rightIsConstant)) {
         targetVariable = matchedVars[leftVars[0]] || leftVars[0];
+        console.log(`✅ Case 2: Single vs multiple/constant - Target: ${targetVariable}`);
       }
       // Example: "B + C > A" → target A
       else if (rightIsSingle && (leftIsMultiple || leftIsConstant)) {
         targetVariable = matchedVars[rightVars[0]] || rightVars[0];
+        console.log(`✅ Case 2b: Multiple/constant vs single - Target: ${targetVariable}`);
       }
       
-      // Case 3: Multiple variables on both sides (NOT OK)
+      // ENHANCED Case 3: Two single variables (ALLOW - this is a valid comparison)
+      // Example: "[Toplam Siyanür Tayini] < [Zayıf Asitte Çözünebilen (WAD) Siyanür]"
+      else if (leftIsSingle && rightIsSingle) {
+        // For two-variable comparisons, highlight the left variable by default
+        // This is common in chemical analysis comparisons
+        targetVariable = matchedVars[leftVars[0]] || leftVars[0];
+        console.log(`✅ Case 3: Two single variables comparison - Target: ${targetVariable} (left variable)`);
+      }
+      
+      // Case 4: Multiple variables on both sides (NOT OK)
       // Example: "A + B > C + D" → invalid
       else if (leftIsMultiple && rightIsMultiple) {
+        console.log(`❌ Case 4: Multiple variables on both sides - Invalid`);
         return {
           isValid: false,
-          error: 'Both sides contain multiple variables. Formula must have one side with a single variable.',
+          error: 'Both sides contain multiple variables. Formula must have one side with a single variable or be a simple two-variable comparison.',
           leftVariables: leftVars,
           rightVariables: rightVars
         };
       }
       
-      // Case 4: No variables (invalid)
+      // Case 5: No variables (invalid)
       else if (leftIsConstant && rightIsConstant) {
+        console.log(`❌ Case 5: No variables - Invalid`);
         return {
           isValid: false,
           error: 'Formula contains no variables'
@@ -651,12 +706,14 @@ export function validateUnidirectionalFormula(formula: string, availableVariable
       }
     }
     
+    console.log(`❌ Formula validation failed - no valid target found`);
     return {
       isValid: false,
       error: 'Formula does not follow unidirectional rule'
     };
     
   } catch (error) {
+    console.error(`❌ Exception in formula validation:`, error);
     return {
       isValid: false,
       error: `Error validating formula: ${(error as Error).message}`

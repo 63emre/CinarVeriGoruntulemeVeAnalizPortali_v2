@@ -20,58 +20,131 @@ export default function TablesPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   
-  useEffect(() => {
-    const fetchTables = async () => {
-      try {
-        console.log('🔍 Fetching tables from /api/tables...');
-        
-        // First check auth status
-        const authResponse = await fetch('/api/auth/me');
-        console.log('🔐 Auth status:', authResponse.status);
-        
-        if (!authResponse.ok) {
-          console.log('❌ Not authenticated, redirecting to login...');
-          window.location.href = '/auth/login';
-          return;
+  // Define fetchTables function outside useEffect so it can be reused
+  const fetchTables = async () => {
+    try {
+      console.log('🔍 Fetching tables from /api/tables...');
+      setLoading(true);
+      setError(null);
+      
+      // First check auth status
+      const authResponse = await fetch('/api/auth/me', {
+        cache: 'no-cache',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         }
+      });
+      console.log('🔐 Auth status:', authResponse.status);
+      
+      if (!authResponse.ok) {
+        console.log('❌ Not authenticated, redirecting to login...');
+        window.location.href = '/auth/login';
+        return;
+      }
+      
+      const authData = await authResponse.json();
+      console.log('✅ User authenticated:', authData.user?.email || 'Unknown user');
+      
+      // Fetch tables from API with retry mechanism
+      const response = await fetch('/api/tables', {
+        cache: 'no-cache',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      
+      console.log('📊 API Response status:', response.status);
+      console.log('📊 API Response headers:', Object.fromEntries(response.headers.entries()));
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ API Error Response:', errorText);
         
-        const authData = await authResponse.json();
-        console.log('✅ User authenticated:', authData.user);
-        
-        // Fetch tables from API
-        const response = await fetch('/api/tables');
-        
-        console.log('📊 API Response status:', response.status);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('❌ API Error:', errorText);
+        // Try to parse as JSON for better error message
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.message || `API Error (${response.status}): ${errorText}`);
+        } catch (parseError) {
           throw new Error(`Tablo verileri yüklenemedi (${response.status}): ${errorText}`);
         }
-        
-        const data = await response.json();
-        console.log('✅ Tables data received:', data);
-        console.log('📈 Number of tables:', data.length);
-        
-        setTables(data);
-        setError(null);
-      } catch (error) {
-        console.error('❌ Error fetching tables:', error);
-        setError((error as Error).message);
-      } finally {
-        setLoading(false);
       }
-    };
-    
-    fetchTables();
-  }, []);
+      
+      const data = await response.json();
+      console.log('✅ Tables data received:', {
+        isArray: Array.isArray(data),
+        length: Array.isArray(data) ? data.length : 'Not an array',
+        firstItem: Array.isArray(data) && data.length > 0 ? data[0] : 'No data',
+        dataType: typeof data
+      });
+      
+      // Validate data structure
+      if (!Array.isArray(data)) {
+        console.error('❌ API returned non-array data:', data);
+        throw new Error('Geçersiz veri formatı: API array döndürmedi');
+      }
+      
+      // Validate each table object
+      const validTables = data.filter((table: any) => {
+        const isValid = table && 
+                       typeof table.id === 'string' && 
+                       typeof table.name === 'string' && 
+                       table.workspace && 
+                       typeof table.workspace.name === 'string';
+        
+        if (!isValid) {
+          console.warn('⚠️ Invalid table object filtered out:', table);
+        }
+        
+        return isValid;
+      });
+      
+      console.log(`📈 Valid tables found: ${validTables.length} out of ${data.length}`);
+      
+      setTables(validTables);
+      setError(null);
+      setRetryCount(0);
+      
+    } catch (error) {
+      console.error('❌ Error fetching tables:', error);
+      const errorMessage = (error as Error).message;
+      setError(errorMessage);
+      
+      // Automatic retry logic for network errors
+      if (retryCount < 3 && (errorMessage.includes('fetch') || errorMessage.includes('Network'))) {
+        console.log(`🔄 Retrying... (attempt ${retryCount + 1}/3)`);
+        setRetryCount(prev => prev + 1);
+        setTimeout(() => {
+          fetchTables();
+        }, 2000 * (retryCount + 1)); // Exponential backoff
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
   
-  // Filter tables based on search query
-  const filteredTables = tables.filter((table: TableData) => 
-    table.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    table.workspace.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    fetchTables();
+  }, []); // Remove retryCount from dependencies to avoid infinite loops
+  
+  // Retry function for manual retry
+  const handleRetry = () => {
+    setRetryCount(0);
+    fetchTables();
+  };
+  
+  // Enhanced filtering with better search
+  const filteredTables = tables.filter((table: TableData) => {
+    const searchLower = searchQuery.toLowerCase();
+    return (
+      table.name.toLowerCase().includes(searchLower) || 
+      table.workspace.name.toLowerCase().includes(searchLower) ||
+      table.id.toLowerCase().includes(searchLower)
+    );
+  });
   
   return (
     <div className="container mx-auto p-6">
@@ -80,6 +153,9 @@ export default function TablesPage() {
           <h1 className="text-2xl font-bold flex items-center">
             <FcDatabase className="mr-2 h-6 w-6" />
             Tablolar
+            {tables.length > 0 && (
+              <span className="ml-2 text-sm text-gray-500">({tables.length})</span>
+            )}
           </h1>
           
           <div className="flex">
@@ -106,6 +182,9 @@ export default function TablesPage() {
         {loading ? (
           <div className="flex justify-center items-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-700"></div>
+            <div className="ml-4 text-gray-600">
+              Tablolar yükleniyor{retryCount > 0 && ` (deneme ${retryCount + 1})`}...
+            </div>
           </div>
         ) : error ? (
           <div className="text-center py-12">
@@ -117,12 +196,25 @@ export default function TablesPage() {
               </div>
               <h3 className="text-lg font-semibold text-red-800 mb-2">Hata Oluştu</h3>
               <p className="text-red-700 mb-4">{error}</p>
-              <button
-                onClick={() => window.location.reload()}
-                className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition"
-              >
-                Sayfayı Yenile
-              </button>
+              <div className="space-x-2">
+                <button
+                  onClick={handleRetry}
+                  className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 transition"
+                >
+                  🔄 Tekrar Dene
+                </button>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition"
+                >
+                  🔄 Sayfayı Yenile
+                </button>
+              </div>
+              {retryCount > 0 && (
+                <p className="text-sm text-red-600 mt-2">
+                  Otomatik deneme sayısı: {retryCount}/3
+                </p>
+              )}
             </div>
           </div>
         ) : filteredTables.length > 0 ? (
@@ -151,34 +243,12 @@ export default function TablesPage() {
                       {new Date(table.createdAt).toLocaleDateString('tr-TR')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex space-x-2">
-                        <Link href={`/dashboard/workspaces/${table.workspace.id}/tables/${table.id}`} className="text-blue-600 hover:text-blue-800">
-                          Görüntüle
-                        </Link>
-                        <button 
-                          className="text-red-600 hover:text-red-800"
-                          onClick={async () => {
-                            if (confirm('Bu tabloyu silmek istediğinize emin misiniz?')) {
-                              try {
-                                const response = await fetch(`/api/tables/${table.id}`, {
-                                  method: 'DELETE',
-                                });
-                                
-                                if (response.ok) {
-                                  setTables(tables.filter(t => t.id !== table.id));
-                                } else {
-                                  alert('Tablo silinirken bir hata oluştu');
-                                }
-                              } catch (error) {
-                                console.error('Error deleting table:', error);
-                                alert('Tablo silinirken bir hata oluştu');
-                              }
-                            }
-                          }}
-                        >
-                          Sil
-                        </button>
-                      </div>
+                      <Link 
+                        href={`/dashboard/workspaces/${table.workspace.id}/tables/${table.id}`}
+                        className="text-blue-600 hover:text-blue-900"
+                      >
+                        Görüntüle
+                      </Link>
                     </td>
                   </tr>
                 ))}
@@ -194,7 +264,7 @@ export default function TablesPage() {
               </h3>
               <p className="text-gray-600 mb-4">
                 {searchQuery 
-                  ? 'Arama kriterlerine uygun tablo bulunamadı.' 
+                  ? `"${searchQuery}" araması için sonuç bulunamadı.` 
                   : 'Henüz hiç tablo yüklenmemiş. Tablo yüklemek için önce bir çalışma alanı oluşturmanız gerekiyor.'
                 }
               </p>
@@ -214,6 +284,14 @@ export default function TablesPage() {
                     <span className="mr-2">+</span> Yeni Çalışma Alanı Oluştur
                   </Link>
                 </div>
+              )}
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition"
+                >
+                  <span className="mr-2">🔄</span> Aramayı Temizle
+                </button>
               )}
             </div>
           </div>

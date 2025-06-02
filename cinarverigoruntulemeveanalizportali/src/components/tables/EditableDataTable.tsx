@@ -5,6 +5,7 @@ import { FcPrint, FcFullTrash, FcCheckmark, FcCancel, FcRules, FcDocument } from
 import { AiOutlineSearch, AiOutlineSave } from 'react-icons/ai';
 import { FiDownload } from 'react-icons/fi';
 import TableCell from './TableCell'; // ENHANCED: Import TableCell for pizza slice effect
+import { showSuccess, showError, showInfo } from '@/components/ui/Notification';
 
 type Column = {
   id: string;
@@ -78,11 +79,9 @@ export default function EditableDataTable({
   const [sortColumn, setSortColumn] = useState('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedCell, setSelectedCell] = useState<{row: string, col: string} | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [savingError, setSavingError] = useState<string | null>(null);
   const [formulas, setFormulas] = useState<any[]>([]);
   const [isRecalculating, setIsRecalculating] = useState(false);
 
@@ -149,13 +148,13 @@ export default function EditableDataTable({
           }
         } catch (err) {
           console.error('Error fetching table data:', err);
-          setError((err as Error).message);
+          showError((err as Error).message);
         }
       };
       
       fetchTableData();
     } else if (!tableId && workspaceId) {
-      setError('Lütfen bir tablo seçin');
+      showError('Lütfen bir tablo seçin');
     }
   }, [tableId, workspaceId, data.length, highlightedCells]);
   
@@ -218,29 +217,84 @@ export default function EditableDataTable({
       
       // Show brief feedback to user
       if (newHighlights.length !== highlightedCells.length) {
-        setError(`🔄 Formüller otomatik güncellendi: ${newHighlights.length} hücre vurgulandı`);
-        setTimeout(() => setError(null), 3000);
+        showInfo(`🔄 Formüller otomatik güncellendi: ${newHighlights.length} hücre vurgulandı`);
       }
       
     } catch (error) {
       console.error('Error in auto-recalculation:', error);
-      setError('Formül otomatik hesaplamasında hata oluştu');
-      setTimeout(() => setError(null), 5000);
+      showError('Formül otomatik hesaplamasında hata oluştu');
     } finally {
       setIsRecalculating(false);
     }
   }, [formulas, highlightedCells.length, columns, workspaceId, autoRecalculateFormulas, onFormulasRecalculated]);
 
-  // Handle cell value changes with auto-recalculation
+  // Handle cell value changes with auto-recalculation and enhanced data processing
   const handleCellChange = useCallback(async (rowId: string, colId: string, newValue: string | number | null) => {
+    console.log('🔄 Hücre değeri değiştiriliyor:', { rowId, colId, newValue });
+    
+    // Import data utilities
+    const { parseValue, validateCellValue, updateCellValue } = await import('@/lib/dataUtils');
+    
+    // Validate the new value
+    const validation = validateCellValue(newValue, 'string');
+    if (!validation.isValid) {
+      showError(`❌ Geçersiz değer: ${validation.error}`);
+      return;
+    }
+    
+    // Parse and format the value
+    const parsedValue = validation.parsedValue;
+    let displayValue = parsedValue.displayValue || newValue;
+    
+    // Handle Turkish number format conversion
+    if (parsedValue.numericValue !== null) {
+      displayValue = String(parsedValue.numericValue);
+    } else if (parsedValue.isComparison) {
+      displayValue = `${parsedValue.comparisonOperator}${parsedValue.numericValue}`;
+    }
+    
+    // Update local state first
     const updatedData = tableData.map(row => 
       row.id === rowId 
-        ? { ...row, [colId]: newValue }
+        ? { ...row, [colId]: displayValue }
         : row
     );
     
     setTableData(updatedData);
     setEditingCell(null);
+    setHasChanges(true);
+    
+    // Show immediate feedback
+    showInfo(`📝 Hücre güncellendi: ${displayValue || 'boş değer'}`);
+    
+    // Save to database if tableId and workspaceId are available
+    if (tableId && workspaceId) {
+      try {
+        // Find row and column indices
+        const rowIndex = parseInt(rowId.replace('row-', '')) - 1;
+        const columnIndex = columns.findIndex(col => col.id === colId) - 1; // -1 for ID column
+        
+        if (rowIndex >= 0 && columnIndex >= 0) {
+          const success = await updateCellValue(
+            workspaceId,
+            tableId,
+            rowIndex,
+            columnIndex,
+            displayValue
+          );
+          
+          if (success) {
+            showSuccess(`✅ Hücre başarıyla kaydedildi: ${displayValue || 'boş değer'}`);
+            setHasChanges(false); // Reset changes flag
+          } else {
+            showError('❌ Hücre kaydedilemedi, daha sonra tekrar deneyin');
+          }
+        }
+      } catch (error) {
+        console.error('Cell save error:', error);
+        showError('❌ Hücre kaydetme sırasında hata oluştu');
+      }
+    }
     
     // Notify parent component
     if (onDataChange) {
@@ -252,8 +306,8 @@ export default function EditableDataTable({
       await recalculateFormulas(updatedData);
     }
     
-    console.log(`📝 Cell updated: ${rowId}.${colId} = ${newValue}${autoRecalculateFormulas ? ' (formulas auto-recalculated)' : ''}`);
-  }, [tableData, onDataChange, autoRecalculateFormulas, recalculateFormulas]);
+    console.log(`📝 Cell updated: ${rowId}.${colId} = ${displayValue}${autoRecalculateFormulas ? ' (formulas auto-recalculated)' : ''}`);
+  }, [tableData, columns, tableId, workspaceId, onDataChange, autoRecalculateFormulas, recalculateFormulas]);
 
   const handleSort = (columnId: string) => {
     if (sortColumn === columnId) {
@@ -316,30 +370,88 @@ export default function EditableDataTable({
     setEditValue('');
   };
   
-  const handleEditSave = (rowId: string, colId: string) => {
-    // Find the row in the data array
-    const updatedData = tableData.map(row => {
-      if (row.id === rowId) {
-        // Parse number if the original value was a number
-        const originalValue = row[colId];
-        let newValue: string | number | null = editValue;
-        
-        if (typeof originalValue === 'number' && !isNaN(Number(editValue))) {
-          newValue = Number(editValue);
-        }
-        
-        return { ...row, [colId]: newValue };
+  const handleEditSave = async (rowId: string, colId: string) => {
+    console.log('💾 Hücre düzenleme kaydediliyor:', { rowId, colId, editValue });
+    
+    try {
+      // Import data utilities
+      const { parseValue, validateCellValue, updateCellValue } = await import('@/lib/dataUtils');
+      
+      // Validate the new value
+      const validation = validateCellValue(editValue, 'string');
+      if (!validation.isValid) {
+        showError(`❌ Geçersiz değer: ${validation.error}`);
+        return;
       }
-      return row;
-    });
-    
-    setTableData(updatedData);
-    setEditingCell(null);
-    setEditValue('');
-    setHasChanges(true);
-    
-    if (onDataChange) {
-      onDataChange(updatedData);
+      
+      // Parse and format the value
+      const parsedValue = validation.parsedValue;
+      let displayValue = parsedValue.displayValue || editValue;
+      
+      // Handle Turkish number format conversion
+      if (parsedValue.numericValue !== null) {
+        displayValue = String(parsedValue.numericValue);
+      } else if (parsedValue.isComparison) {
+        displayValue = `${parsedValue.comparisonOperator}${parsedValue.numericValue}`;
+      }
+      
+      // Update local state
+      const updatedData = tableData.map(row => {
+        if (row.id === rowId) {
+          return { ...row, [colId]: displayValue };
+        }
+        return row;
+      });
+      
+      setTableData(updatedData);
+      setEditingCell(null);
+      setEditValue('');
+      setHasChanges(true);
+      
+      // Show immediate feedback
+      showInfo(`📝 Değer güncellendi: ${displayValue || 'boş değer'}`);
+      
+      // Save to database if possible
+      if (tableId && workspaceId) {
+        try {
+          const rowIndex = parseInt(rowId.replace('row-', '')) - 1;
+          const columnIndex = columns.findIndex(col => col.id === colId) - 1; // -1 for ID column
+          
+          if (rowIndex >= 0 && columnIndex >= 0) {
+            const success = await updateCellValue(
+              workspaceId,
+              tableId,
+              rowIndex,
+              columnIndex,
+              displayValue
+            );
+            
+            if (success) {
+              showSuccess(`✅ Hücre veritabanına kaydedildi: ${displayValue || 'boş değer'}`);
+              setHasChanges(false);
+            } else {
+              showError('❌ Veritabanı kaydetme başarısız');
+            }
+          }
+        } catch (error) {
+          console.error('Database save error:', error);
+          showError('❌ Veritabanı kaydetme sırasında hata oluştu');
+        }
+      }
+      
+      // Notify parent component
+      if (onDataChange) {
+        onDataChange(updatedData);
+      }
+      
+      // Auto-recalculate formulas if enabled
+      if (autoRecalculateFormulas) {
+        await recalculateFormulas(updatedData);
+      }
+      
+    } catch (error) {
+      console.error('Edit save error:', error);
+      showError('❌ Hücre güncelleme sırasında hata oluştu');
     }
   };
   
@@ -362,12 +474,11 @@ export default function EditableDataTable({
   // Save all changes back to the server
   const saveChanges = async () => {
     if (!tableId || !workspaceId) {
-      setSavingError('Tablo ID veya Workspace ID eksik');
+      showError('Tablo ID veya Workspace ID eksik');
       return;
     }
     
     setIsSaving(true);
-    setSavingError(null);
     
     try {
       // Convert data back to the format expected by the API
@@ -394,10 +505,11 @@ export default function EditableDataTable({
       // Update original data to match current data
       setOriginalData(JSON.parse(JSON.stringify(tableData)));
       setHasChanges(false);
+      showSuccess('Değişiklikler başarıyla kaydedildi!');
       
     } catch (err) {
       console.error('Error saving table data:', err);
-      setSavingError((err as Error).message);
+      showError((err as Error).message);
     } finally {
       setIsSaving(false);
     }
@@ -466,10 +578,14 @@ export default function EditableDataTable({
     }
   };
 
-  if (error) {
+  if (filteredData.length === 0) {
     return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-        <p className="text-red-800 font-medium">{error}</p>
+      <div className="bg-white shadow-md rounded-lg p-8">
+        <div className="text-center py-20 text-gray-600 font-medium">
+          {searchTerm 
+            ? 'Arama kriterlerine uygun sonuç bulunamadı.' 
+            : 'Gösterilecek veri bulunmuyor.'}
+        </div>
       </div>
     );
   }
@@ -574,183 +690,168 @@ export default function EditableDataTable({
             </button>
           </div>
         </div>
-        
-        <div className="mt-4 flex items-center space-x-4">
-          {error && (
-            <div className={`px-4 py-2 text-sm ${
-              error.includes('hata') || error.includes('Error') 
-                ? 'bg-red-100 text-red-800 border-l-4 border-red-500' 
-                : 'bg-blue-100 text-blue-800 border-l-4 border-blue-500'
-            }`}>
-              {error}
-            </div>
-          )}
-        </div>
       </div>
       
-      {savingError && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
-          <p className="text-red-800 font-medium">{savingError}</p>
-        </div>
-      )}
-      
-      <div className={`overflow-x-auto ${isFullscreen ? 'h-[calc(100vh-140px)]' : 'max-h-[80vh]'}`} ref={tableContainerRef}>
+      <div className={`overflow-auto ${isFullscreen ? 'h-[calc(100vh-140px)]' : 'max-h-[80vh]'}`} ref={tableContainerRef}>
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
           </div>
-        ) : !Array.isArray(filteredData) || filteredData.length === 0 ? (
-          <div className="text-center py-20 text-gray-600 font-medium">
-            {searchTerm 
-              ? 'Arama kriterlerine uygun sonuç bulunamadı.' 
-              : 'Gösterilecek veri bulunmuyor.'}
-          </div>
         ) : (
-          <table className="w-full divide-y divide-gray-200 border-collapse border-2 border-gray-400">
-            <thead className="bg-gray-100 sticky top-0 z-10">
-              <tr>
-                {columns.map((column) => {
-                  // OPTIMIZED: More efficient column width calculation
-                  let colWidth = "auto";
-                  
-                  if (column.id === 'id') {
-                    colWidth = "50px"; // Narrower ID column
-                  } 
-                  else if (['Data Source', 'Variable', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
-                    colWidth = "120px"; // Reduced from 150px
-                  } 
-                  else {
-                    colWidth = "100px"; // Reduced from 120px for date columns
-                  }
-                  
-                  return (
-                    <th
-                      key={column.id}
-                      scope="col"
-                      style={{ width: colWidth, minWidth: colWidth }}
-                      className="px-2 py-2 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-200 border-2 border-gray-400 sticky truncate"
-                      onClick={() => handleSort(column.id)}
-                      title={column.name}
-                    >
-                      <div className="flex items-center">
-                        <span className="truncate">{column.name}</span>
-                        {sortColumn === column.id && (
-                          <span className="ml-1 flex-shrink-0 text-xs">
-                            {sortDirection === 'asc' ? '↑' : '↓'}
-                          </span>
-                        )}
-                      </div>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {/* OPTIMIZED: Limit visible rows for better performance */}
-              {filteredData.slice(0, 500).map((row) => (
-                <tr key={row.id} className="hover:bg-gray-50 transition-colors border-b-2 border-gray-300">
+          <div className="relative">
+            <table className="w-full border-collapse border border-gray-300">
+              <thead className="bg-gray-100 sticky top-0 z-20">
+                <tr>
                   {columns.map((column) => {
-                    const cellValue = row[column.id];
-                    const isSelected = selectedCell?.row === row.id && selectedCell?.col === column.id;
-                    const isEditing = editingCell?.rowId === row.id && editingCell?.colId === column.id;
-                    const isEditable = column.editable !== false;
+                    // OPTIMIZED: More efficient column width calculation
+                    let colWidth = "auto";
                     
-                    // OPTIMIZED: Use TableCell component with better performance
-                    if (isEditing) {
-                      return (
-                        <td
-                          key={`${row.id}-${column.id}`}
-                          className="px-2 py-1 text-xs border border-gray-200"
-                          style={{ maxWidth: column.id === 'id' ? '50px' : column.id.includes('Data Source') || column.id.includes('Variable') ? '120px' : '100px' }}
-                        >
-                          <div className="flex items-center">
-                            <input
-                              ref={editInputRef}
-                              type="text"
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              onKeyDown={(e) => handleKeyDown(e, row.id, column.id)}
-                              className="w-full px-1 py-0.5 border border-blue-500 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                            />
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEditSave(row.id, column.id);
-                              }}
-                              className="ml-1 p-0.5 text-green-600 hover:bg-green-50 rounded"
-                            >
-                              <FcCheckmark className="h-3 w-3" />
-                            </button>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleEditCancel();
-                              }}
-                              className="ml-1 p-0.5 text-red-600 hover:bg-red-50 rounded"
-                            >
-                              <FcCancel className="h-3 w-3" />
-                            </button>
-                          </div>
-                        </td>
-                      );
+                    if (column.id === 'id') {
+                      colWidth = "50px"; // Narrower ID column
+                    } 
+                    else if (['Data Source', 'Variable', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
+                      colWidth = "120px"; // Reduced from 150px
+                    } 
+                    else {
+                      colWidth = "100px"; // Reduced from 120px for date columns
                     }
                     
-                    // OPTIMIZED: Use TableCell component for all non-editing cells
                     return (
-                      <TableCell
-                        key={`${row.id}-${column.id}`}
-                        rowId={row.id}
-                        colId={column.id}
-                        value={cellValue}
-                        highlights={highlightedCells}
-                        isSelected={isSelected}
-                        onClick={(rowId, colId, value) => {
-                          handleCellClick(rowId, colId, value);
-                          if (isEditable) {
-                            const currentTime = Date.now();
-                            const lastClickTime = (window as Window & { lastClickTime?: number }).lastClickTime || 0;
-                            if (currentTime - lastClickTime < 300) {
-                              handleCellDoubleClick(rowId, colId, value, isEditable);
-                            }
-                            (window as Window & { lastClickTime?: number }).lastClickTime = currentTime;
-                          }
+                      <th
+                        key={column.id}
+                        scope="col"
+                        style={{ 
+                          width: colWidth, 
+                          minWidth: colWidth,
+                          maxWidth: colWidth
                         }}
-                      />
+                        className="px-2 py-2 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-200 border border-gray-300 bg-gray-100"
+                        onClick={() => handleSort(column.id)}
+                        title={column.name}
+                      >
+                        <div className="flex items-center">
+                          <span className="truncate">{column.name}</span>
+                          {sortColumn === column.id && (
+                            <span className="ml-1 flex-shrink-0 text-xs">
+                              {sortDirection === 'asc' ? '↑' : '↓'}
+                            </span>
+                          )}
+                        </div>
+                      </th>
                     );
                   })}
                 </tr>
-              ))}
-              
-              {/* OPTIMIZED: Show message if data is truncated */}
-              {filteredData.length > 500 && (
-                <tr>
-                  <td 
-                    colSpan={columns.length} 
-                    className="px-4 py-6 text-center text-gray-500 bg-yellow-50 border border-yellow-200"
-                  >
-                    <div className="flex flex-col items-center space-y-2">
-                      <span className="text-sm font-medium">
-                        Performans için ilk 500 satır gösteriliyor
-                      </span>
-                      <span className="text-xs">
-                        Toplam {filteredData.length} satırdan 500 tanesi görüntülendi. 
-                        Daha fazla sonuç için arama filtresini kullanın.
-                      </span>
-                      <button
-                        onClick={() => {
-                          // Option to load more data
-                          console.log('Load more data functionality can be implemented here');
-                        }}
-                        className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors"
-                      >
-                        Daha Fazla Göster
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {/* OPTIMIZED: Limit visible rows for better performance */}
+                {filteredData.slice(0, 500).map((row) => (
+                  <tr key={row.id} className="hover:bg-gray-50 transition-colors">
+                    {columns.map((column) => {
+                      const cellValue = row[column.id];
+                      const isSelected = selectedCell?.row === row.id && selectedCell?.col === column.id;
+                      const isEditing = editingCell?.rowId === row.id && editingCell?.colId === column.id;
+                      const isEditable = column.editable !== false;
+                      
+                      // OPTIMIZED: Use TableCell component with better performance
+                      if (isEditing) {
+                        return (
+                          <td
+                            key={`${row.id}-${column.id}`}
+                            className="px-2 py-1 text-xs border border-gray-200"
+                            style={{ 
+                              width: column.id === 'id' ? '50px' : column.id.includes('Data Source') || column.id.includes('Variable') ? '120px' : '100px',
+                              maxWidth: column.id === 'id' ? '50px' : column.id.includes('Data Source') || column.id.includes('Variable') ? '120px' : '100px'
+                            }}
+                          >
+                            <div className="flex items-center">
+                              <input
+                                ref={editInputRef}
+                                type="text"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onKeyDown={(e) => handleKeyDown(e, row.id, column.id)}
+                                className="w-full px-1 py-0.5 border border-blue-500 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              />
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditSave(row.id, column.id);
+                                }}
+                                className="ml-1 p-0.5 text-green-600 hover:bg-green-50 rounded"
+                              >
+                                <FcCheckmark className="h-3 w-3" />
+                              </button>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditCancel();
+                                }}
+                                className="ml-1 p-0.5 text-red-600 hover:bg-red-50 rounded"
+                              >
+                                <FcCancel className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </td>
+                        );
+                      }
+                      
+                      // OPTIMIZED: Use TableCell component for all non-editing cells
+                      return (
+                        <TableCell
+                          key={`${row.id}-${column.id}`}
+                          rowId={row.id}
+                          colId={column.id}
+                          value={cellValue}
+                          highlights={highlightedCells}
+                          isSelected={isSelected}
+                          onClick={(rowId, colId, value) => {
+                            handleCellClick(rowId, colId, value);
+                            if (isEditable) {
+                              const currentTime = Date.now();
+                              const lastClickTime = (window as Window & { lastClickTime?: number }).lastClickTime || 0;
+                              if (currentTime - lastClickTime < 300) {
+                                handleCellDoubleClick(rowId, colId, value, isEditable);
+                              }
+                              (window as Window & { lastClickTime?: number }).lastClickTime = currentTime;
+                            }
+                          }}
+                        />
+                      );
+                    })}
+                  </tr>
+                ))}
+                
+                {/* OPTIMIZED: Show message if data is truncated */}
+                {filteredData.length > 500 && (
+                  <tr>
+                    <td 
+                      colSpan={columns.length} 
+                      className="px-4 py-6 text-center text-gray-500 bg-yellow-50 border border-yellow-200"
+                    >
+                      <div className="flex flex-col items-center space-y-2">
+                        <span className="text-sm font-medium">
+                          Performans için ilk 500 satır gösteriliyor
+                        </span>
+                        <span className="text-xs">
+                          Toplam {filteredData.length} satırdan 500 tanesi görüntülendi. 
+                          Daha fazla sonuç için arama filtresini kullanın.
+                        </span>
+                        <button
+                          onClick={() => {
+                            // Option to load more data
+                            console.log('Load more data functionality can be implemented here');
+                          }}
+                          className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors"
+                        >
+                          Daha Fazla Göster
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
       

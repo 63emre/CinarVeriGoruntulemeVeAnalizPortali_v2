@@ -326,11 +326,10 @@ export async function exportTableToPdf(
     theme: 'grid',
     showHead: 'everyPage',
     tableWidth: 'auto',
-    // @ts-expect-error - autoTable tip tanımları ile uyumluluk sorunu
+    // @ts-expect-error - jsPDF autoTable type compatibility
     didParseCell: cellHooks.didParseCell,
-    // @ts-expect-error - autoTable tip tanımları ile uyumluluk sorunu  
+    // @ts-expect-error - jsPDF autoTable type compatibility
     willDrawCell: cellHooks.willDrawCell,
-    // @ts-expect-error - autoTable tip tanımları ile uyumluluk sorunu
     didDrawPage: function() {
       // Add page numbers
       const pageCount = doc.internal.pages.length - 1;

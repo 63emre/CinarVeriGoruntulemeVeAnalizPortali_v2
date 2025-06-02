@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { FcPrint, FcFullTrash, FcCheckmark, FcCancel, FcRules, FcDocument } from 'react-icons/fc';
 import { AiOutlineSearch, AiOutlineSave } from 'react-icons/ai';
 import { FiDownload } from 'react-icons/fi';
@@ -36,48 +36,56 @@ interface HighlightedCell {
 }
 
 interface EditableDataTableProps {
-  data?: DataRow[];
-  columns?: Column[];
-  title?: string;
+  columns: Column[];
+  data: DataRow[];
   loading?: boolean;
-  downloadUrl?: string;
-  printable?: boolean;
-  tableId?: string;
+  title?: string;
   workspaceId?: string;
+  tableId?: string;
   highlightedCells?: HighlightedCell[];
   onCellSelect?: (rowId: string, colId: string, value: string | number | null) => void;
   onDataChange?: (updatedData: DataRow[]) => void;
+  onFormulasRecalculated?: (highlightedCells: HighlightedCell[]) => void;
+  autoRecalculateFormulas?: boolean;
+  printable?: boolean;
+  downloadUrl?: string;
+  showDataTypes?: boolean;
+  cellBorderWidth?: number;
 }
 
-export default function EditableDataTable({ 
-  data: initialData, 
-  columns: initialColumns, 
-  title: initialTitle, 
-  loading: initialLoading = false,
-  downloadUrl,
-  printable = false,
-  tableId,
+export default function EditableDataTable({
+  columns,
+  data,
+  loading = false,
+  title = 'Veri Tablosu',
   workspaceId,
+  tableId,
   highlightedCells = [],
   onCellSelect,
-  onDataChange
+  onDataChange,
+  onFormulasRecalculated,
+  autoRecalculateFormulas = true,
+  printable = false,
+  downloadUrl,
+  showDataTypes = true,
+  cellBorderWidth = 2
 }: EditableDataTableProps) {
-  const [data, setData] = useState<DataRow[]>(initialData || []);
-  const [originalData, setOriginalData] = useState<DataRow[]>(initialData || []);
-  const [columns, setColumns] = useState<Column[]>(initialColumns || []);
-  const [title, setTitle] = useState(initialTitle || 'Tablo');
-  const [loading, setLoading] = useState(initialLoading || false);
+  const [tableData, setTableData] = useState<DataRow[]>(data);
+  const [originalData, setOriginalData] = useState<DataRow[]>(data);
+  const [editingCell, setEditingCell] = useState<{rowId: string, colId: string} | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortColumn, setSortColumn] = useState('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedCell, setSelectedCell] = useState<{row: string, col: string} | null>(null);
-  const [editingCell, setEditingCell] = useState<{row: string, col: string} | null>(null);
-  const [editValue, setEditValue] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savingError, setSavingError] = useState<string | null>(null);
+  const [formulas, setFormulas] = useState<any[]>([]);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+
   const editInputRef = useRef<HTMLInputElement>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
@@ -91,10 +99,9 @@ export default function EditableDataTable({
 
   // Fetch table data if tableId and workspaceId are provided
   useEffect(() => {
-    if (tableId && workspaceId && !initialData) {
+    if (tableId && workspaceId && !data.length) {
       const fetchTableData = async () => {
-        setLoading(true);
-        setError(null);
+        console.log('Fetching table data for:', tableId);
         try {
           const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}`);
           if (!response.ok) {
@@ -134,44 +141,120 @@ export default function EditableDataTable({
               highlightedRowIds: highlightedCells.map(cell => cell.row).slice(0, 10)
             });
             
-            setColumns(columnDefs);
-            setData(rowsWithIds);
+            // Update local state with fetched data
+            setTableData(rowsWithIds);
             setOriginalData(JSON.parse(JSON.stringify(rowsWithIds)));
-            setTitle(tableData.name || 'Tablo');
           } else {
             throw new Error('Tablo yapısı geçersiz');
           }
         } catch (err) {
           console.error('Error fetching table data:', err);
           setError((err as Error).message);
-        } finally {
-          setLoading(false);
         }
       };
       
       fetchTableData();
     } else if (!tableId && workspaceId) {
       setError('Lütfen bir tablo seçin');
-      setLoading(false);
     }
-  }, [tableId, workspaceId, initialData]);
+  }, [tableId, workspaceId, data.length, highlightedCells]);
   
-  // Update data when initialData changes
+  // Update data when data prop changes
   useEffect(() => {
-    if (initialData) {
-      setData(initialData);
-      setOriginalData(JSON.parse(JSON.stringify(initialData)));
+    if (data && data.length > 0) {
+      setTableData(data);
+      setOriginalData(JSON.parse(JSON.stringify(data)));
       setHasChanges(false);
     }
-  }, [initialData]);
+  }, [data]);
 
-  // Update columns when initialColumns changes
+  // NEW: Fetch formulas for auto-recalculation
   useEffect(() => {
-    if (initialColumns) {
-      setColumns(initialColumns);
+    const fetchFormulas = async () => {
+      if (!workspaceId || !autoRecalculateFormulas) return;
+      
+      try {
+        const response = await fetch(`/api/workspaces/${workspaceId}/formulas`);
+        if (response.ok) {
+          const formulasData = await response.json();
+          const activeFormulas = formulasData.filter((f: any) => f.active === true);
+          setFormulas(activeFormulas);
+          console.log(`📊 EditableDataTable: Loaded ${activeFormulas.length} active formulas for auto-recalculation`);
+        }
+      } catch (error) {
+        console.error('Error fetching formulas for auto-recalculation:', error);
+      }
+    };
+
+    fetchFormulas();
+  }, [workspaceId, autoRecalculateFormulas]);
+
+  // NEW: Auto-recalculate formulas when data changes
+  const recalculateFormulas = useCallback(async (updatedData: DataRow[]) => {
+    if (!autoRecalculateFormulas || formulas.length === 0 || !workspaceId) {
+      return;
     }
-  }, [initialColumns]);
-  
+
+    setIsRecalculating(true);
+    try {
+      console.log('🔄 Auto-recalculating formulas after data change...');
+      
+      // Import the formula evaluator
+      const { evaluateFormulasWithDataRows } = await import('@/lib/enhancedFormulaEvaluator');
+      
+      // Recalculate highlights
+      const newHighlights = evaluateFormulasWithDataRows(
+        formulas,
+        updatedData,
+        columns.map(col => col.id)
+      );
+      
+      console.log(`✨ Auto-recalculation complete: ${newHighlights.length} highlighted cells`);
+      
+      // Notify parent component about new highlights
+      if (onFormulasRecalculated) {
+        onFormulasRecalculated(newHighlights);
+      }
+      
+      // Show brief feedback to user
+      if (newHighlights.length !== highlightedCells.length) {
+        setError(`🔄 Formüller otomatik güncellendi: ${newHighlights.length} hücre vurgulandı`);
+        setTimeout(() => setError(null), 3000);
+      }
+      
+    } catch (error) {
+      console.error('Error in auto-recalculation:', error);
+      setError('Formül otomatik hesaplamasında hata oluştu');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setIsRecalculating(false);
+    }
+  }, [formulas, highlightedCells.length, columns, workspaceId, autoRecalculateFormulas, onFormulasRecalculated]);
+
+  // Handle cell value changes with auto-recalculation
+  const handleCellChange = useCallback(async (rowId: string, colId: string, newValue: string | number | null) => {
+    const updatedData = tableData.map(row => 
+      row.id === rowId 
+        ? { ...row, [colId]: newValue }
+        : row
+    );
+    
+    setTableData(updatedData);
+    setEditingCell(null);
+    
+    // Notify parent component
+    if (onDataChange) {
+      onDataChange(updatedData);
+    }
+    
+    // AUTO-RECALCULATE formulas
+    if (autoRecalculateFormulas) {
+      await recalculateFormulas(updatedData);
+    }
+    
+    console.log(`📝 Cell updated: ${rowId}.${colId} = ${newValue}${autoRecalculateFormulas ? ' (formulas auto-recalculated)' : ''}`);
+  }, [tableData, onDataChange, autoRecalculateFormulas, recalculateFormulas]);
+
   const handleSort = (columnId: string) => {
     if (sortColumn === columnId) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -181,8 +264,8 @@ export default function EditableDataTable({
     }
   };
   
-  const sortedData = Array.isArray(data) 
-    ? [...data].sort((a, b) => {
+  const sortedData = Array.isArray(tableData) 
+    ? [...tableData].sort((a, b) => {
         if (!sortColumn) return 0;
         
         const aValue = a[sortColumn];
@@ -224,7 +307,7 @@ export default function EditableDataTable({
   const handleCellDoubleClick = (rowId: string, colId: string, value: string | number | null, isEditable: boolean) => {
     if (!isEditable) return;
     
-    setEditingCell({ row: rowId, col: colId });
+    setEditingCell({ rowId, colId });
     setEditValue(value !== null ? String(value) : '');
   };
   
@@ -235,7 +318,7 @@ export default function EditableDataTable({
   
   const handleEditSave = (rowId: string, colId: string) => {
     // Find the row in the data array
-    const updatedData = data.map(row => {
+    const updatedData = tableData.map(row => {
       if (row.id === rowId) {
         // Parse number if the original value was a number
         const originalValue = row[colId];
@@ -250,7 +333,7 @@ export default function EditableDataTable({
       return row;
     });
     
-    setData(updatedData);
+    setTableData(updatedData);
     setEditingCell(null);
     setEditValue('');
     setHasChanges(true);
@@ -291,7 +374,7 @@ export default function EditableDataTable({
       const apiData = {
         name: title,
         columns: columns.filter(col => col.id !== 'id').map(col => col.id),
-        data: data.map(row => {
+        data: tableData.map(row => {
           return columns.filter(col => col.id !== 'id').map(col => row[col.id]);
         })
       };
@@ -309,7 +392,7 @@ export default function EditableDataTable({
       }
       
       // Update original data to match current data
-      setOriginalData(JSON.parse(JSON.stringify(data)));
+      setOriginalData(JSON.parse(JSON.stringify(tableData)));
       setHasChanges(false);
       
     } catch (err) {
@@ -322,7 +405,7 @@ export default function EditableDataTable({
   
   // Discard all changes and revert to original data
   const discardChanges = () => {
-    setData(JSON.parse(JSON.stringify(originalData)));
+    setTableData(JSON.parse(JSON.stringify(originalData)));
     setHasChanges(false);
   };
 
@@ -392,87 +475,116 @@ export default function EditableDataTable({
   }
   
   return (
-    <div className={`bg-white rounded-lg shadow overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
-      <div className="p-4 flex justify-between items-center border-b bg-gray-50">
-        <h2 className="text-xl font-bold text-black">{title}</h2>
-        
-        <div className="flex items-center space-x-2">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Ara..."
-              className="pl-9 pr-4 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <AiOutlineSearch className="absolute left-3 top-1/2 transform -translate-y-1/2" />
+    <div className={`bg-white shadow-md rounded-lg overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50 m-4' : ''}`}>
+      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold">{title}</h2>
+            <p className="text-blue-100 text-sm">
+              {filteredData.length} satır, {columns.length} sütun
+              {autoRecalculateFormulas && formulas.length > 0 && (
+                <span className="ml-2 px-2 py-0.5 bg-green-500 rounded-full text-xs">
+                  🔄 Otomatik formül hesaplama aktif ({formulas.length} formül)
+                </span>
+              )}
+              {isRecalculating && (
+                <span className="ml-2 px-2 py-0.5 bg-yellow-500 rounded-full text-xs animate-pulse">
+                  ⚡ Hesaplanıyor...
+                </span>
+              )}
+            </p>
           </div>
           
-          {hasChanges && (
-            <div className="flex space-x-2">
-              <button
-                onClick={saveChanges}
-                disabled={isSaving}
-                className={`px-4 py-2 rounded-md flex items-center ${
-                  isSaving ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 text-white'
-                }`}
-              >
-                <AiOutlineSave className="mr-1" />
-                {isSaving ? 'Kaydediliyor...' : 'Kaydet'}
-              </button>
-              
-              <button
-                onClick={discardChanges}
-                disabled={isSaving}
-                className="px-4 py-2 bg-red-100 text-red-800 hover:bg-red-200 rounded-md flex items-center"
-              >
-                <FcCancel className="mr-1" />
-                İptal
-              </button>
+          <div className="flex items-center space-x-2">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Ara..."
+                className="pl-9 pr-4 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <AiOutlineSearch className="absolute left-3 top-1/2 transform -translate-y-1/2" />
             </div>
-          )}
-          
-          <button
-            onClick={toggleFullscreen}
-            className="bg-purple-100 text-purple-800 hover:bg-purple-200 px-4 py-2 rounded-md flex items-center transition"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isFullscreen ? "M9 9V4H4v5M20 4v5h-5V4M4 15h5v5H4v-5M15 15h5v5h-5v-5" : "M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"} />
-            </svg>
-            {isFullscreen ? 'Küçült' : 'Tam Ekran'}
-          </button>
-          
-          {downloadUrl && (
-            <a
-              href={downloadUrl}
-              download
-              className="bg-green-100 text-green-800 hover:bg-green-200 px-4 py-2 rounded-md flex items-center transition"
+            
+            {hasChanges && (
+              <div className="flex space-x-2">
+                <button
+                  onClick={saveChanges}
+                  disabled={isSaving}
+                  className={`px-4 py-2 rounded-md flex items-center ${
+                    isSaving ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 text-white'
+                  }`}
+                >
+                  <AiOutlineSave className="mr-1" />
+                  {isSaving ? 'Kaydediliyor...' : 'Kaydet'}
+                </button>
+                
+                <button
+                  onClick={discardChanges}
+                  disabled={isSaving}
+                  className="px-4 py-2 bg-red-100 text-red-800 hover:bg-red-200 rounded-md flex items-center"
+                >
+                  <FcCancel className="mr-1" />
+                  İptal
+                </button>
+              </div>
+            )}
+            
+            <button
+              onClick={toggleFullscreen}
+              className="bg-purple-100 text-purple-800 hover:bg-purple-200 px-4 py-2 rounded-md flex items-center transition"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isFullscreen ? "M9 9V4H4v5M20 4v5h-5V4M4 15h5v5H4v-5M15 15h5v5h-5v-5" : "M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"} />
               </svg>
-              Excel
-            </a>
-          )}
-          
-          {printable && (
-            <button
-              onClick={handlePrint}
-              className="bg-blue-100 text-blue-800 hover:bg-blue-200 px-4 py-2 rounded-md flex items-center transition"
-            >
-              <FcPrint className="mr-1" />
-              Yazdır
+              {isFullscreen ? 'Küçült' : 'Tam Ekran'}
             </button>
+            
+            {downloadUrl && (
+              <a
+                href={downloadUrl}
+                download
+                className="bg-green-100 text-green-800 hover:bg-green-200 px-4 py-2 rounded-md flex items-center transition"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Excel
+              </a>
+            )}
+            
+            {printable && (
+              <button
+                onClick={handlePrint}
+                className="bg-blue-100 text-blue-800 hover:bg-blue-200 px-4 py-2 rounded-md flex items-center transition"
+              >
+                <FcPrint className="mr-1" />
+                Yazdır
+              </button>
+            )}
+            
+            <button
+              onClick={exportToPdf}
+              className="flex items-center px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition text-xs"
+              title="PDF olarak indir"
+            >
+              <FcDocument className="mr-1 h-3 w-3" />
+              PDF İndir
+            </button>
+          </div>
+        </div>
+        
+        <div className="mt-4 flex items-center space-x-4">
+          {error && (
+            <div className={`px-4 py-2 text-sm ${
+              error.includes('hata') || error.includes('Error') 
+                ? 'bg-red-100 text-red-800 border-l-4 border-red-500' 
+                : 'bg-blue-100 text-blue-800 border-l-4 border-blue-500'
+            }`}>
+              {error}
+            </div>
           )}
-          
-          <button
-            onClick={exportToPdf}
-            className="flex items-center px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition text-xs"
-            title="PDF olarak indir"
-          >
-            <FcDocument className="mr-1 h-3 w-3" />
-            PDF İndir
-          </button>
         </div>
       </div>
       
@@ -540,7 +652,7 @@ export default function EditableDataTable({
                   {columns.map((column) => {
                     const cellValue = row[column.id];
                     const isSelected = selectedCell?.row === row.id && selectedCell?.col === column.id;
-                    const isEditing = editingCell?.row === row.id && editingCell?.col === column.id;
+                    const isEditing = editingCell?.rowId === row.id && editingCell?.colId === column.id;
                     const isEditable = column.editable !== false;
                     
                     // OPTIMIZED: Use TableCell component with better performance

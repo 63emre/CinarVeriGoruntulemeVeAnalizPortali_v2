@@ -721,110 +721,52 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
   };
 
   // Excel Cell Formula Builder handlers
-  const handleExcelCellSave = async (segments: any[], baseVariable: string, baseValue: number, cellFormulaData: any) => {
+  const handleExcelCellSave = async (segments: any[], baseVariable: string, baseValue: number) => {
     try {
       setLoading(true);
       
-      // Create individual formulas for each segment to enable multi-coloring
-      const createdFormulas: Formula[] = [];
-      
-      for (const segment of segments) {
-        if (!segment.isValid) {
-          console.warn(`Skipping invalid segment: ${segment.name}`);
-          continue;
-        }
-
-        // Convert segment expression to a proper validation formula
-        // Example: if segment.expression is "x * 2 + 5", create a formula like "[Variable] > (x * 2 + 5)"
-        let validationFormula = '';
-        
-        // For Excel cell segments, we'll create a formula that validates if the result matches expectations
-        // This is a simplified approach - you can make it more sophisticated based on your needs
-        const expressionResult = segment.result;
-        
-        // Create different types of validation formulas based on the segment
-        if (segment.expression.includes('sqrt')) {
-          validationFormula = `[Variable] >= ${(expressionResult * 0.8).toFixed(2)} AND [Variable] <= ${(expressionResult * 1.2).toFixed(2)}`;
-        } else if (segment.expression.includes('sin') || segment.expression.includes('cos')) {
-          validationFormula = `[Variable] >= ${(expressionResult - 10).toFixed(2)} AND [Variable] <= ${(expressionResult + 10).toFixed(2)}`;
-        } else if (segment.expression.includes('*')) {
-          // For multiplication, create a range formula
-          validationFormula = `[Variable] >= ${(expressionResult * 0.9).toFixed(2)} AND [Variable] <= ${(expressionResult * 1.1).toFixed(2)}`;
-        } else {
-          // Default: create a threshold formula
-          validationFormula = `[Variable] >= ${expressionResult.toFixed(2)}`;
-        }
-
-        const segmentFormulaData = {
-          name: `${segment.name} (Excel Cell)`,
-          description: `Excel cell segment: ${segment.expression}. Result range for base value ${baseVariable}=${baseValue}. ${segment.description || ''}`,
-          formula: validationFormula,
+      // Create individual formulas for each segment
+      const promises = segments.map(async (segment) => {
+        const formulaData = {
+          name: segment.name,
+          description: segment.description || `Excel hücre formülü: ${segment.expression}`,
+          formula: `${baseVariable} = ${baseValue} THEN EVALUATE [${segment.expression}]`,
           type: 'CELL_VALIDATION' as const,
           color: segment.color,
           active: true,
           scope: 'table' as const,
-          tableId: selectedTable || null,
-          // Store metadata about the Excel cell segment
-          metadata: JSON.stringify({
-            isExcelCellSegment: true,
-            originalExpression: segment.expression,
-            baseVariable: baseVariable,
-            baseValue: baseValue,
-            segmentResult: segment.result,
-            segmentPercentage: segment.percentage,
-            cellFormulaId: `excel_cell_${Date.now()}`,
-            createdAt: new Date().toISOString()
-          })
+          tableId: selectedTable || null
         };
 
-        try {
-          const response = await fetch(`/api/workspaces/${selectedWorkspace}/formulas`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(segmentFormulaData),
-          });
+        const response = await fetch(`/api/workspaces/${selectedWorkspace}/formulas`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(formulaData),
+        });
 
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Error creating formula for segment: ${segment.name}`);
-          }
-
-          const newFormula = await response.json();
-          createdFormulas.push(newFormula);
-          
-          console.log(`✅ Created formula for segment: ${segment.name} with color: ${segment.color}`);
-          
-        } catch (segmentError) {
-          console.error(`❌ Error creating formula for segment ${segment.name}:`, segmentError);
-          // Continue with other segments even if one fails
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Formül oluşturulurken bir hata oluştu');
         }
-      }
 
-      if (createdFormulas.length === 0) {
-        throw new Error('No valid formulas could be created from the segments');
-      }
+        return await response.json();
+      });
 
-      // Update the formulas state with all new formulas
-      setFormulas(prev => [...prev, ...createdFormulas]);
-      
-      setSuccess(`✅ Excel cell formula created! ${createdFormulas.length} segments converted to individual formulas for multi-color highlighting.`);
+      const newFormulas = await Promise.all(promises);
+      setFormulas(prev => [...prev, ...newFormulas]);
+      setSuccess(`${segments.length} adet Excel hücre formülü başarıyla oluşturuldu`);
       setShowExcelCellBuilder(false);
       setExcelCellFormulas([]);
 
-      // Trigger data refresh to apply the new formulas immediately
+      // Trigger data refresh after formulas creation
       if (selectedTable) {
-        setTimeout(() => {
-          refreshHighlights();
-        }, 1000); // Wait a bit for the formulas to be processed
+        refreshHighlights();
       }
 
-      console.log(`🎨 Multi-color Excel Cell Formula created with ${createdFormulas.length} segments:`, 
-        createdFormulas.map((f: Formula) => ({ name: f.name, color: f.color })));
-
     } catch (err) {
-      console.error('❌ Error creating Excel cell formulas:', err);
+      console.error('Error creating Excel cell formulas:', err);
       setError((err as Error).message);
     } finally {
       setLoading(false);

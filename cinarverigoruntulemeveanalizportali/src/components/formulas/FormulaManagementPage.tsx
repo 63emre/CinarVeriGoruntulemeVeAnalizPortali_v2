@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { FcRules, FcPlus, FcSettings, FcApproval, FcHighPriority, FcSearch } from 'react-icons/fc';
+import { FcRules, FcPlus, FcSettings, FcApproval, FcHighPriority, FcSearch, FcCalculator } from 'react-icons/fc';
 import { FiEdit, FiEye, FiTrash2, FiSave, FiX, FiFilter } from 'react-icons/fi';
+import ExcelCellFormulaBuilder from './ExcelCellFormulaBuilder';
 
 interface Formula {
   id: string;
@@ -361,6 +362,7 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  const [showExcelCellBuilder, setShowExcelCellBuilder] = useState(false);
   const [editingFormula, setEditingFormula] = useState<Formula | null>(null);
 
   // Form states
@@ -375,6 +377,9 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
   // YENI: Formül scope'u için state'ler
   const [formulaScope, setFormulaScope] = useState<'workspace' | 'table'>('table');
   const [formulaScopeTableId, setFormulaScopeTableId] = useState<string>('');
+
+  // Excel Cell Formula Builder states
+  const [excelCellFormulas, setExcelCellFormulas] = useState<any[]>([]);
 
   // Fetch data on component mount
   useEffect(() => {
@@ -715,6 +720,122 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
     setFormulaScopeTableId('');
   };
 
+  // Excel Cell Formula Builder handlers
+  const handleExcelCellSave = async (segments: any[], baseVariable: string, baseValue: number, cellFormulaData: any) => {
+    try {
+      setLoading(true);
+      
+      // Create individual formulas for each segment to enable multi-coloring
+      const createdFormulas: Formula[] = [];
+      
+      for (const segment of segments) {
+        if (!segment.isValid) {
+          console.warn(`Skipping invalid segment: ${segment.name}`);
+          continue;
+        }
+
+        // Convert segment expression to a proper validation formula
+        // Example: if segment.expression is "x * 2 + 5", create a formula like "[Variable] > (x * 2 + 5)"
+        let validationFormula = '';
+        
+        // For Excel cell segments, we'll create a formula that validates if the result matches expectations
+        // This is a simplified approach - you can make it more sophisticated based on your needs
+        const expressionResult = segment.result;
+        
+        // Create different types of validation formulas based on the segment
+        if (segment.expression.includes('sqrt')) {
+          validationFormula = `[Variable] >= ${(expressionResult * 0.8).toFixed(2)} AND [Variable] <= ${(expressionResult * 1.2).toFixed(2)}`;
+        } else if (segment.expression.includes('sin') || segment.expression.includes('cos')) {
+          validationFormula = `[Variable] >= ${(expressionResult - 10).toFixed(2)} AND [Variable] <= ${(expressionResult + 10).toFixed(2)}`;
+        } else if (segment.expression.includes('*')) {
+          // For multiplication, create a range formula
+          validationFormula = `[Variable] >= ${(expressionResult * 0.9).toFixed(2)} AND [Variable] <= ${(expressionResult * 1.1).toFixed(2)}`;
+        } else {
+          // Default: create a threshold formula
+          validationFormula = `[Variable] >= ${expressionResult.toFixed(2)}`;
+        }
+
+        const segmentFormulaData = {
+          name: `${segment.name} (Excel Cell)`,
+          description: `Excel cell segment: ${segment.expression}. Result range for base value ${baseVariable}=${baseValue}. ${segment.description || ''}`,
+          formula: validationFormula,
+          type: 'CELL_VALIDATION' as const,
+          color: segment.color,
+          active: true,
+          scope: 'table' as const,
+          tableId: selectedTable || null,
+          // Store metadata about the Excel cell segment
+          metadata: JSON.stringify({
+            isExcelCellSegment: true,
+            originalExpression: segment.expression,
+            baseVariable: baseVariable,
+            baseValue: baseValue,
+            segmentResult: segment.result,
+            segmentPercentage: segment.percentage,
+            cellFormulaId: `excel_cell_${Date.now()}`,
+            createdAt: new Date().toISOString()
+          })
+        };
+
+        try {
+          const response = await fetch(`/api/workspaces/${selectedWorkspace}/formulas`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(segmentFormulaData),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Error creating formula for segment: ${segment.name}`);
+          }
+
+          const newFormula = await response.json();
+          createdFormulas.push(newFormula);
+          
+          console.log(`✅ Created formula for segment: ${segment.name} with color: ${segment.color}`);
+          
+        } catch (segmentError) {
+          console.error(`❌ Error creating formula for segment ${segment.name}:`, segmentError);
+          // Continue with other segments even if one fails
+        }
+      }
+
+      if (createdFormulas.length === 0) {
+        throw new Error('No valid formulas could be created from the segments');
+      }
+
+      // Update the formulas state with all new formulas
+      setFormulas(prev => [...prev, ...createdFormulas]);
+      
+      setSuccess(`✅ Excel cell formula created! ${createdFormulas.length} segments converted to individual formulas for multi-color highlighting.`);
+      setShowExcelCellBuilder(false);
+      setExcelCellFormulas([]);
+
+      // Trigger data refresh to apply the new formulas immediately
+      if (selectedTable) {
+        setTimeout(() => {
+          refreshHighlights();
+        }, 1000); // Wait a bit for the formulas to be processed
+      }
+
+      console.log(`🎨 Multi-color Excel Cell Formula created with ${createdFormulas.length} segments:`, 
+        createdFormulas.map((f: Formula) => ({ name: f.name, color: f.color })));
+
+    } catch (err) {
+      console.error('❌ Error creating Excel cell formulas:', err);
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleExcelCellCancel = () => {
+    setShowExcelCellBuilder(false);
+    setExcelCellFormulas([]);
+  };
+
   const openEditModal = (formula: Formula) => {
     setEditingFormula(formula);
     setFormulaName(formula.name);
@@ -805,6 +926,16 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
           >
             <FcPlus className="mr-2" />
             Yeni Formül Oluştur
+          </button>
+          
+          <button
+            onClick={() => setShowExcelCellBuilder(true)}
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md flex items-center"
+            disabled={!selectedTable}
+            title={!selectedTable ? "Excel hücre formülü için tablo seçin" : "Excel hücre formül oluşturucu"}
+          >
+            <FcCalculator className="mr-2" />
+            Excel Hücre Formülü
           </button>
         </div>
       </div>
@@ -1324,7 +1455,7 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
                     <ul className="text-sm text-blue-700 space-y-1">
                       {formulaScope === 'table' ? (
                         <>
-                          <li>• Bu formül sadece seçili tabloya uygulanacak</li>
+                          <li>• Bu formül sadece seçili tabloda çalışacak</li>
                           <li>• Tek yönlü formüller (sol tarafta bir değişken) önerilir</li>
                           <li>• Tablo verileri değiştiğinde otomatik olarak güncellenir</li>
                           {formulaScopeTableId && (
@@ -1689,6 +1820,19 @@ export default function FormulaManagementPage({ workspaceId }: FormulaManagement
                 Kapat
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Excel Cell Formula Builder Modal */}
+      {showExcelCellBuilder && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-7xl w-full max-h-screen overflow-y-auto">
+            <ExcelCellFormulaBuilder
+              onSave={handleExcelCellSave}
+              onCancel={handleExcelCellCancel}
+              isVisible={true}
+            />
           </div>
         </div>
       )}

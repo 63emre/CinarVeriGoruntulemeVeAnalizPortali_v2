@@ -78,7 +78,30 @@ module.exports = {
         '3xl': ['1.875rem', { lineHeight: '1.4' }],
         '4xl': ['2.25rem', { lineHeight: '1.3' }],
       },
+      textShadow: {
+        sm: '0 1px 2px rgba(0, 0, 0, 0.5)',
+        DEFAULT: '0 2px 4px rgba(0, 0, 0, 0.5)',
+        lg: '0 8px 16px rgba(0, 0, 0, 0.5)',
+      },
     },
   },
-  plugins: [],
+  plugins: [
+    function({ addUtilities }) {
+      const newUtilities = {
+        '.text-shadow-sm': {
+          textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+        },
+        '.text-shadow': {
+          textShadow: '0 2px 4px rgba(0, 0, 0, 0.5)',
+        },
+        '.text-shadow-lg': {
+          textShadow: '0 8px 16px rgba(0, 0, 0, 0.5)',
+        },
+        '.text-shadow-none': {
+          textShadow: 'none',
+        },
+      }
+      addUtilities(newUtilities)
+    }
+  ],
 } 

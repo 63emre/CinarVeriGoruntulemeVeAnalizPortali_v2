@@ -7,6 +7,7 @@ import { FcAreaChart, FcRules } from 'react-icons/fc';
 import EditableDataTable from '@/components/tables/EditableDataTable';
 import FormulaSelector from '@/components/formulas/FormulaSelector';
 import FormulaBuilder from '@/components/formulas/FormulaBuilder';
+import { showError, showSuccess, showInfo } from '@/components/ui/Notification';
 
 interface TableData {
   id: string;
@@ -238,12 +239,12 @@ export default function TablePage() {
   // Apply formulas to the table data with enhanced error handling
   const applyFormulas = async () => {
     if (!activeFormulas.length) {
-      setError('Lütfen en az bir formül seçin');
+      showError('Lütfen en az bir formül seçin');
       return;
     }
 
     if (!table) {
-      setError('Tablo verisi bulunamadı');
+      showError('Tablo verisi bulunamadı');
       return;
     }
 
@@ -251,6 +252,9 @@ export default function TablePage() {
       setLoading(true);
       setError(null); // Clear any previous errors
       setHighlightedCells([]); // Clear previous highlights
+
+      // Import notification helpers
+      const { showFormulaApplied } = await import('@/components/ui/Notification');
 
       // FIXED: Use the SAME logic as MultiChartAnalysis (Analysis page)
       const { evaluateFormulasForTable } = await import('@/lib/enhancedFormulaEvaluator');
@@ -261,7 +265,7 @@ export default function TablePage() {
       );
       
       if (activeFormulaObjects.length === 0) {
-        setError('Seçili aktif formüller bulunamadı');
+        showError('Seçili aktif formüller bulunamadı');
         return;
       }
 
@@ -294,31 +298,15 @@ export default function TablePage() {
       // Set the highlights - this should now work correctly
       setHighlightedCells(highlighted);
 
-      // Enhanced feedback with proper success/info messaging
+      // Enhanced feedback with proper success/info messaging using new notification system
       const formulaNames = activeFormulaObjects.map(f => f.name).join(', ');
 
       if (highlighted.length > 0) {
         console.log(`✅ SUCCESS: ${highlighted.length} cells highlighted for formulas: ${formulaNames}`);
-        
-        // Show success message with auto-clear
-        const successMessage = `✅ ${highlighted.length} hücre ${formulaNames} formül(ler)i ile vurgulandı. Tabloda renkli hücreler formül kriterlerini karşılayan değerleri gösteriyor.`;
-        setError(successMessage);
-        
-        // Clear success message after 5 seconds
-        setTimeout(() => {
-          setError(null);
-        }, 5000);
+        showFormulaApplied(formulaNames, highlighted.length);
       } else {
         console.log(`✅ APPLIED: Formulas applied but no cells match criteria: ${formulaNames}`);
-        
-        // Show info message for no matches
-        const infoMessage = `ℹ️ ${formulaNames} formül(ler)i uygulandı ancak hiçbir hücre belirtilen kriterleri karşılamadı. Bu normal bir durumdur.`;
-        setError(infoMessage);
-        
-        // Clear info message after 4 seconds
-        setTimeout(() => {
-          setError(null);
-        }, 4000);
+        showFormulaApplied(formulaNames, 0);
       }
 
     } catch (err) {
@@ -327,7 +315,7 @@ export default function TablePage() {
         error: errorMessage,
         stack: (err as Error).stack
       });
-      setError(`Formül uygulama hatası: ${errorMessage}`);
+      showError(`Formül uygulama hatası: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -342,6 +330,8 @@ export default function TablePage() {
       console.log('🚀 Starting PDF export...');
       console.log(`📊 Table: ${table?.name}`);
       console.log(`🎯 Highlighted cells: ${highlightedCells?.length || 0}`);
+      
+      showInfo('📄 PDF oluşturuluyor...');
       
       const preparedHighlightedCells = highlightedCells?.map(cell => ({
         row: cell.row,
@@ -395,17 +385,12 @@ export default function TablePage() {
       document.body.removeChild(a);
       
       console.log(`✅ PDF başarıyla indirildi: ${a.download}`);
-      setError(`PDF başarıyla oluşturuldu ve indirildi: ${a.download}`);
-      
-      // Clear success message after 5 seconds
-      setTimeout(() => {
-        setError(null);
-      }, 5000);
+      showSuccess(`✅ PDF başarıyla oluşturuldu: ${a.download}`);
       
     } catch (err) {
       const errorMessage = (err as Error).message;
       console.error('❌ Error exporting to PDF:', err);
-      setError(errorMessage);
+      showError(`❌ PDF oluşturma hatası: ${errorMessage}`);
     } finally {
       setLoading(false);
     }

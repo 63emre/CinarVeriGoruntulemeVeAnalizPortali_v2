@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 
 interface FormulaDetail {
   id: string;
@@ -154,12 +155,20 @@ export default function TableCell({
     setShowTooltip(false);
   };
 
-  // OPTIMIZED: Simplified tooltip content
+  // ENHANCED: Portal-based tooltip content for better z-index handling
   const getTooltipContent = () => {
-    if (cellHighlights.length === 0) return null;
+    if (cellHighlights.length === 0 || !showTooltip) return null;
     
-    return (
-      <div className="absolute z-50 bg-gray-900 text-white p-3 rounded-lg shadow-xl border border-gray-600 max-w-xs">
+    const tooltipElement = (
+      <div 
+        className="fixed bg-gray-900 text-white p-3 rounded-lg shadow-xl border border-gray-600 max-w-sm z-[9999]"
+        style={{
+          left: `${tooltipPosition.x}px`,
+          top: `${tooltipPosition.y}px`,
+          transform: 'translate(-50%, -100%)',
+          pointerEvents: 'none'
+        }}
+      >
         <div className="flex items-center justify-between mb-2">
           <span className="font-bold text-blue-300 text-sm">
             Hücre: {rowId}, {colId}
@@ -184,10 +193,9 @@ export default function TableCell({
           {cellHighlights.flatMap((highlight, highlightIdx) => 
             highlight.formulaDetails?.map((formulaDetail, detailIdx) => (
               <div key={`formula-${highlightIdx}-${detailIdx}`} 
-                   className="border-l-3 pl-3 py-2 rounded-r-lg"
+                   className="border-l-2 pl-3 py-2 rounded-r-lg bg-gray-800"
                    style={{ 
-                     borderLeftColor: formulaDetail.color,
-                     backgroundColor: `${formulaDetail.color}15` // Light background
+                     borderLeftColor: formulaDetail.color
                    }}>
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center">
@@ -200,13 +208,13 @@ export default function TableCell({
                     </span>
                   </div>
                   <span className="text-xs px-2 py-0.5 bg-green-600 text-white rounded-full">
-                    ✓ Koşul Sağlandı
+                    ✓ Aktif
                   </span>
                 </div>
                 
                 {/* Formula expression */}
-                <div className="bg-gray-800 rounded p-2 mt-1">
-                  <code className="text-xs text-cyan-300 font-mono">
+                <div className="bg-gray-700 rounded p-2 mt-1">
+                  <code className="text-xs text-cyan-300 font-mono break-all">
                     {formulaDetail.formula}
                   </code>
                 </div>
@@ -214,14 +222,14 @@ export default function TableCell({
                 {/* ENHANCED: Show calculation results if available */}
                 {(formulaDetail.leftResult !== undefined || formulaDetail.rightResult !== undefined) && (
                   <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                    <div className="bg-gray-800 rounded p-1 text-center">
-                      <div className="text-blue-400 font-medium">Sol Taraf</div>
+                    <div className="bg-gray-700 rounded p-1 text-center">
+                      <div className="text-blue-400 font-medium">Sol</div>
                       <div className="text-green-300 font-mono">
                         {formulaDetail.leftResult?.toFixed(3) || 'N/A'}
                       </div>
                     </div>
-                    <div className="bg-gray-800 rounded p-1 text-center">
-                      <div className="text-blue-400 font-medium">Sağ Taraf</div>
+                    <div className="bg-gray-700 rounded p-1 text-center">
+                      <div className="text-blue-400 font-medium">Sağ</div>
                       <div className="text-green-300 font-mono">
                         {formulaDetail.rightResult?.toFixed(3) || 'N/A'}
                       </div>
@@ -233,7 +241,7 @@ export default function TableCell({
             // Fallback for highlights without formulaDetails
             [
               <div key={`basic-${highlightIdx}`} 
-                   className="border-l-3 pl-3 py-1 rounded-r"
+                   className="border-l-2 pl-3 py-1 rounded-r bg-gray-800"
                    style={{ borderLeftColor: highlight.color }}>
                 <div className="text-yellow-300 text-xs font-medium">
                   {highlight.message}
@@ -251,8 +259,23 @@ export default function TableCell({
             </div>
           </div>
         )}
+        
+        {/* Tooltip arrow */}
+        <div 
+          className="absolute top-full left-1/2 transform -translate-x-1/2"
+          style={{
+            width: 0,
+            height: 0,
+            borderLeft: '6px solid transparent',
+            borderRight: '6px solid transparent',
+            borderTop: '6px solid #1f2937'
+          }}
+        />
       </div>
     );
+    
+    // Use portal to render tooltip at document body level
+    return typeof document !== 'undefined' ? createPortal(tooltipElement, document.body) : null;
   };
   
   return (
@@ -287,9 +310,8 @@ export default function TableCell({
             ></div>
           </div>
         )}
-        
-        {showTooltip && getTooltipContent()}
       </td>
+      {getTooltipContent()}
     </>
   );
 } 

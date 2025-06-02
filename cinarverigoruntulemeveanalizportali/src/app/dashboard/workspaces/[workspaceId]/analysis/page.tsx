@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { FcBarChart, FcBullish, FcCalendar, FcAreaChart, FcRules } from 'react-icons/fc';
+import { FcBarChart, FcBullish, FcCalendar, FcAreaChart, FcRules, FcDataSheet, FcFolder } from 'react-icons/fc';
 import FormulaManagementPage from '@/components/formulas/FormulaManagementPage';
+import Link from 'next/link';
 
 // Register ChartJS components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
@@ -21,6 +22,12 @@ export default function AnalysisPage() {
   const searchParams = useSearchParams();
   const tableId = searchParams.get('tableId');
   
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [tables, setTables] = useState<any[]>([]);
+  const [showFormulaModal, setShowFormulaModal] = useState(false);
+  const [showScopeSelector, setShowScopeSelector] = useState(false);
+  const [selectedScope, setSelectedScope] = useState<'table' | 'workspace'>('table');
+  const [selectedTableForFormula, setSelectedTableForFormula] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [variables, setVariables] = useState<string[]>([]);
@@ -29,7 +36,45 @@ export default function AnalysisPage() {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
-  const [showFormulaModal, setShowFormulaModal] = useState(false);
+  
+  useEffect(() => {
+    const fetchTables = async () => {
+      try {
+        const response = await fetch(`/api/workspaces/${workspaceId}/tables`);
+        if (response.ok) {
+          const data = await response.json();
+          setTables(data);
+          console.log(`📊 Loaded ${data.length} tables for analysis page`);
+        }
+      } catch (error) {
+        console.error('Error fetching tables:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    if (workspaceId) {
+      fetchTables();
+    }
+  }, [workspaceId]);
+  
+  const handleAddFormula = () => {
+    setShowScopeSelector(true);
+  };
+  
+  const handleScopeSelection = (scope: 'table' | 'workspace', tableId?: string) => {
+    setSelectedScope(scope);
+    setSelectedTableForFormula(tableId || '');
+    setShowScopeSelector(false);
+    setShowFormulaModal(true);
+  };
+  
+  const handleCloseModals = () => {
+    setShowFormulaModal(false);
+    setShowScopeSelector(false);
+    setSelectedScope('table');
+    setSelectedTableForFormula('');
+  };
   
   // Fetch table data and extract variables
   useEffect(() => {
@@ -243,218 +288,176 @@ export default function AnalysisPage() {
   }
   
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-semibold text-black flex items-center">
-            <FcAreaChart className="mr-3 h-8 w-8" />
-            Veri Analizi
-          </h1>
-          
-          {/* Formula Management Button */}
+    <div className="container mx-auto p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-gray-800 flex items-center">
+          <FcAreaChart className="mr-3 w-8 h-8" />
+          Analiz Paneli
+        </h1>
+        <div className="flex space-x-2">
+          <button
+            onClick={handleAddFormula}
+            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          >
+            <FcRules className="mr-2 h-5 w-5" />
+            Formül Ekle
+          </button>
           <button
             onClick={() => setShowFormulaModal(true)}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md flex items-center transition-colors"
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            <FcRules className="mr-2" />
+            <FcRules className="mr-2 h-5 w-5" />
             Formül Yönetimi
           </button>
         </div>
-        
-        {error && (
-          <div className="bg-red-100 border-l-4 border-red-500 p-4 mb-4">
-            <div className="flex">
-              <div className="flex-shrink-0">
-                <svg className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
-                </svg>
-              </div>
-              <div className="ml-3">
-                <p className="text-sm font-medium text-red-800">{error}</p>
-              </div>
-            </div>
-          </div>
-        )}
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div>
-            <label className="block text-sm font-medium text-gray-800 mb-1">
-              Değişken Seçin
-            </label>
-            <select
-              value={selectedVariable}
-              onChange={(e) => setSelectedVariable(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              disabled={loading || variables.length === 0}
+      </div>
+
+      {/* Table Selection */}
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 className="text-lg font-semibold mb-4">Analiz Edilecek Tablo Seçin</h2>
+        {tables.length === 0 ? (
+          <div className="text-center py-8">
+            <FcDataSheet className="mx-auto text-4xl mb-2 opacity-50" />
+            <p className="text-gray-500">Bu çalışma alanında henüz tablo bulunmamaktadır.</p>
+            <Link 
+              href={`/dashboard/workspaces/${workspaceId}`}
+              className="inline-block mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
-              {variables.length === 0 ? (
-                <option value="">Değişken bulunamadı</option>
-              ) : (
-                variables.map(variable => (
-                  <option key={variable} value={variable}>
-                    {variable}
-                  </option>
-                ))
-              )}
-            </select>
+              Excel Dosyası Yükle
+            </Link>
           </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-800 mb-1">
-              Başlangıç Tarihi
-            </label>
-            <div className="relative">
-              <FcCalendar className="absolute left-3 top-1/2 transform -translate-y-1/2" />
-              <select
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                disabled={loading || dateColumns.length === 0}
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {tables.map((table) => (
+              <div
+                key={table.id}
+                className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                  selectedTable === table.id
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => setSelectedTable(table.id)}
               >
-                {dateColumns.length === 0 ? (
-                  <option value="">Tarih sütunu bulunamadı</option>
-                ) : (
-                  dateColumns.map(date => (
-                    <option key={date} value={date}>
-                      {date}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-800 mb-1">
-              Bitiş Tarihi
-            </label>
-            <div className="relative">
-              <FcCalendar className="absolute left-3 top-1/2 transform -translate-y-1/2" />
-              <select
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                disabled={loading || dateColumns.length === 0}
-              >
-                {dateColumns.length === 0 ? (
-                  <option value="">Tarih sütunu bulunamadı</option>
-                ) : (
-                  dateColumns.map(date => (
-                    <option key={date} value={date}>
-                      {date}
-                    </option>
-                  ))
-                )}
-              </select>
-            </div>
-          </div>
-        </div>
-        
-        <div className="bg-gray-100 p-1 rounded-lg border border-gray-300">
-          {loading ? (
-            <div className="flex justify-center items-center py-24">
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-            </div>
-          ) : analysisData && analysisData.labels.length > 0 ? (
-            <div className="h-96 p-4">
-              <Line options={chartOptions} data={chartData} />
-            </div>
-          ) : (
-            <div className="text-center py-24 text-gray-800">
-              <FcBullish className="h-16 w-16 mx-auto mb-4" />
-              <p className="font-medium">Analiz için değişken ve tarih aralığı seçin</p>
-              <p className="text-sm mt-2">Seçimleriniz değiştikçe grafik otomatik olarak güncellenecektir</p>
-            </div>
-          )}
-        </div>
-        
-        {analysisData && (
-          <div className="mt-6 text-right">
-            <button
-              onClick={async () => {
-                try {
-                  setLoading(true);
-                  setError(null);
-                  
-                  if (!selectedVariable || !startDate || !endDate) {
-                    throw new Error('Lütfen tüm parametreleri seçin');
-                  }
-                  
-                  const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/analysis-pdf`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                      variable: selectedVariable,
-                      startDate,
-                      endDate,
-                      analysisData
-                    }),
-                  });
-                  
-                  if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.message || `PDF oluşturulamadı (${response.status})`);
-                  }
-                  
-                  // Check if response is actually a PDF
-                  const contentType = response.headers.get('content-type');
-                  if (!contentType || !contentType.includes('application/pdf')) {
-                    throw new Error('Sunucudan geçersiz dosya formatı alındı');
-                  }
-                  
-                  const blob = await response.blob();
-                  
-                  // Verify blob size
-                  if (blob.size === 0) {
-                    throw new Error('Boş PDF dosyası oluşturuldu');
-                  }
-                  
-                  const url = window.URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `${selectedVariable}_analiz_${startDate}-${endDate}.pdf`;
-                  a.style.display = 'none';
-                  document.body.appendChild(a);
-                  a.click();
-                  
-                  // Cleanup
-                  window.URL.revokeObjectURL(url);
-                  document.body.removeChild(a);
-                  
-                  console.log('✅ PDF başarıyla indirildi');
-                  
-                  // Show success message
-                  setError('✅ PDF başarıyla indirildi!');
-                  setTimeout(() => setError(null), 3000);
-                  
-                } catch (err) {
-                  console.error('PDF indirme hatası:', err);
-                  setError('PDF indirilemedi: ' + (err as Error).message);
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              disabled={loading || !selectedVariable || !startDate || !endDate}
-              className={`px-4 py-2 rounded-md transition ${
-                loading || !selectedVariable || !startDate || !endDate
-                  ? 'bg-gray-400 cursor-not-allowed text-gray-600'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
-            >
-              {loading ? (
-                <div className="flex items-center">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  İndiriliyor...
+                <div className="flex items-center mb-2">
+                  <FcDataSheet className="mr-2 h-5 w-5" />
+                  <h3 className="font-medium text-gray-800">{table.name}</h3>
                 </div>
-              ) : (
-                'Analizi PDF Olarak İndir'
-              )}
-            </button>
+                <p className="text-sm text-gray-600">
+                  {Array.isArray(table.data) ? table.data.length : 0} satır
+                </p>
+                <p className="text-sm text-gray-600">
+                  {Array.isArray(table.columns) ? table.columns.length : 0} sütun
+                </p>
+              </div>
+            ))}
           </div>
         )}
       </div>
+
+      {/* Analysis Results */}
+      {selectedTable && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-lg font-semibold mb-4">Analiz Sonuçları</h2>
+          <div className="text-center py-8 text-gray-500">
+            Seçili tablo için analiz sonuçları burada görünecek.
+          </div>
+        </div>
+      )}
+
+      {/* ENHANCED: Formula Scope Selection Modal */}
+      {showScopeSelector && (
+        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-xl font-bold flex items-center">
+                <FcRules className="mr-2" />
+                Formül Kapsamı Seçimi
+              </h2>
+              <button
+                onClick={handleCloseModals}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            
+            <div className="p-6">
+              <p className="text-gray-600 mb-6">
+                Formülünüzün hangi kapsamda uygulanacağını seçin:
+              </p>
+              
+              <div className="space-y-4">
+                {/* Table Scope Option */}
+                <div className="border-2 border-blue-200 rounded-lg p-6 bg-blue-50">
+                  <div className="flex items-center mb-4">
+                    <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center mr-3">
+                      <FcDataSheet className="text-white" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-blue-800">Belirli Tablo Kapsamı</h3>
+                  </div>
+                  <p className="text-blue-700 mb-4">
+                    Formülü sadece seçtiğiniz tabloya uygular. Tek yönlü formüller önerilir.
+                  </p>
+                  
+                  {tables.length > 0 ? (
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-blue-700">
+                        Hedef Tablo Seçin:
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {tables.map((table) => (
+                          <button
+                            key={table.id}
+                            onClick={() => handleScopeSelection('table', table.id)}
+                            className="text-left p-3 border border-blue-300 rounded-lg hover:bg-blue-100 transition-colors"
+                          >
+                            <div className="font-medium text-blue-800">{table.name}</div>
+                            <div className="text-sm text-blue-600">
+                              {Array.isArray(table.data) ? table.data.length : 0} satır
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-blue-600 italic">Henüz tablo bulunmamaktadır.</div>
+                  )}
+                </div>
+                
+                {/* Workspace Scope Option */}
+                <div className="border-2 border-green-200 rounded-lg p-6 bg-green-50">
+                  <div className="flex items-center mb-4">
+                    <div className="w-8 h-8 bg-green-600 rounded-full flex items-center justify-center mr-3">
+                      <FcFolder className="text-white" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-green-800">Workspace Kapsamı</h3>
+                  </div>
+                  <p className="text-green-700 mb-4">
+                    Formülü çalışma alanındaki tüm tablolara uygular. Karmaşık koşullar kullanabilirsiniz.
+                  </p>
+                  <button
+                    onClick={() => handleScopeSelection('workspace')}
+                    className="w-full p-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+                  >
+                    Workspace Kapsamını Seç
+                  </button>
+                </div>
+              </div>
+              
+              {/* Information Box */}
+              <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <h4 className="font-semibold text-gray-800 mb-2">💡 Kapsam Seçimi Rehberi:</h4>
+                <ul className="text-sm text-gray-600 space-y-1">
+                  <li><strong>Tablo Kapsamı:</strong> Hücre düzeyinde validasyon için idealdir</li>
+                  <li><strong>Workspace Kapsamı:</strong> Genel kurallar ve karşılaştırmalar için</li>
+                  <li><strong>Örnek:</strong> &quot;[İletkenlik] &gt; 300&quot; → Tablo kapsamı</li>
+                  <li><strong>Örnek:</strong> &quot;[pH] &gt; 7 AND [İletkenlik] &lt; 500&quot; → Workspace kapsamı</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Formula Management Modal */}
       {showFormulaModal && (
@@ -464,9 +467,19 @@ export default function AnalysisPage() {
               <h2 className="text-xl font-bold flex items-center">
                 <FcRules className="mr-2" />
                 Formül Yönetimi
+                {selectedScope === 'table' && selectedTableForFormula && (
+                  <span className="ml-2 text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                    Tablo: {tables.find(t => t.id === selectedTableForFormula)?.name}
+                  </span>
+                )}
+                {selectedScope === 'workspace' && (
+                  <span className="ml-2 text-sm bg-green-100 text-green-800 px-2 py-1 rounded">
+                    Workspace Kapsamı
+                  </span>
+                )}
               </h2>
               <button
-                onClick={() => setShowFormulaModal(false)}
+                onClick={handleCloseModals}
                 className="text-gray-400 hover:text-gray-600 text-2xl"
               >
                 ×

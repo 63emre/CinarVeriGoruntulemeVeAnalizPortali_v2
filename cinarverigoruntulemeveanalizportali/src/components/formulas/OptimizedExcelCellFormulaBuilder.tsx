@@ -646,7 +646,7 @@ export default function OptimizedExcelCellFormulaBuilder({
                         }
                         
                         const testExpr = formulaForm.expression.replace(new RegExp(baseVariable, 'g'), baseValue.toString());
-                        const result = new Function('Math', `"use strict"; 
+                        const result = new Function('Math', `'use strict'; 
                           const sqrt = Math.sqrt, pow = Math.pow, abs = Math.abs;
                           const sin = Math.sin, cos = Math.cos, tan = Math.tan;
                           const log = Math.log, exp = Math.exp, PI = Math.PI, E = Math.E;

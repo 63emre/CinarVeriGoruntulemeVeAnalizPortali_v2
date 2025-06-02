@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FcDocument, FcOpenedFolder } from 'react-icons/fc';
 import { formatDistanceToNow } from 'date-fns';
 import { tr } from 'date-fns/locale';
@@ -27,19 +27,36 @@ export default function TablesView({
 }: TablesViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredTables = tables.filter(table => 
+  const filteredTables = tables?.filter(table => 
     table.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     table.sheetName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  ) || [];
+
+  // Debug logging
+  useEffect(() => {
+    console.log('🔍 TablesView:', { tablesCount: tables?.length || 0, workspaceId });
+  }, [tables, workspaceId]);
+
+  // Debug render info
+  useEffect(() => {
+    console.log('📊 TablesView Render:', {
+      originalTablesCount: tables?.length || 0,
+      filteredTablesCount: filteredTables.length,
+      searchTerm
+    });
+  }, [tables, filteredTables, searchTerm]);
 
   return (
     <div>
-      {tables.length === 0 ? (
+      {!tables || tables.length === 0 ? (
         <div className="text-center py-6 bg-gray-50 rounded-lg border border-gray-200">
           <FcOpenedFolder className="mx-auto h-12 w-12 mb-3" />
           <h3 className="text-gray-600 font-medium">Henüz Tablo Yok</h3>
           <p className="text-gray-500 text-sm mt-1">
             Excel dosyaları yükleyerek veri tablolarınızı oluşturun.
+          </p>
+          <p className="text-xs text-gray-400 mt-2">
+            Debug: tables={tables ? 'array' : 'null/undefined'}, length={tables?.length || 0}
           </p>
         </div>
       ) : (
@@ -59,6 +76,9 @@ export default function TablesView({
               {filteredTables.length === 0 ? (
                 <div className="text-center py-4 bg-gray-50 rounded-lg">
                   <p className="text-gray-500">Arama kriterine uygun tablo bulunamadı.</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Filtrelenmiş: {filteredTables.length} / Toplam: {tables.length}
+                  </p>
                 </div>
               ) : (
                 filteredTables.map(table => (
@@ -69,7 +89,10 @@ export default function TablesView({
                         ? 'bg-blue-50 border-blue-300'
                         : 'bg-white border-gray-200 hover:bg-gray-50'
                     }`}
-                    onClick={() => onTableSelect && onTableSelect(table.id)}
+                    onClick={() => {
+                      console.log('🖱️ Table clicked:', table.id, table.name);
+                      onTableSelect && onTableSelect(table.id);
+                    }}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex items-start">
@@ -88,6 +111,10 @@ export default function TablesView({
                       <a
                         href={`/dashboard/workspaces/${workspaceId}/tables/${table.id}`}
                         className="text-sm text-blue-600 hover:text-blue-800"
+                        onClick={(e) => {
+                          console.log('🔗 Table link clicked:', table.id);
+                          e.stopPropagation(); // Prevent parent div click
+                        }}
                       >
                         Görüntüle →
                       </a>

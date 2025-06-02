@@ -5,10 +5,11 @@ import { getCurrentUser } from '@/lib/auth/auth';
 // DELETE: Remove a specific user from a workspace
 export async function DELETE(
   request: Request,
-  { params }: { params: { workspaceId: string, userId: string } }
+  context: { params: Promise<{ workspaceId: string, userId: string }> }
 ) {
   try {
-    console.log(`DELETE /api/workspaces/${params.workspaceId}/users/${params.userId} called`);
+    const { workspaceId, userId } = await context.params;
+    console.log(`DELETE /api/workspaces/${workspaceId}/users/${userId} called`);
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -17,8 +18,6 @@ export async function DELETE(
         { status: 401 }
       );
     }
-    
-    const { workspaceId, userId } = params;
     
     // Check if workspace exists
     const workspace = await prisma.workspace.findUnique({

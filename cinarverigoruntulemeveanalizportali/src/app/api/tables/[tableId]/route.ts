@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth/auth';
 
-export async function DELETE(_: Request, { params }: { params: { tableId: string } }) {
+export async function DELETE(_: Request, context: { params: Promise<{ tableId: string }> }) {
   try {
     const user = await getCurrentUser();
     
@@ -13,7 +13,7 @@ export async function DELETE(_: Request, { params }: { params: { tableId: string
       );
     }
 
-    const { tableId } = params;
+    const { tableId } = await context.params;
 
     // Check if table exists and user has access to it
     const table = await prisma.dataTable.findFirst({

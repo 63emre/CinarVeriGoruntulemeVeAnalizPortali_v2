@@ -3,6 +3,31 @@ import { getCurrentUser } from '@/lib/auth/auth';
 import prisma from '@/lib/db';
 import { evaluateFormula, EvaluationContext } from '@/lib/formula/formula-service';
 
+// Helper function to convert hex color to RGB
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const cleaned = hex.replace('#', '');
+  const bigint = parseInt(cleaned, 16);
+  
+  return {
+    r: (bigint >> 16) & 255,
+    g: (bigint >> 8) & 255,
+    b: bigint & 255
+  };
+}
+
+// Helper function to blend multiple colors for cells with multiple formula matches
+function blendColors(colors: string[]): string {
+  if (colors.length === 1) return colors[0];
+  
+  const rgbColors = colors.map(color => hexToRgb(color));
+  
+  const avgR = Math.round(rgbColors.reduce((sum, color) => sum + color.r, 0) / rgbColors.length);
+  const avgG = Math.round(rgbColors.reduce((sum, color) => sum + color.g, 0) / rgbColors.length);
+  const avgB = Math.round(rgbColors.reduce((sum, color) => sum + color.b, 0) / rgbColors.length);
+  
+  return `#${avgR.toString(16).padStart(2, '0')}${avgG.toString(16).padStart(2, '0')}${avgB.toString(16).padStart(2, '0')}`;
+}
+
 interface HighlightedCell {
   row: string;
   col: string;
@@ -221,65 +246,88 @@ export async function POST(
             
             console.log(`Formula evaluation result:`, result);
             
-            // If formula condition IS met (isValid = true), highlight the cells for validation failures
-            // This means the condition like "İletkenlik < 322" is TRUE (value is less than 322)
-            // So we highlight cells where the condition is satisfied
-            if (result.isValid && formula.color) {
-              console.log(`Formula condition met! Highlighting cells...`);
-              
-              // Highlight cells for all variables used in the formula that satisfy the condition
+            // Check if the formula condition is satisfied
+            if (result.isValid) {
+              // For each variable in the formula, check if the condition is met
               Array.from(formulaVariables).forEach(varName => {
-                // Find the row that contains this variable
-                const varRowIndex = data.findIndex(row => {
-                  const rawVarName = row[variableColumnIndex] as string;
-                  const cleanVarName = rawVarName ? rawVarName.replace(/,+$/, '').trim() : '';
-                  return cleanVarName === varName;
-                });
-                
-                if (varRowIndex !== -1) {
-                  const rowId = `row-${varRowIndex + 1}`;
-                  const cellValue = variables[varName];
+                const varValue = variables[varName];
+                if (varValue !== undefined) {
+                  // Find the row that contains this variable
+                  const varRowIndex = data.findIndex(row => {
+                    const rawVarName = row[variableColumnIndex] as string;
+                    const cleanVarName = rawVarName ? rawVarName.replace(/,+$/, '').trim() : '';
+                    return cleanVarName === varName;
+                  });
                   
-                  // Check if this cell is already highlighted by another formula
-                  const existingCellIndex = highlightedCells.findIndex(cell => 
-                    cell.row === rowId && cell.col === dateCol
-                  );
-                  
-                  if (existingCellIndex !== -1) {
-                    // Merge with existing highlight
-                    const existingCell = highlightedCells[existingCellIndex];
-                    existingCell.formulaIds = [...(existingCell.formulaIds || []), formula.id];
-                    existingCell.message = `${existingCell.message}, ${formula.name}`;
-                    existingCell.formulaDetails = [
-                      ...(existingCell.formulaDetails || []),
-                      {
-                        id: formula.id,
-                        name: formula.name,
-                        formula: formula.formula
+                  if (varRowIndex !== -1) {
+                    // Create a simple test formula with just this variable's value
+                    const testFormula = cleanFormula.replace(/\[([^\]]+)\]/g, (match, foundVar) => {
+                      const cleanFoundVar = foundVar.trim();
+                      if (cleanFoundVar === varName) {
+                        return varValue.toString();
                       }
-                    ];
-                  } else {
-                    // Create new highlighted cell
-                    const highlightCell: HighlightedCell = {
-                      row: rowId,
-                      col: dateCol,
-                      color: formula.color || '#ff0000',
-                      message: `${formula.name}: Koşul sağlandı (${varName} = ${cellValue})`,
-                      formulaIds: [formula.id],
-                      formulaDetails: [{
-                        id: formula.id,
-                        name: formula.name,
-                        formula: formula.formula
-                      }]
-                    };
+                      // For other variables, use their values too
+                      return variables[cleanFoundVar] !== undefined ? variables[cleanFoundVar].toString() : '0';
+                    });
                     
-                    highlightedCells.push(highlightCell);
-                    console.log(`Added highlight cell:`, highlightCell);
+                    try {
+                      // Evaluate the test formula
+                      const testResult = new Function('return ' + testFormula)();
+                      
+                      if (testResult === true) {
+                        const rowId = `row-${varRowIndex + 1}`;
+                        
+                        // Check if this cell is already highlighted by another formula
+                        const existingCellIndex = highlightedCells.findIndex(cell => 
+                          cell.row === rowId && cell.col === dateCol
+                        );
+                        
+                        if (existingCellIndex !== -1) {
+                          // Merge with existing highlight
+                          const existingCell = highlightedCells[existingCellIndex];
+                          existingCell.formulaIds = [...(existingCell.formulaIds || []), formula.id];
+                          existingCell.message = `${existingCell.message}, ${formula.name}`;
+                          
+                          // Blend colors for multiple formulas
+                          const existingColor = existingCell.color;
+                          const newColor = formula.color || '#ff0000';
+                          existingCell.color = blendColors([existingColor, newColor]);
+                          
+                          existingCell.formulaDetails = [
+                            ...(existingCell.formulaDetails || []),
+                            {
+                              id: formula.id,
+                              name: formula.name,
+                              formula: formula.formula
+                            }
+                          ];
+                        } else {
+                          // Create new highlighted cell
+                          const highlightCell: HighlightedCell = {
+                            row: rowId,
+                            col: dateCol,
+                            color: formula.color || '#ff0000',
+                            message: `${formula.name}: ${varName} = ${varValue}`,
+                            formulaIds: [formula.id],
+                            formulaDetails: [{
+                              id: formula.id,
+                              name: formula.name,
+                              formula: formula.formula
+                            }]
+                          };
+                          
+                          highlightedCells.push(highlightCell);
+                          console.log(`Added highlight cell:`, highlightCell);
+                        }
+                      }
+                    } catch (evalError) {
+                      console.error(`Error evaluating test formula for ${varName}:`, evalError);
+                    }
                   }
                 }
               });
             } else {
-              console.log(`Formula condition not met or no color specified.`);
+              console.log(`Formula evaluation failed: ${result.message}`);
             }
           } catch (err) {
             console.error(`Error evaluating formula "${formula.name}" for column "${dateCol}":`, err);
@@ -321,19 +369,44 @@ export async function POST(
       return rowData;
     });
 
-    return NextResponse.json({
-      tableId,
-      formulaResults,
-      highlightedCells,
-      tableData: tableRows,  // Add tableData for frontend compatibility
-      columns: tableColumns   // Add columns for frontend compatibility
-    }, {
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0'
-      }
-    });
+    if (highlightedCells.length > 0) {
+      // Group by formula for detailed response
+      const formulaResults = formulas.map(formula => {
+        const formulaCells = highlightedCells.filter(cell => 
+          cell.formulaIds?.includes(formula.id)
+        );
+        return {
+          formulaId: formula.id,
+          formulaName: formula.name,
+          matchedCells: formulaCells.length,
+          color: formula.color
+        };
+      });
+      
+      const totalMatches = highlightedCells.length;
+      const formulaNames = formulaResults.map(result => result.formulaName).join(', ');
+      
+      return NextResponse.json({
+        success: true,
+        message: `✅ ${totalMatches} hücre ${formulaNames} formül(ler)i ile vurgulandı. Tabloda renkli hücreler formül kriterlerini karşılayan değerleri gösteriyor.`,
+        highlightedCells,
+        formulaResults,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      return NextResponse.json({
+        success: true,
+        message: `ℹ️ Aktif formüller için hiçbir hücre kriterleri karşılamadı. Formül koşullarını kontrol edin.`,
+        highlightedCells: [],
+        formulaResults: formulas.map(formula => ({
+          formulaId: formula.id,
+          formulaName: formula.name,
+          matchedCells: 0,
+          color: formula.color
+        })),
+        timestamp: new Date().toISOString()
+      });
+    }
   } catch (error) {
     console.error('Error applying formulas:', error);
     return NextResponse.json(

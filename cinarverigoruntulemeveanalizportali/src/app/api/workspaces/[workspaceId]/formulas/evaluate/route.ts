@@ -13,7 +13,7 @@ const EvaluateFormulaSchema = z.object({
 // POST /api/workspaces/[workspaceId]/formulas/evaluate
 export async function POST(
   request: NextRequest,
-  { params }: { params: { workspaceId: string } }
+  context: { params: Promise<{ workspaceId: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -22,7 +22,7 @@ export async function POST(
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    const { workspaceId } = params;
+    const { workspaceId } = await context.params;
 
     // Check if user has access to this workspace
     const workspaceUser = await prisma.workspaceUser.findFirst({

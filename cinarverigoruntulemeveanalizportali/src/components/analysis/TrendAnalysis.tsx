@@ -244,24 +244,73 @@ export default function TrendAnalysis({
     if (!chartRef.current) return;
     
     try {
-      const canvas = await html2canvas(chartRef.current);
+      console.log('📊 Starting PDF export for trend analysis...');
+      
+      // Wait for chart to be fully rendered
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const canvas = await html2canvas(chartRef.current, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        logging: false,
+        useCORS: true,
+        allowTaint: true,
+        foreignObjectRendering: true
+      });
+      
+      console.log('✅ Chart captured successfully');
+      
       const imgData = canvas.toDataURL('image/png');
       
       const pdf = new jsPDF('landscape', 'mm', 'a4');
+      
+      // Use helvetica font for better compatibility
+      pdf.setFont('helvetica', 'normal');
+      
       const imgWidth = 280;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       
+      // Helper function for Turkish characters
+      const handleTurkishText = (text: string): string => {
+        try {
+          // Ensure the text is properly encoded as UTF-8
+          const utf8Text = decodeURIComponent(encodeURIComponent(text));
+          
+          // Only replace problematic characters that cause PDF issues
+          return utf8Text
+            .replace(/[""]/g, '"')
+            .replace(/['']/g, "'")
+            .replace(/[–—]/g, '-')
+            .replace(/…/g, '...')
+            .replace(/[\u2212]/g, '-') // Unicode minus sign
+            .replace(/[\u2013\u2014]/g, '-') // En dash, Em dash
+            .replace(/[\u201C\u201D]/g, '"') // Smart quotes
+            .replace(/[\u2018\u2019]/g, "'") // Smart apostrophes
+            .replace(/[\u00A0]/g, ' '); // Non-breaking space
+        } catch (error) {
+          console.warn('Text encoding failed, using original:', error);
+          return text;
+        }
+      };
+      
       pdf.setFontSize(16);
-      pdf.text(`${selectedVariable} Trend Analizi`, 15, 15);
+      pdf.text(`${handleTurkishText(selectedVariable)} Trend Analizi`, 15, 15);
       pdf.setFontSize(10);
       pdf.text(`Tarih: ${new Date().toLocaleDateString('tr-TR')}`, 15, 22);
-      pdf.text(`Birim: ${getUnitForVariable(selectedVariable)}`, 15, 27);
+      pdf.text(`Birim: ${handleTurkishText(getUnitForVariable(selectedVariable))}`, 15, 27);
       
       pdf.addImage(imgData, 'PNG', 15, 35, imgWidth, imgHeight);
-      pdf.save(`trend-analizi-${selectedVariable.replace(/\s+/g, '-').toLowerCase()}.pdf`);
+      
+      // Create safe filename
+      const safeVariableName = handleTurkishText(selectedVariable).replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+      const filename = `trend-analizi-${safeVariableName}.pdf`;
+      
+      pdf.save(filename);
+      
+      console.log('✅ PDF exported successfully:', filename);
     } catch (err) {
-      console.error('PDF oluşturma hatası:', err);
-      alert('PDF oluşturulurken bir hata oluştu.');
+      console.error('❌ PDF oluşturma hatası:', err);
+      alert('PDF oluşturulurken bir hata oluştu: ' + (err as Error).message);
     }
   };
 

@@ -338,7 +338,7 @@ export async function saveExcelData(
         }
         
         // Use fileName-sheetName format for the table name displayed to users
-        let fileNameToUse = sheet.fileName ? `${sheet.fileName} - ${uniqueSheetName}` : uniqueSheetName;
+        const fileNameToUse = sheet.fileName ? `${sheet.fileName} - ${uniqueSheetName}` : uniqueSheetName;
         
         // Update the batch map for future sheets in this import
         batchSheetNames.set(baseSheetName, batchCount + 1);
@@ -455,17 +455,43 @@ function convertToCSV(columns: string[], data: (string | number | null)[][]): st
 
 // Helper function to properly escape CSV values
 function escapeCsvValue(value: string): string {
-  // Security check - CSV injection önleme
-  if (value.startsWith('=') || value.startsWith('+') || value.startsWith('-') || value.startsWith('@')) {
-    // Potansiyel Excel formül enjeksiyonunu önle
+  // Boşluk ve özel karakterleri koruma
+  if (!value || value.trim() === '') return value;
+  
+  // Başındaki ve sonundaki whitespace'leri koru
+  const originalValue = value;
+  
+  // Comparison operators and decimal values should be preserved as-is
+  // Turkish decimal format uses comma, international uses dot
+  const isComparisonValue = /^[<>=≤≥]/.test(value.trim());
+  const isDecimalValue = /^\d+[,.]\d+$/.test(value.trim());
+  const isNegativeNumber = /^-\d+([,.]?\d+)?$/.test(value.trim());
+  
+  // Preserve scientific notation and special values
+  const isScientificNotation = /^\d+([,.]?\d+)?[eE][+-]?\d+$/i.test(value.trim());
+  const isSpecialValue = ['N/A', 'NA', 'n.a.', 'NULL', 'null', '-', ''].includes(value.trim().toLowerCase());
+  
+  // Don't escape comparison operators or numerical values
+  if (isComparisonValue || isDecimalValue || isNegativeNumber || isScientificNotation || isSpecialValue) {
+    // Still need to handle commas in CSV context
+    if (value.includes(',') && !isDecimalValue) {
+      return '"' + value.replace(/"/g, '""') + '"';
+    }
+    return value;
+  }
+  
+  // Security check - CSV injection prevention for formula-like values
+  if (value.trim().startsWith('=') || value.trim().startsWith('+') || value.trim().startsWith('@')) {
+    // Potential Excel formula injection prevention
     value = `'${value}`;
   }
   
   // If the value contains commas, quotes, or newlines, wrap it in quotes
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
+  if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
     // Double any quotes within the value
     return '"' + value.replace(/"/g, '""') + '"';
   }
+  
   return value;
 }
 
@@ -516,82 +542,112 @@ export async function getTableData(tableId: string) {
   }
 }
 
-// CSV verilerini JSON'a dönüştürme fonksiyonu
-function parseCSV(csvData: string): { columns: string[], data: (string | number | null)[][] } | null {  try {
+// Enhanced parseCSV function with better handling of Turkish data formats
+function parseCSV(csvData: string): { columns: string[], data: (string | number | null)[][] } | null {
+  try {
     const lines = csvData.split('\n').filter(line => line.trim() !== '');
+    
     if (lines.length === 0) return null;
     
-    // İlk satırı başlık olarak işle
-    const headerLine = lines[0];
-    const columns = parseCSVLine(headerLine);
+    // Parse header
+    const columns = parseCSVLine(lines[0]);
     
-    // Veri satırlarını işle
+    // Parse data rows with enhanced value processing
     const data: (string | number | null)[][] = [];
+    
     for (let i = 1; i < lines.length; i++) {
-      const rowValues = parseCSVLine(lines[i]);
-      
-      // Uygun veri tipine dönüştür
-      const typedValues = rowValues.map((value: string) => {
-        if (value === '') return null;
+      const row = parseCSVLine(lines[i]);
+      const processedRow: (string | number | null)[] = row.map(cell => {
+        if (!cell || cell.trim() === '' || cell.toLowerCase() === 'null') return null;
         
-        // Tarih olabilecek değerleri kontrol et
-        if (isDateString(value)) {
-          return standardizeDateString(value);
+        const trimmedCell = cell.trim();
+        
+        // Handle comparison operators (< > = ≤ ≥)
+        if (/^[<>=≤≥]/.test(trimmedCell)) {
+          return trimmedCell; // Keep as string with operator
         }
         
-        // Sayı olabilecek değerleri dönüştür
-        const numValue = Number(value);
-        if (!isNaN(numValue)) {
-          // Excel serial tarihleri kontrol et
-          if (isExcelSerialDate(numValue)) {
-            return excelSerialDateToString(numValue);
-          }
-          return numValue;
+        // Handle decimal numbers with Turkish format (comma as decimal separator)
+        if (/^\d+,\d+$/.test(trimmedCell)) {
+          const numberValue = parseFloat(trimmedCell.replace(',', '.'));
+          return isNaN(numberValue) ? trimmedCell : numberValue;
         }
         
-        return value;
+        // Handle decimal numbers with international format (dot as decimal separator)  
+        if (/^\d+\.\d+$/.test(trimmedCell)) {
+          const numberValue = parseFloat(trimmedCell);
+          return isNaN(numberValue) ? trimmedCell : numberValue;
+        }
+        
+        // Handle negative numbers
+        if (/^-\d+([,.]?\d+)?$/.test(trimmedCell)) {
+          const normalizedValue = trimmedCell.replace(',', '.');
+          const numberValue = parseFloat(normalizedValue);
+          return isNaN(numberValue) ? trimmedCell : numberValue;
+        }
+        
+        // Handle integers
+        if (/^\d+$/.test(trimmedCell)) {
+          const numberValue = parseInt(trimmedCell, 10);
+          return isNaN(numberValue) ? trimmedCell : numberValue;
+        }
+        
+        // Handle scientific notation
+        if (/^\d+([,.]?\d+)?[eE][+-]?\d+$/i.test(trimmedCell)) {
+          const normalizedValue = trimmedCell.replace(',', '.');
+          const numberValue = parseFloat(normalizedValue);
+          return isNaN(numberValue) ? trimmedCell : numberValue;
+        }
+        
+        // Keep dates and other strings as-is
+        return trimmedCell;
       });
       
-      data.push(typedValues);
+      data.push(processedRow);
     }
     
     return { columns, data };
   } catch (error) {
-    console.error('CSV ayrıştırma hatası:', error);
+    console.error('CSV parsing error:', error);
     return null;
   }
 }
 
-// Tek bir CSV satırını ayrıştırma
+// Enhanced parseCSVLine function with better quote handling
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
+  let i = 0;
   
-  for (let i = 0; i < line.length; i++) {
+  while (i < line.length) {
     const char = line[i];
+    const nextChar = i + 1 < line.length ? line[i + 1] : '';
     
     if (char === '"') {
-      // Çift tırnak içindeki çift tırnakları kontrol et
-      if (inQuotes && i+1 < line.length && line[i+1] === '"') {
+      if (inQuotes && nextChar === '"') {
+        // Handle escaped quotes inside quoted field
         current += '"';
-        i++; // Çift tırnağı atla
+        i += 2; // Skip both quotes
+        continue;
       } else {
-        // Tırnak durumunu değiştir
+        // Toggle quote state
         inQuotes = !inQuotes;
       }
     } else if (char === ',' && !inQuotes) {
-      // Virgülle ayrılmış değer - mevcut değeri ekle ve sıfırla
-      result.push(current);
+      // Field separator found outside quotes
+      result.push(current.trim());
       current = '';
     } else {
-      // Normal karakter
+      // Regular character
       current += char;
     }
+    
+    i++;
   }
   
-  // Son değeri ekle
-  result.push(current);
+  // Add the last field
+  result.push(current.trim());
   
   return result;
 }

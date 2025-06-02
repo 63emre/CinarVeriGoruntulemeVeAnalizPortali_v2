@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { FcAreaChart, FcRules, FcReuse } from 'react-icons/fc';
+import { FcAreaChart, FcRules } from 'react-icons/fc';
 import EditableDataTable from '@/components/tables/EditableDataTable';
 import FormulaSelector from '@/components/formulas/FormulaSelector';
 import FormulaBuilder from '@/components/formulas/FormulaBuilder';
@@ -30,6 +30,7 @@ interface HighlightedCell {
     formula: string;
     leftResult?: number;
     rightResult?: number;
+    color: string;
   }[];
 }
 
@@ -53,11 +54,15 @@ export default function TablePage() {
   const [error, setError] = useState<string | null>(null);
   const [activeFormulas, setActiveFormulas] = useState<string[]>([]);
   const [highlightedCells, setHighlightedCells] = useState<HighlightedCell[]>([]);
-  const [selectedVariable, setSelectedVariable] = useState<string | null>(null);
   const [showFormulaSidebar, setShowFormulaSidebar] = useState(false);
   const [formulas, setFormulas] = useState<Formula[]>([]);
   const [variables, setVariables] = useState<string[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
+
+  // ENHANCED: Auto-refresh state management
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(30); // seconds
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   // Convert table data to the format expected by EditableDataTable component - using useMemo for performance
   const tableColumns = useMemo(() => 
@@ -116,6 +121,50 @@ export default function TablePage() {
     document.addEventListener('keydown', handleEscKey);
     return () => document.removeEventListener('keydown', handleEscKey);
   }, [handleEscKey]);
+
+  // ENHANCED: Auto-refresh effect for formula changes
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    if (autoRefresh && refreshInterval > 0) {
+      intervalId = setInterval(async () => {
+        // Refresh table data
+        if (workspaceId && tableId) {
+          try {
+            const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}`);
+            if (response.ok) {
+              const data = await response.json();
+              setTable(data);
+              console.log('📊 Auto-refresh: Table data updated');
+            }
+          } catch (error) {
+            console.error('Auto-refresh table error:', error);
+          }
+        }
+        
+        // Refresh formulas
+        try {
+          const response = await fetch(`/api/workspaces/${workspaceId}/formulas`);
+          if (response.ok) {
+            const data = await response.json();
+            setFormulas(data);
+            console.log('🔄 Auto-refresh: Formulas updated');
+          }
+        } catch (error) {
+          console.error('Auto-refresh formulas error:', error);
+        }
+        
+        // Update last refresh time
+        setLastRefresh(new Date());
+      }, refreshInterval * 1000);
+    }
+    
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [autoRefresh, refreshInterval, workspaceId, tableId]);
 
   useEffect(() => {
     const fetchTableData = async () => {
@@ -182,9 +231,8 @@ export default function TablePage() {
 
   // Handle cell selection for variable identification
   const handleCellSelect = (rowId: string, colId: string, value: string | number | null) => {
-    if (colId === 'Variable' && typeof value === 'string') {
-      setSelectedVariable(value);
-    }
+    // Cell selection logic can be added here if needed
+    console.log('Cell selected:', { rowId, colId, value });
   };
 
   // Apply formulas to the table data with enhanced error handling
@@ -194,97 +242,92 @@ export default function TablePage() {
       return;
     }
 
+    if (!table) {
+      setError('Tablo verisi bulunamadı');
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null); // Clear any previous errors
       setHighlightedCells([]); // Clear previous highlights
 
-      const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/apply-formulas`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          formulaIds: activeFormulas,
-          selectedVariable: selectedVariable,
-          formulaType: 'CELL_VALIDATION', // Include formulaType to prevent Zod validation errors
-        }),
+      // FIXED: Use the SAME logic as MultiChartAnalysis (Analysis page)
+      const { evaluateFormulasForTable } = await import('@/lib/enhancedFormulaEvaluator');
+      
+      // Get active formulas - only the ones that are actually active
+      const activeFormulaObjects = formulas.filter(f => 
+        activeFormulas.includes(f.id) && f.active === true
+      );
+      
+      if (activeFormulaObjects.length === 0) {
+        setError('Seçili aktif formüller bulunamadı');
+        return;
+      }
+
+      console.log('🔧 APPLYING FORMULAS:', {
+        activeFormulaCount: activeFormulaObjects.length,
+        formulaNames: activeFormulaObjects.map(f => f.name),
+        tableDataStructure: {
+          columns: table.columns.length,
+          rows: table.data.length
+        }
       });
 
-      if (!response.ok) {
-        const errorData = await response.text();
-        throw new Error(`Formül uygulanırken hata oluştu (${response.status}): ${errorData}`);
-      }
+      // FIXED: Use EXACT same data structure as Analysis page
+      const tableDataForEvaluator = {
+        columns: table.columns,
+        data: table.data,
+        name: table.name
+      };
 
-      const result = await response.json();
-      console.log("Formula application result:", result);
+      // FIXED: Use the SAME evaluator as Analysis page - this is the key fix!
+      const highlighted = evaluateFormulasForTable(activeFormulaObjects, tableDataForEvaluator);
+      
+      console.log('🎯 FORMULA EVALUATION RESULT:', {
+        inputFormulas: activeFormulaObjects.length,
+        outputHighlights: highlighted.length,
+        sampleHighlight: highlighted[0],
+        allRowIds: highlighted.map(h => h.row).slice(0, 10)
+      });
 
-      // Update table data if provided
-      if (result.tableData) {
-        // The API now returns tableData in the format we expect
-        const updatedTable = {
-          ...table!,
-          data: result.tableData.map((row: Record<string, string | number | null>) => {
-            return table!.columns.map(col => row[col]);
-          })
-        };
-        setTable(updatedTable);
-      }
+      // Set the highlights - this should now work correctly
+      setHighlightedCells(highlighted);
 
-      if (result.highlightedCells && Array.isArray(result.highlightedCells)) {
-        console.log(`Received ${result.highlightedCells.length} highlighted cells:`, result.highlightedCells);
-        setHighlightedCells(result.highlightedCells);
+      // Enhanced feedback with proper success/info messaging
+      const formulaNames = activeFormulaObjects.map(f => f.name).join(', ');
 
-        // Show success feedback
-        const formulaNames = formulas
-          .filter(f => activeFormulas.includes(f.id))
-          .map(f => f.name)
-          .join(', ');
-
-        if (result.highlightedCells.length > 0) {
-          console.log(`✅ Formüller başarıyla uygulandı ve ${result.highlightedCells.length} hücre vurgulandı: ${formulaNames}`);
-          
-          // Show temporary success message
-          const successMessage = `✅ ${result.highlightedCells.length} hücre ${formulaNames} formül(ler)i ile vurgulandı. Tabloda renkli hücreler formül kriterlerini karşılayan değerleri gösteriyor.`;
-          setError(successMessage);
-          
-          // Clear message after 5 seconds
-          setTimeout(() => {
-            if (error === successMessage) {
-              setError(null);
-            }
-          }, 5000);
-        } else {
-          console.log(`✅ Formüller başarıyla uygulandı ancak hiçbir hücre koşulları karşılamadı: ${formulaNames}`);
-          
-          // Show info message for no matches
-          const infoMessage = `ℹ️ ${formulaNames} formül(ler)i uygulandı ancak hiçbir hücre belirtilen kriterleri karşılamadı. Bu normal bir durumdur.`;
-          setError(infoMessage);
-          
-          // Clear message after 4 seconds
-          setTimeout(() => {
-            if (error === infoMessage) {
-              setError(null);
-            }
-          }, 4000);
-        }
-      } else {
-        console.log("No highlighted cells received - all validations passed");
-        setHighlightedCells([]);
+      if (highlighted.length > 0) {
+        console.log(`✅ SUCCESS: ${highlighted.length} cells highlighted for formulas: ${formulaNames}`);
         
-        // Show message for no highlighting data
-        const infoMessage = "ℹ️ Formüller uygulandı ancak vurgulama verisi alınamadı. API yanıtını kontrol edin.";
+        // Show success message with auto-clear
+        const successMessage = `✅ ${highlighted.length} hücre ${formulaNames} formül(ler)i ile vurgulandı. Tabloda renkli hücreler formül kriterlerini karşılayan değerleri gösteriyor.`;
+        setError(successMessage);
+        
+        // Clear success message after 5 seconds
+        setTimeout(() => {
+          setError(null);
+        }, 5000);
+      } else {
+        console.log(`✅ APPLIED: Formulas applied but no cells match criteria: ${formulaNames}`);
+        
+        // Show info message for no matches
+        const infoMessage = `ℹ️ ${formulaNames} formül(ler)i uygulandı ancak hiçbir hücre belirtilen kriterleri karşılamadı. Bu normal bir durumdur.`;
         setError(infoMessage);
         
+        // Clear info message after 4 seconds
         setTimeout(() => {
-          if (error === infoMessage) {
-            setError(null);
-          }
+          setError(null);
         }, 4000);
       }
+
     } catch (err) {
-      setError((err as Error).message);
-      console.error('Error applying formulas:', err);
+      const errorMessage = (err as Error).message;
+      console.error('❌ FORMULA APPLICATION ERROR:', {
+        error: errorMessage,
+        stack: (err as Error).stack
+      });
+      setError(`Formül uygulama hatası: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -296,6 +339,10 @@ export default function TablePage() {
       setLoading(true);
       setError(null);
       
+      console.log('🚀 Starting PDF export...');
+      console.log(`📊 Table: ${table?.name}`);
+      console.log(`🎯 Highlighted cells: ${highlightedCells?.length || 0}`);
+      
       const preparedHighlightedCells = highlightedCells?.map(cell => ({
         row: cell.row,
         col: cell.col,
@@ -303,7 +350,13 @@ export default function TablePage() {
         message: cell.message
       })) || [];
       
-      console.log(`Exporting PDF with ${preparedHighlightedCells.length} highlighted cells`);
+      // Create proper Turkish filename
+      const currentDate = new Date();
+      const dateStr = currentDate.toISOString().split('T')[0]; // 2025-01-02
+      const timeStr = currentDate.toTimeString().split(' ')[0].replace(/:/g, '-'); // 18-03-41
+      
+      // Clean table name for filename
+      const cleanTableName = table?.name?.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_') || 'Tablo';
       
       const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/pdf`, {
         method: 'POST',
@@ -314,12 +367,16 @@ export default function TablePage() {
           includeDate: true,
           highlightedCells: preparedHighlightedCells,
           title: `${table?.name} - Formül Analizi`,
-          subtitle: 'Çınar Çevre Laboratuvarı',
+          subtitle: 'Çınar Çevre Laboratuvarı Veri Görüntüleme ve Analiz Portalı',
+          orientation: 'landscape',
+          includeFormulas: formulas.length > 0,
+          userName: 'Portal Kullanıcısı'
         }),
       });
       
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('❌ PDF API error:', errorText);
         throw new Error(`PDF oluşturulamadı (${response.status}): ${errorText}`);
       }
       
@@ -327,18 +384,28 @@ export default function TablePage() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${table?.name || 'table'}_formula_analysis.pdf`;
+      
+      // Use proper Turkish filename with timestamp
+      a.download = `Cinar_Veri_Raporu_${cleanTableName}_${dateStr}_${timeStr}.pdf`;
+      
       document.body.appendChild(a);
       a.click();
       
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
-      console.log('PDF başarıyla indirildi');
+      console.log(`✅ PDF başarıyla indirildi: ${a.download}`);
+      setError(`PDF başarıyla oluşturuldu ve indirildi: ${a.download}`);
+      
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setError(null);
+      }, 5000);
+      
     } catch (err) {
       const errorMessage = (err as Error).message;
+      console.error('❌ Error exporting to PDF:', err);
       setError(errorMessage);
-      console.error('Error exporting to PDF:', err);
     } finally {
       setLoading(false);
     }
@@ -364,6 +431,11 @@ export default function TablePage() {
       setFormulas(prevFormulas => prevFormulas.map(formula =>
         formula.id === formulaId ? updatedFormula : formula
       ));
+      
+      // ENHANCED: Trigger auto-refresh after formula toggle
+      setAutoRefresh(true);
+      setTimeout(() => setAutoRefresh(false), 5000); // Auto-refresh for 5 seconds
+      
     } catch (err) {
       setError((err as Error).message);
       console.error('Error toggling formula:', err);
@@ -389,6 +461,11 @@ export default function TablePage() {
       }
       
       setFormulas(prevFormulas => prevFormulas.filter(formula => formula.id !== formulaId));
+      
+      // ENHANCED: Trigger auto-refresh after formula deletion
+      setAutoRefresh(true);
+      setTimeout(() => setAutoRefresh(false), 5000); // Auto-refresh for 5 seconds
+      
     } catch (err) {
       setError((err as Error).message);
       console.error('Error deleting formula:', err);
@@ -398,7 +475,13 @@ export default function TablePage() {
   };
 
   // Handle formula creation with FormulaBuilder
-  const handleFormulaCreate = async (formula: string, name: string, color: string) => {
+  const handleFormulaCreate = async (
+    formula: string, 
+    name: string, 
+    color: string, 
+    scope: 'table' | 'workspace', 
+    tableId?: string
+  ) => {
     try {
       setLoading(true);
       const response = await fetch(`/api/workspaces/${workspaceId}/formulas`, {
@@ -411,25 +494,34 @@ export default function TablePage() {
           formula,
           color,
           type: 'CELL_VALIDATION',
-          description: `Variable kolonundan oluşturulan formül: ${formula}`,
-          active: true
+          description: `${scope === 'table' ? 'Tablo' : 'Workspace'} kapsamından oluşturulan formül: ${formula}`,
+          active: true,
+          scope: scope, // ENHANCED: Include scope
+          tableId: scope === 'table' ? (tableId || table?.id) : null // ENHANCED: Include tableId for table scope
         }),
       });
       
       if (!response.ok) {
-        throw new Error(`Error creating formula: ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Error creating formula: ${response.statusText}`);
       }
       
-      const newFormula = await response.json();
+      const result = await response.json();
+      const newFormula = result.formula || result; // Handle different response formats
       setFormulas(prev => [...prev, newFormula]);
       setShowCreateForm(false); // Close the creation form
       
-      // Success feedback
-      console.log(`✅ Formül "${name}" başarıyla oluşturuldu!`);
+      // Success feedback with scope information
+      const scopeInfo = scope === 'table' ? 'bu tabloya' : 'tüm workspace\'e';
+      console.log(`✅ Formül "${name}" başarıyla oluşturuldu ve ${scopeInfo} uygulandı!`);
+      
+      // ENHANCED: Trigger auto-refresh after formula creation
+      setAutoRefresh(true);
+      setTimeout(() => setAutoRefresh(false), 10000); // Auto-refresh for 10 seconds
       
       // Show temporary success message
       setError(null);
-      const successMessage = `Formül "${name}" başarıyla oluşturuldu ve mevcut formüller listesine eklendi.`;
+      const successMessage = `Formül "${name}" başarıyla oluşturuldu (${scopeInfo}) ve mevcut formüller listesine eklendi.`;
       
       // Clear success message after 3 seconds
       setTimeout(() => {
@@ -512,6 +604,36 @@ export default function TablePage() {
             )}
 
             <div className="flex space-x-2">
+              {/* ENHANCED: Auto-refresh controls */}
+              <div className="flex items-center space-x-2 bg-gray-50 rounded-lg p-2">
+                <label className="flex items-center space-x-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={autoRefresh}
+                    onChange={(e) => setAutoRefresh(e.target.checked)}
+                    className="rounded border-gray-300 text-blue-600"
+                  />
+                  <span>Otomatik Yenile</span>
+                </label>
+                {autoRefresh && (
+                  <select
+                    value={refreshInterval}
+                    onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                    className="text-xs border-gray-300 rounded"
+                  >
+                    <option value={10}>10s</option>
+                    <option value={30}>30s</option>
+                    <option value={60}>1m</option>
+                    <option value={300}>5m</option>
+                  </select>
+                )}
+                {lastRefresh && (
+                  <span className="text-xs text-gray-500">
+                    Son: {lastRefresh.toLocaleTimeString('tr-TR')}
+                  </span>
+                )}
+              </div>
+              
               <Link
                 href={`/dashboard/workspaces/${workspaceId}/analysis?tableId=${tableId}`}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md flex items-center"
@@ -530,15 +652,6 @@ export default function TablePage() {
               >
                 <FcRules className="mr-2" />
                 {showFormulaSidebar ? 'Formülleri Gizle (ESC)' : 'Formülleri Göster'}
-              </button>
-              
-              <button
-                onClick={applyFormulas}
-                disabled={activeFormulas.length === 0 || loading}
-                className={`px-4 py-2 rounded-md flex items-center ${                  activeFormulas.length === 0 || loading                    ? 'bg-slate-300 cursor-not-allowed text-slate-600'                    : 'bg-green-600 hover:bg-green-700 text-white'                }`}
-              >
-                <FcReuse className="mr-2 bg-white rounded-full" />
-                {loading ? 'İşleniyor...' : 'Formülleri Uygula'}
               </button>
               
               <button
@@ -595,7 +708,7 @@ export default function TablePage() {
                     <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h4 className="font-medium text-green-800 mb-1">Hızlı Formül Oluştur</h4>
+                          <h4 className="font-medium text-green-800 mb-1">Formül Oluştur</h4>
                           <p className="text-sm text-green-600">
                             {variables.length} değişken mevcut. Yeni formül oluşturmak için tıklayın.
                           </p>
@@ -614,7 +727,7 @@ export default function TablePage() {
                       </div>
                       {variables.length === 0 && (
                         <div className="mt-3 p-2 bg-orange-100 border border-orange-300 rounded text-orange-800 text-sm">
-                          ⚠️ Formül oluşturmak için tabloda "Variable" kolonuna değişken adları ekleyin
+                          ⚠️ Formül oluşturmak için tabloda &quot;Variable&quot; kolonuna değişken adları ekleyin
                         </div>
                       )}
                     </div>
@@ -634,6 +747,8 @@ export default function TablePage() {
                         onSave={handleFormulaCreate}
                         onCancel={() => setShowCreateForm(false)}
                         isVisible={true}
+                        availableTables={[{ id: table?.id || '', name: table?.name || '' }]} // ENHANCED: Pass current table
+                        currentTableId={table?.id} // ENHANCED: Pass current table ID
                       />
                     </div>
                   )}
@@ -715,12 +830,42 @@ export default function TablePage() {
                   {formulas.length > 0 && (
                     <div className="border-t pt-4">
                       <h4 className="font-medium text-gray-700 mb-3">
-                        📋 Tabloya Formül Uygula
+                        Tabloya Formül Uygula
                       </h4>
                       <FormulaSelector
                         workspaceId={workspaceId}
                         onSelectionChange={handleFormulaChange}
                       />
+                      
+                      {/* Apply Formulas Button */}
+                      <div className="mt-4 flex items-center justify-between">
+                        <button
+                          onClick={applyFormulas}
+                          disabled={loading}
+                          className={`px-4 py-2 rounded-lg flex items-center transition-all ${
+                            loading
+                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg transform hover:-translate-y-0.5'
+                          }`}
+                        >
+                          {loading ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                              Uygulanıyor...
+                            </>
+                          ) : (
+                            <>
+                              🎯 Formülleri Uygula
+                            </>
+                          )}
+                        </button>
+                        
+                        {highlightedCells.length > 0 && (
+                          <span className="text-sm text-green-600 font-medium">
+                            ✅ {highlightedCells.length} hücre vurgulandı
+                          </span>
+                        )}
+                      </div>
                     </div>
                   )}
                   

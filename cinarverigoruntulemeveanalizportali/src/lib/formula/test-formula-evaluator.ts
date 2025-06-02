@@ -4,7 +4,7 @@
  * This file contains test functions to verify the formula evaluator functionality
  */
 
-import { evaluateFormulas } from '../formulaEvaluator';
+import { evaluateFormulasWithDataRows } from '../enhancedFormulaEvaluator';
 
 // Test data
 const testFormulas = [
@@ -81,7 +81,7 @@ export function testFormulaEvaluator() {
   console.log('Running formula evaluator test...');
   
   try {
-    const highlightedCells = evaluateFormulas(testFormulas, testData, testColumns);
+    const highlightedCells = evaluateFormulasWithDataRows(testFormulas, testData, testColumns);
     
     console.log('Formula evaluation completed successfully.');
     console.log(`Generated ${highlightedCells.length} highlighted cells:`);
@@ -131,4 +131,4 @@ export function testFormulaEvaluator() {
 // Run the test if this file is executed directly
 if (require.main === module) {
   testFormulaEvaluator();
-} 
+}

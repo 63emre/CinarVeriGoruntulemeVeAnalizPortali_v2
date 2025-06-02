@@ -1,8 +1,9 @@
 'use client';
 
+import React from 'react';
 import { useState, useEffect } from 'react';
 import DataTable from '@/components/tables/DataTable';
-import { evaluateFormulas } from '@/lib/formulaEvaluator';
+import { evaluateFormulasWithDataRows } from '@/lib/enhancedFormulaEvaluator';
 
 // Define the HighlightedCell interface
 interface HighlightedCell {
@@ -20,7 +21,7 @@ interface HighlightedCell {
   }[];
 }
 
-// Test data for demonstration
+// Test formulas for validation and system testing
 const testFormulas = [
   {
     id: '1',
@@ -102,7 +103,7 @@ export default function FormulaTestPage() {
   // Evaluate formulas when component mounts or active formulas change
   useEffect(() => {
     try {
-      const result = evaluateFormulas(
+      const result = evaluateFormulasWithDataRows(
         activeFormulas,
         testData,
         testColumns.map(col => col.id)

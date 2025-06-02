@@ -1,125 +1,123 @@
 'use client';
 
-import React, { useState } from 'react';
-import { FcPlus, FcOk, FcCancel, FcRules } from 'react-icons/fc';
+import React, { useState, useEffect } from 'react';
+import { FcCancel, FcRules, FcOk, FcCalculator } from 'react-icons/fc';
 
 interface FormulaBuilderProps {
   variables: string[];
-  onSave: (formula: string, name: string, color: string) => void;
+  onSave: (formula: string, name: string, color: string, scope: 'table' | 'workspace', tableId?: string) => void;
   onCancel: () => void;
   isVisible: boolean;
+  availableTables?: Array<{ id: string; name: string; }>;
+  currentTableId?: string;
 }
 
-interface FormulaCondition {
-  leftOperand: {
-    type: 'variable' | 'constant';
-    value: string | number;
-  };
-  leftOperator?: '+' | '-' | '*' | '/';
-  rightOperand?: {
-    type: 'variable' | 'constant';
-    value: string | number;
-  };
-  comparison: '>' | '<' | '>=' | '<=' | '==';
-  rightSideOperand: {
-    type: 'variable' | 'constant';
-    value: string | number;
-  };
-  rightSideOperator?: '+' | '-' | '*' | '/';
-  rightSideSecondOperand?: {
-    type: 'variable' | 'constant';
-    value: string | number;
-  };
+// Excel-like simple formula structure
+interface SimpleFormula {
+  targetVariable: string; // Left side - the variable to evaluate
+  comparison: '>' | '<' | '>=' | '<=' | '==' | '!=';
+  rightSideExpression: string; // Right side - can contain any expression with variables, numbers, operations
 }
 
-export default function FormulaBuilder({ variables, onSave, onCancel, isVisible }: FormulaBuilderProps) {
-  const [conditions, setConditions] = useState<FormulaCondition[]>([
-    {
-      leftOperand: { type: 'variable', value: variables[0] || '' },
-      comparison: '>',
-      rightSideOperand: { type: 'constant', value: 0 }
-    }
-  ]);
+export default function FormulaBuilder({ 
+  variables, 
+  onSave, 
+  onCancel, 
+  isVisible, 
+  availableTables = [], 
+  currentTableId 
+}: FormulaBuilderProps) {
+  // Single formula state - Excel-like simplicity
+  const [formula, setFormula] = useState<SimpleFormula>({
+    targetVariable: variables[0] || '',
+    comparison: '>',
+    rightSideExpression: '320'
+  });
+  
   const [formulaName, setFormulaName] = useState('');
   const [formulaColor, setFormulaColor] = useState('#ff4444');
+  const [formulaScope, setFormulaScope] = useState<'table' | 'workspace'>('table');
+  const [selectedTableId, setSelectedTableId] = useState<string>(currentTableId || '');
 
-  const arithmeticOperators = [
-    { value: '+', label: 'Toplama (+)' },
-    { value: '-', label: 'Çıkarma (-)' },
-    { value: '*', label: 'Çarpma (×)' },
-    { value: '/', label: 'Bölme (÷)' }
-  ];
+  // Reset form when visibility changes
+  useEffect(() => {
+    if (isVisible) {
+      setFormula({
+        targetVariable: variables[0] || '',
+        comparison: '>',
+        rightSideExpression: '320'
+      });
+      setFormulaName('');
+      setFormulaColor('#ff4444');
+      setFormulaScope('table');
+      setSelectedTableId(currentTableId || '');
+    }
+  }, [isVisible, variables, currentTableId]);
+
+  // Update target variable when variables change
+  useEffect(() => {
+    if (variables.length > 0 && formula.targetVariable && !variables.includes(formula.targetVariable)) {
+      setFormula(prev => ({
+        ...prev,
+        targetVariable: variables[0]
+      }));
+    }
+  }, [variables, formula.targetVariable]);
 
   const comparisonOperators = [
-    { value: '>', label: 'Büyük (>)' },
-    { value: '<', label: 'Küçük (<)' },
-    { value: '>=', label: 'Büyük veya eşit (≥)' },
-    { value: '<=', label: 'Küçük veya eşit (≤)' },
-    { value: '==', label: 'Eşit (=)' }
+    { value: '>', label: 'büyük (>)' },
+    { value: '<', label: 'küçük (<)' },
+    { value: '>=', label: 'büyük eşit (≥)' },
+    { value: '<=', label: 'küçük eşit (≤)' },
+    { value: '==', label: 'eşit (=)' },
+    { value: '!=', label: 'eşit değil (≠)' }
   ];
 
-  const updateCondition = (index: number, updates: Partial<FormulaCondition>) => {
-    setConditions(prev => prev.map((condition, i) => 
-      i === index ? { ...condition, ...updates } : condition
-    ));
-  };
-
-  const addCondition = () => {
-    setConditions(prev => [...prev, {
-      leftOperand: { type: 'variable', value: variables[0] || '' },
-      comparison: '>',
-      rightSideOperand: { type: 'constant', value: 0 }
-    }]);
-  };
-
-  const removeCondition = (index: number) => {
-    if (conditions.length > 1) {
-      setConditions(prev => prev.filter((_, i) => i !== index));
-    }
-  };
-
+  // Generate the formula string in the format expected by the evaluator
   const generateFormulaString = (): string => {
-    return conditions.map(condition => {
-      // Sol taraf
-      let leftSide = '';
-      if (condition.leftOperand.type === 'variable') {
-        leftSide = `[${condition.leftOperand.value}]`;
-      } else {
-        leftSide = String(condition.leftOperand.value);
-      }
+    // Convert to the format: [targetVariable] comparison rightSideExpression
+    const leftSide = `[${formula.targetVariable}]`;
+    const rightSide = formula.rightSideExpression;
+    
+    return `${leftSide} ${formula.comparison} ${rightSide}`;
+  };
 
-      // Eğer sol tarafta ikinci operand var ise
-      if (condition.leftOperator && condition.rightOperand) {
-        let rightOperandStr = '';
-        if (condition.rightOperand.type === 'variable') {
-          rightOperandStr = `[${condition.rightOperand.value}]`;
-        } else {
-          rightOperandStr = String(condition.rightOperand.value);
-        }
-        leftSide = `(${leftSide} ${condition.leftOperator} ${rightOperandStr})`;
-      }
+  // Insert variable into right side expression at cursor
+  const insertVariable = (variable: string) => {
+    const variableWithBrackets = `[${variable}]`;
+    setFormula(prev => ({
+      ...prev,
+      rightSideExpression: prev.rightSideExpression + variableWithBrackets
+    }));
+  };
 
-      // Sağ taraf
-      let rightSide = '';
-      if (condition.rightSideOperand.type === 'variable') {
-        rightSide = `[${condition.rightSideOperand.value}]`;
-      } else {
-        rightSide = String(condition.rightSideOperand.value);
-      }
+  // Quick insert common operations
+  const insertOperation = (operation: string) => {
+    setFormula(prev => ({
+      ...prev,
+      rightSideExpression: prev.rightSideExpression + operation
+    }));
+  };
 
-      // Eğer sağ tarafta ikinci operand var ise
-      if (condition.rightSideOperator && condition.rightSideSecondOperand) {
-        let secondOperandStr = '';
-        if (condition.rightSideSecondOperand.type === 'variable') {
-          secondOperandStr = `[${condition.rightSideSecondOperand.value}]`;
-        } else {
-          secondOperandStr = String(condition.rightSideSecondOperand.value);
-        }
-        rightSide = `(${rightSide} ${condition.rightSideOperator} ${secondOperandStr})`;
-      }
-
-      return `${leftSide} ${condition.comparison} ${rightSide}`;
-    }).join(' AND ');
+  // Validate the right side expression
+  const validateExpression = (): { isValid: boolean; error?: string } => {
+    try {
+      // Replace variable references with dummy values for validation
+      let testExpression = formula.rightSideExpression;
+      variables.forEach(variable => {
+        const regex = new RegExp(`\\[${variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`, 'g');
+        testExpression = testExpression.replace(regex, '100'); // Use 100 as test value
+      });
+      
+      // Try to evaluate the expression
+      new Function('return ' + testExpression)();
+      return { isValid: true };
+    } catch (error) {
+      return { 
+        isValid: false, 
+        error: 'Geçersiz matematiksel ifade' 
+      };
+    }
   };
 
   const handleSave = () => {
@@ -128,55 +126,82 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
       return;
     }
     
+    if (!formula.targetVariable) {
+      alert('Lütfen hedef değişken seçin');
+      return;
+    }
+    
+    if (!formula.rightSideExpression.trim()) {
+      alert('Lütfen karşılaştırma ifadesi girin');
+      return;
+    }
+    
+    const validation = validateExpression();
+    if (!validation.isValid) {
+      alert(`Formül hatası: ${validation.error}`);
+      return;
+    }
+    
+    if (formulaScope === 'table' && !selectedTableId) {
+      alert('Lütfen hedef tablo seçin');
+      return;
+    }
+    
     const formulaString = generateFormulaString();
-    onSave(formulaString, formulaName, formulaColor);
+    onSave(
+      formulaString, 
+      formulaName, 
+      formulaColor, 
+      formulaScope, 
+      formulaScope === 'table' ? selectedTableId : undefined
+    );
     
     // Reset form
-    setConditions([{
-      leftOperand: { type: 'variable', value: variables[0] || '' },
+    setFormula({
+      targetVariable: variables[0] || '',
       comparison: '>',
-      rightSideOperand: { type: 'constant', value: 0 }
-    }]);
+      rightSideExpression: '320'
+    });
     setFormulaName('');
     setFormulaColor('#ff4444');
+    setFormulaScope('table');
+    setSelectedTableId(currentTableId || '');
   };
 
   if (!isVisible) return null;
 
+  const validation = validateExpression();
+
   return (
-    <div className="bg-white border-2 border-blue-200 rounded-xl p-8 mb-6 shadow-lg">
+    <div className="bg-white border-2 border-blue-200 rounded-xl p-6 mb-6 shadow-lg">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <h3 className="text-2xl font-bold text-gray-800 flex items-center">
-          <FcRules className="mr-3 text-3xl" />
-          Yeni Formül Oluştur
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-bold text-gray-800 flex items-center">
+          <FcCalculator className="mr-3 text-2xl" />
+          Excel-tarzı Formül Oluştur
         </h3>
         <button
           onClick={onCancel}
           className="text-gray-600 hover:text-red-600 transition-colors duration-200 p-2 rounded-lg hover:bg-red-50"
         >
-          <FcCancel className="w-6 h-6" />
+          <FcCancel className="w-5 h-5" />
         </button>
       </div>
 
-      {/* Formül Adı ve Renk */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="md:col-span-2">
-          <label className="block text-sm font-semibold text-gray-800 mb-2">
-            Formül Adı *
-          </label>
+      {/* Formula Name, Color and Scope */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Formül Adı</label>
           <input
             type="text"
             value={formulaName}
             onChange={(e) => setFormulaName(e.target.value)}
-            placeholder="ör. Yüksek İletkenlik Kontrolü"
-            className="w-full px-4 py-3 text-gray-800 border-2 border-gray-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+            className="w-full text-base font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-4 py-3 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+            placeholder="Örn: İletkenlik Kontrol"
           />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-800 mb-2">
-            Vurgulama Rengi
-          </label>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Renk</label>
           <div className="flex items-center space-x-3">
             <input
               type="color"
@@ -184,317 +209,237 @@ export default function FormulaBuilder({ variables, onSave, onCancel, isVisible 
               onChange={(e) => setFormulaColor(e.target.value)}
               className="w-16 h-12 border-2 border-gray-300 rounded-lg cursor-pointer"
             />
-            <div className="flex-1">
-              <div 
-                className="w-full h-6 rounded-md border-2 border-gray-300"
-                style={{ backgroundColor: formulaColor }}
-              ></div>
-              <span className="text-xs text-gray-600 mt-1 block">{formulaColor}</span>
-            </div>
+            <span className="text-sm text-gray-600 font-mono">{formulaColor}</span>
           </div>
         </div>
+        
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">Kapsam</label>
+          <select
+            value={formulaScope}
+            onChange={(e) => {
+              const newScope = e.target.value as 'table' | 'workspace';
+              setFormulaScope(newScope);
+              if (newScope === 'workspace') {
+                setSelectedTableId('');
+              } else {
+                setSelectedTableId(currentTableId || '');
+              }
+            }}
+            className="w-full text-base font-medium text-gray-800 border-2 border-purple-300 rounded-lg px-4 py-3 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 bg-purple-50"
+          >
+            <option value="table">📊 Bu Tablo</option>
+            <option value="workspace">🌐 Tüm Workspace</option>
+          </select>
+        </div>
       </div>
+      
+      {/* Table Selection (when scope is table) */}
+      {formulaScope === 'table' && (
+        <div className="mb-6 p-4 bg-purple-50 border-2 border-purple-200 rounded-lg">
+          <label className="block text-sm font-semibold text-purple-700 mb-2">
+            Hedef Tablo
+          </label>
+          <select
+            value={selectedTableId}
+            onChange={(e) => setSelectedTableId(e.target.value)}
+            className="w-full text-base font-medium text-gray-800 border-2 border-purple-300 rounded-lg px-4 py-3 focus:border-purple-500 focus:ring-2 focus:ring-purple-200"
+          >
+            <option value="">Tablo seçin...</option>
+            {availableTables.map(table => (
+              <option key={table.id} value={table.id}>
+                {table.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-      {/* Formül Koşulları */}
-      <div className="space-y-6">
-        <h4 className="text-lg font-semibold text-gray-800 border-b-2 border-gray-200 pb-2">
-          Formül Koşulları
+      {/* Excel-like Formula Builder */}
+      <div className="mb-6 p-6 border-2 border-green-200 rounded-lg bg-green-50">
+        <h4 className="text-lg font-bold text-green-800 mb-4 flex items-center">
+          <FcCalculator className="mr-2" />
+          Excel-tarzı Formül Editörü
         </h4>
         
-        {conditions.map((condition, index) => (
-          <div key={index} className="border-2 border-gray-300 rounded-xl p-6 bg-gradient-to-r from-blue-50 to-indigo-50">
-            <div className="flex items-center justify-between mb-4">
-              <h5 className="text-lg font-semibold text-gray-800">
-                Koşul {index + 1}
-              </h5>
-              {conditions.length > 1 && (
-                <button
-                  onClick={() => removeCondition(index)}
-                  className="text-red-600 hover:text-red-800 font-medium px-3 py-1 rounded-lg hover:bg-red-100 transition-colors duration-200"
-                >
-                  Koşulu Sil
-                </button>
-              )}
-            </div>
+        {/* Formula Structure Display */}
+        <div className="mb-4 p-4 bg-white border border-gray-300 rounded-lg">
+          <div className="text-sm text-gray-600 mb-2">Formül Yapısı:</div>
+          <div className="text-lg font-mono bg-gray-100 p-3 rounded border">
+            <span className="text-blue-600 font-bold">[{formula.targetVariable}]</span>
+            <span className="text-purple-600 mx-2 font-bold">{formula.comparison}</span>
+            <span className="text-green-600 font-bold">{formula.rightSideExpression || '...'}</span>
+          </div>
+          <div className="text-xs text-gray-500 mt-2">
+            Otomatik olarak oluşturulan formül: {generateFormulaString()}
+          </div>
+        </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-end">
-              {/* Sol Taraf - İlk Operand */}
-              <div className="xl:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Sol İfade</label>
-                <select
-                  value={condition.leftOperand.type}
-                  onChange={(e) => updateCondition(index, {
-                    leftOperand: {
-                      type: e.target.value as 'variable' | 'constant',
-                      value: e.target.value === 'variable' ? (variables[0] || '') : 0
-                    }
-                  })}
-                  className="w-full text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                >
-                  <option value="variable">📊 Değişken</option>
-                  <option value="constant">🔢 Sabit Değer</option>
-                </select>
-                {condition.leftOperand.type === 'variable' ? (
-                  <select
-                    value={condition.leftOperand.value}
-                    onChange={(e) => updateCondition(index, {
-                      leftOperand: { ...condition.leftOperand, value: e.target.value }
-                    })}
-                    className="w-full mt-2 text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  >
-                    {variables.map(variable => (
-                      <option key={variable} value={variable}>{variable}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="number"
-                    step="any"
-                    value={condition.leftOperand.value}
-                    onChange={(e) => updateCondition(index, {
-                      leftOperand: { ...condition.leftOperand, value: parseFloat(e.target.value) || 0 }
-                    })}
-                    className="w-full mt-2 text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    placeholder="Sayı girin"
-                  />
-                )}
-              </div>
+        {/* Target Variable Selection */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              📊 Hedef Değişken (Sol Taraf)
+            </label>
+            <select
+              value={formula.targetVariable}
+              onChange={(e) => setFormula(prev => ({ ...prev, targetVariable: e.target.value }))}
+              className="w-full text-base font-medium text-blue-800 border-2 border-blue-300 rounded-lg px-4 py-3 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 bg-blue-50"
+            >
+              {variables.map(variable => (
+                <option key={variable} value={variable}>{variable}</option>
+              ))}
+            </select>
+            <div className="text-xs text-gray-600 mt-1">Bu değişkenin değeri kontrol edilecek</div>
+          </div>
 
-              {/* Aritmetik Operatör */}
-              <div className="xl:col-span-1">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">İşlem</label>
-                <select
-                  value={condition.leftOperator || ''}
-                  onChange={(e) => updateCondition(index, {
-                    leftOperator: e.target.value ? e.target.value as '+' | '-' | '*' | '/' : undefined,
-                    rightOperand: e.target.value ? { type: 'variable', value: variables[0] || '' } : undefined
-                  })}
-                  className="w-full text-sm font-bold text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                >
-                  <option value="">Yok</option>
-                  {arithmeticOperators.map(op => (
-                    <option key={op.value} value={op.value}>{op.label}</option>
-                  ))}
-                </select>
-              </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              ⚖️ Karşılaştırma Operatörü
+            </label>
+            <select
+              value={formula.comparison}
+              onChange={(e) => setFormula(prev => ({ ...prev, comparison: e.target.value as any }))}
+              className="w-full text-base font-medium text-purple-800 border-2 border-purple-300 rounded-lg px-4 py-3 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 bg-purple-50"
+            >
+              {comparisonOperators.map(op => (
+                <option key={op.value} value={op.value}>{op.label}</option>
+              ))}
+            </select>
+          </div>
 
-              {/* Sol Taraf - İkinci Operand (opsiyonel) */}
-              {condition.leftOperator && (
-                <div className="xl:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">İkinci Operand</label>
-                  <select
-                    value={condition.rightOperand?.type || 'variable'}
-                    onChange={(e) => updateCondition(index, {
-                      rightOperand: {
-                        type: e.target.value as 'variable' | 'constant',
-                        value: e.target.value === 'variable' ? (variables[0] || '') : 0
-                      }
-                    })}
-                    className="w-full text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  >
-                    <option value="variable">📊 Değişken</option>
-                    <option value="constant">🔢 Sabit Değer</option>
-                  </select>
-                  {condition.rightOperand?.type === 'variable' ? (
-                    <select
-                      value={condition.rightOperand.value}
-                      onChange={(e) => updateCondition(index, {
-                        rightOperand: { ...condition.rightOperand!, value: e.target.value }
-                      })}
-                      className="w-full mt-2 text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    >
-                      {variables.map(variable => (
-                        <option key={variable} value={variable}>{variable}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="number"
-                      step="any"
-                      value={condition.rightOperand?.value || 0}
-                      onChange={(e) => updateCondition(index, {
-                        rightOperand: { ...condition.rightOperand!, value: parseFloat(e.target.value) || 0 }
-                      })}
-                      className="w-full mt-2 text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                      placeholder="Sayı girin"
-                    />
-                  )}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
+              🧮 Değerlendirme Durumu
+            </label>
+            <div className={`p-3 rounded-lg border-2 ${validation.isValid ? 'bg-green-100 border-green-300' : 'bg-red-100 border-red-300'}`}>
+              {validation.isValid ? (
+                <div className="flex items-center text-green-700">
+                  <FcOk className="mr-2" />
+                  <span className="font-medium">Geçerli formül</span>
+                </div>
+              ) : (
+                <div className="text-red-700 text-sm">
+                  <span className="font-medium">Hata:</span> {validation.error}
                 </div>
               )}
-
-              {/* Karşılaştırma Operatörü */}
-              <div className={`xl:col-span-1 ${!condition.leftOperator ? 'xl:col-start-4' : ''}`}>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Karşılaştırma</label>
-                <select
-                  value={condition.comparison}
-                  onChange={(e) => updateCondition(index, {
-                    comparison: e.target.value as '>' | '<' | '>=' | '<=' | '=='
-                  })}
-                  className="w-full text-sm font-bold text-purple-800 border-2 border-purple-300 rounded-lg px-3 py-2 focus:border-purple-500 focus:ring-2 focus:ring-purple-200 bg-purple-50"
-                >
-                  {comparisonOperators.map(op => (
-                    <option key={op.value} value={op.value}>{op.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Sağ Taraf - İlk Operand */}
-              <div className="xl:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">Sağ İfade</label>
-                <select
-                  value={condition.rightSideOperand.type}
-                  onChange={(e) => updateCondition(index, {
-                    rightSideOperand: {
-                      type: e.target.value as 'variable' | 'constant',
-                      value: e.target.value === 'variable' ? (variables[0] || '') : 0
-                    }
-                  })}
-                  className="w-full text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                >
-                  <option value="variable">📊 Değişken</option>
-                  <option value="constant">🔢 Sabit Değer</option>
-                </select>
-                {condition.rightSideOperand.type === 'variable' ? (
-                  <select
-                    value={condition.rightSideOperand.value}
-                    onChange={(e) => updateCondition(index, {
-                      rightSideOperand: { ...condition.rightSideOperand, value: e.target.value }
-                    })}
-                    className="w-full mt-2 text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  >
-                    {variables.map(variable => (
-                      <option key={variable} value={variable}>{variable}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="number"
-                    step="any"
-                    value={condition.rightSideOperand.value}
-                    onChange={(e) => updateCondition(index, {
-                      rightSideOperand: { ...condition.rightSideOperand, value: parseFloat(e.target.value) || 0 }
-                    })}
-                    className="w-full mt-2 text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    placeholder="Sayı girin"
-                  />
-                )}
-              </div>
-
-              {/* Sağ Taraf Aritmetik Operatör */}
-              <div className="xl:col-span-1">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">İşlem</label>
-                <select
-                  value={condition.rightSideOperator || ''}
-                  onChange={(e) => updateCondition(index, {
-                    rightSideOperator: e.target.value ? e.target.value as '+' | '-' | '*' | '/' : undefined,
-                    rightSideSecondOperand: e.target.value ? { type: 'variable', value: variables[0] || '' } : undefined
-                  })}
-                  className="w-full text-sm font-bold text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                >
-                  <option value="">Yok</option>
-                  {arithmeticOperators.map(op => (
-                    <option key={op.value} value={op.value}>{op.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Sağ Taraf - İkinci Operand (opsiyonel) */}
-              {condition.rightSideOperator && (
-                <div className="xl:col-span-2">
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">İkinci Operand</label>
-                  <select
-                    value={condition.rightSideSecondOperand?.type || 'variable'}
-                    onChange={(e) => updateCondition(index, {
-                      rightSideSecondOperand: {
-                        type: e.target.value as 'variable' | 'constant',
-                        value: e.target.value === 'variable' ? (variables[0] || '') : 0
-                      }
-                    })}
-                    className="w-full text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                  >
-                    <option value="variable">📊 Değişken</option>
-                    <option value="constant">🔢 Sabit Değer</option>
-                  </select>
-                  {condition.rightSideSecondOperand?.type === 'variable' ? (
-                    <select
-                      value={condition.rightSideSecondOperand.value}
-                      onChange={(e) => updateCondition(index, {
-                        rightSideSecondOperand: { ...condition.rightSideSecondOperand!, value: e.target.value }
-                      })}
-                      className="w-full mt-2 text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    >
-                      {variables.map(variable => (
-                        <option key={variable} value={variable}>{variable}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="number"
-                      step="any"
-                      value={condition.rightSideSecondOperand?.value || 0}
-                      onChange={(e) => updateCondition(index, {
-                        rightSideSecondOperand: { ...condition.rightSideSecondOperand!, value: parseFloat(e.target.value) || 0 }
-                      })}
-                      className="w-full mt-2 text-sm font-medium text-gray-800 border-2 border-gray-300 rounded-lg px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                      placeholder="Sayı girin"
-                    />
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Formül Önizleme */}
-            <div className="mt-6 p-4 bg-white border-2 border-blue-300 rounded-lg">
-              <h6 className="text-sm font-bold text-blue-800 mb-2">📋 Bu Koşulun Önizlemesi:</h6>
-              <code className="text-base font-mono text-green-700 bg-green-50 px-3 py-2 rounded-lg block">
-                {generateFormulaString().split(' AND ')[index]}
-              </code>
             </div>
           </div>
-        ))}
-      </div>
-
-      {/* Koşul Ekle Butonu */}
-      <div className="mt-8">
-        <button
-          onClick={addCondition}
-          className="text-blue-700 hover:text-blue-900 font-semibold text-lg flex items-center bg-blue-100 hover:bg-blue-200 px-6 py-3 rounded-lg transition-all duration-200"
-        >
-          <FcPlus className="mr-2 text-xl" />
-          + Yeni Koşul Ekle
-        </button>
-      </div>
-
-      {/* Tam Formül Önizleme */}
-      <div className="mt-8 p-6 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-300 rounded-xl">
-        <h4 className="text-xl font-bold text-green-800 mb-4 flex items-center">
-          🎯 Tam Formül Önizlemesi:
-        </h4>
-        <div className="bg-white p-4 rounded-lg border-2 border-green-200">
-          <code className="text-lg font-mono text-green-700 break-all">
-            {generateFormulaString()}
-          </code>
         </div>
-        <div className="mt-3 text-sm text-green-700">
-          <p><strong>ℹ️ Açıklama:</strong> Formül tüm koşulların AND (VE) mantığı ile birleştirilmesiyle oluşur. Tüm koşullar sağlandığında hücreler vurgulanır.</p>
+
+        {/* Right Side Expression Builder */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-700 mb-2">
+            🧮 Karşılaştırma İfadesi (Sağ Taraf)
+          </label>
+          <textarea
+            value={formula.rightSideExpression}
+            onChange={(e) => setFormula(prev => ({ ...prev, rightSideExpression: e.target.value }))}
+            className={`w-full h-24 text-lg font-mono border-2 rounded-lg px-4 py-3 focus:ring-2 focus:ring-green-200 ${
+              validation.isValid ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'
+            }`}
+            placeholder="Örn: 320 veya [başka_değişken] * 2 + 100"
+          />
+          <div className="text-sm text-gray-600 mt-2">
+            💡 Sayılar, değişkenler ([değişken_adı]) ve matematik işlemler (+, -, *, /, parantez) kullanabilirsiniz
+          </div>
+        </div>
+
+        {/* Quick Insert Buttons */}
+        <div className="mt-4">
+          <div className="mb-3">
+            <span className="text-sm font-semibold text-gray-700">Hızlı Ekle - Değişkenler:</span>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {variables.slice(0, 6).map(variable => (
+                <button
+                  key={variable}
+                  onClick={() => insertVariable(variable)}
+                  className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors border border-blue-300"
+                >
+                  📊 {variable}
+                </button>
+              ))}
+              {variables.length > 6 && (
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      insertVariable(e.target.value);
+                      e.target.value = '';
+                    }
+                  }}
+                  className="px-2 py-1 text-xs border border-blue-300 rounded"
+                >
+                  <option value="">Diğer değişkenler...</option>
+                  {variables.slice(6).map(variable => (
+                    <option key={variable} value={variable}>{variable}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <span className="text-sm font-semibold text-gray-700">Hızlı Ekle - İşlemler:</span>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {[
+                { op: ' + ', label: 'Toplama' },
+                { op: ' - ', label: 'Çıkarma' },
+                { op: ' * ', label: 'Çarpma' },
+                { op: ' / ', label: 'Bölme' },
+                { op: ' ( ', label: '(' },
+                { op: ' ) ', label: ')' }
+              ].map(({ op, label }) => (
+                <button
+                  key={op}
+                  onClick={() => insertOperation(op)}
+                  className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors border border-gray-300"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Kaydet/İptal Butonları */}
-      <div className="flex justify-end space-x-4 mt-8 pt-6 border-t-2 border-gray-200">
+      {/* Example Formulas */}
+      <div className="mb-6 p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+        <h5 className="text-sm font-bold text-yellow-800 mb-2">💡 Örnek Formüller:</h5>
+        <div className="space-y-2 text-sm">
+          <div>
+            <code className="bg-white px-2 py-1 rounded border">[iletkenlik] {'>'} 320</code>
+            <span className="text-gray-600 ml-2">- İletkenlik 320'den büyükse</span>
+          </div>
+          <div>
+            <code className="bg-white px-2 py-1 rounded border">[pH] {'>='} 6.5 AND [pH] {'<='} 8.5</code>
+            <span className="text-gray-600 ml-2">- pH değeri 6.5-8.5 arasındaysa</span>
+          </div>
+          <div>
+            <code className="bg-white px-2 py-1 rounded border">[toplam_klor] {'>'} [serbest_klor] * 2</code>
+            <span className="text-gray-600 ml-2">- Toplam klor, serbest klorun 2 katından büyükse</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Save and Cancel Buttons */}
+      <div className="flex items-center justify-end space-x-4">
         <button
           onClick={onCancel}
-          className="px-6 py-3 text-gray-700 font-semibold bg-gray-200 hover:bg-gray-300 rounded-lg transition-all duration-200 border-2 border-gray-300"
+          className="px-6 py-3 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-medium"
         >
-          ❌ İptal Et
+          İptal
         </button>
         <button
           onClick={handleSave}
-          disabled={!formulaName.trim()}
-          className="px-8 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg flex items-center transition-all duration-200 border-2 border-green-700 disabled:border-gray-400 text-lg"
+          disabled={!validation.isValid || !formulaName.trim()}
+          className={`px-8 py-3 rounded-lg font-medium transition-colors ${
+            validation.isValid && formulaName.trim()
+              ? 'bg-green-600 text-white hover:bg-green-700 shadow-md hover:shadow-lg'
+              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+          }`}
         >
-          <FcOk className="mr-2 text-xl" />
-          ✅ Formülü Kaydet
+          <FcOk className="inline mr-2" />
+          Formülü Kaydet
         </button>
       </div>
     </div>

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { FcDataSheet, FcAddRow, FcDocument, FcAreaChart, FcSettings } from 'react-icons/fc';
+import { useParams } from 'next/navigation';
+import { FcDataSheet, FcAddRow, FcDocument, FcAreaChart } from 'react-icons/fc';
 import ExcelUploader from '@/components/tables/ExcelUploader';
 import WorkspaceInfo from '@/components/workspaces/WorkspaceInfo';
 import TablesView from '@/components/tables/TablesView';
@@ -29,7 +29,6 @@ interface Table {
 export default function WorkspaceDetailPage() {
   const params = useParams();
   const workspaceId = params.workspaceId as string;
-  const router = useRouter();
   
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
@@ -41,16 +40,22 @@ export default function WorkspaceDetailPage() {
     // Fetch workspace data
     async function fetchWorkspaceData() {
       try {
+        setLoading(true);
+        console.log(`🔍 Fetching workspace data for ID: ${workspaceId}`);
+        
         const response = await fetch(`/api/workspaces/${workspaceId}`);
         
         if (!response.ok) {
+          const errorData = await response.text();
+          console.error(`❌ Workspace fetch failed: ${response.status} - ${errorData}`);
           throw new Error('Çalışma alanı verileri yüklenemedi');
         }
         
         const data = await response.json();
+        console.log('✅ Workspace data loaded:', data);
         setWorkspace(data);
       } catch (err) {
-        console.error('Çalışma alanı verileri yükleme hatası:', err);
+        console.error('❌ Çalışma alanı verileri yükleme hatası:', err);
         setError((err as Error).message);
       } finally {
         setLoading(false);
@@ -60,16 +65,23 @@ export default function WorkspaceDetailPage() {
     // Fetch tables
     async function fetchTables() {
       try {
+        console.log(`🔍 Fetching tables for workspace: ${workspaceId}`);
+        
         const response = await fetch(`/api/workspaces/${workspaceId}/tables`);
         
         if (!response.ok) {
+          const errorData = await response.text();
+          console.error(`❌ Tables fetch failed: ${response.status} - ${errorData}`);
           throw new Error('Tablolar yüklenemedi');
         }
         
         const data = await response.json();
+        console.log('✅ Tables data loaded:', data);
+        console.log(`📊 Found ${Array.isArray(data) ? data.length : 0} tables`);
+        
         setTables(Array.isArray(data) ? data : []);
       } catch (err) {
-        console.error('Tablolar yükleme hatası:', err);
+        console.error('❌ Tablolar yükleme hatası:', err);
         setError((err as Error).message);
       }
     }

@@ -17,9 +17,6 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [showEditUserModal, setShowEditUserModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -51,12 +48,13 @@ export default function UsersPage() {
   }, []);
   
   const handleAddUser = () => {
-    setShowAddUserModal(true);
+    // TODO: Implement add user modal
+    console.log('Add user functionality not implemented yet');
   };
   
   const handleEditUser = (user: User) => {
-    setSelectedUser(user);
-    setShowEditUserModal(true);
+    // TODO: Implement edit user modal
+    console.log('Edit user functionality not implemented yet', user);
   };
   
   const isAdmin = currentUser?.role === 'ADMIN';

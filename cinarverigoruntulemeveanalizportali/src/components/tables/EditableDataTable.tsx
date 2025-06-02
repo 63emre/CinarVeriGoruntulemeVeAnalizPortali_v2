@@ -1,7 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { FcPrint, FcFullTrash, FcCheckmark, FcCancel } from 'react-icons/fc';import { AiOutlineSearch, AiOutlineEdit, AiOutlineSave } from 'react-icons/ai';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { FcPrint, FcFullTrash, FcCheckmark, FcCancel, FcRules, FcDocument } from 'react-icons/fc';
+import { AiOutlineSearch, AiOutlineSave } from 'react-icons/ai';
+import { FiDownload } from 'react-icons/fi';
+import TableCell from './TableCell'; // ENHANCED: Import TableCell for pizza slice effect
 
 type Column = {
   id: string;
@@ -15,68 +18,76 @@ type DataRow = {
   id: string;
 };
 
-// Interface for formula-highlighted cells
+// ENHANCED: Updated interface to match TableCell expectations
 interface HighlightedCell {
   row: string;
   col: string;
   color: string;
-  message?: string;
+  message: string;
+  formulaIds?: string[];
+  formulaDetails?: {
+    id: string;
+    name: string;
+    formula: string;
+    leftResult?: number;
+    rightResult?: number;
+    color: string;
+  }[];
 }
 
-// Utility function to convert hex color to RGB
-const hexToRgb = (hex: string): { r: number; g: number; b: number } | null => {
-  if (!hex) return null;
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result ? {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16)
-  } : null;
-};
-
 interface EditableDataTableProps {
-  data?: DataRow[];
-  columns?: Column[];
-  title?: string;
+  columns: Column[];
+  data: DataRow[];
   loading?: boolean;
-  downloadUrl?: string;
-  printable?: boolean;
-  tableId?: string;
+  title?: string;
   workspaceId?: string;
+  tableId?: string;
   highlightedCells?: HighlightedCell[];
   onCellSelect?: (rowId: string, colId: string, value: string | number | null) => void;
   onDataChange?: (updatedData: DataRow[]) => void;
+  onFormulasRecalculated?: (highlightedCells: HighlightedCell[]) => void;
+  autoRecalculateFormulas?: boolean;
+  printable?: boolean;
+  downloadUrl?: string;
+  showDataTypes?: boolean;
+  cellBorderWidth?: number;
 }
 
-export default function EditableDataTable({ 
-  data: initialData, 
-  columns: initialColumns, 
-  title: initialTitle, 
-  loading: initialLoading = false,
-  downloadUrl,
-  printable = false,
-  tableId,
+export default function EditableDataTable({
+  columns,
+  data,
+  loading = false,
+  title = 'Veri Tablosu',
   workspaceId,
+  tableId,
   highlightedCells = [],
   onCellSelect,
-  onDataChange
+  onDataChange,
+  onFormulasRecalculated,
+  autoRecalculateFormulas = true,
+  printable = false,
+  downloadUrl,
+  showDataTypes = true,
+  cellBorderWidth = 2
 }: EditableDataTableProps) {
-  const [data, setData] = useState<DataRow[]>(initialData || []);
-  const [originalData, setOriginalData] = useState<DataRow[]>(initialData || []);
-  const [columns, setColumns] = useState<Column[]>(initialColumns || []);
-  const [title, setTitle] = useState(initialTitle || 'Tablo');
-  const [loading, setLoading] = useState(initialLoading || false);
+  const [tableData, setTableData] = useState<DataRow[]>(data);
+  const [originalData, setOriginalData] = useState<DataRow[]>(data);
+  const [editingCell, setEditingCell] = useState<{rowId: string, colId: string} | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortColumn, setSortColumn] = useState('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedCell, setSelectedCell] = useState<{row: string, col: string} | null>(null);
-  const [editingCell, setEditingCell] = useState<{row: string, col: string} | null>(null);
-  const [editValue, setEditValue] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-    const [savingError, setSavingError] = useState<string | null>(null);    const editInputRef = useRef<HTMLInputElement>(null);  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [savingError, setSavingError] = useState<string | null>(null);
+  const [formulas, setFormulas] = useState<any[]>([]);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+
+  const editInputRef = useRef<HTMLInputElement>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   // Focus the edit input when it becomes visible
   useEffect(() => {
@@ -88,10 +99,9 @@ export default function EditableDataTable({
 
   // Fetch table data if tableId and workspaceId are provided
   useEffect(() => {
-    if (tableId && workspaceId && !initialData) {
+    if (tableId && workspaceId && !data.length) {
       const fetchTableData = async () => {
-        setLoading(true);
-        setError(null);
+        console.log('Fetching table data for:', tableId);
         try {
           const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}`);
           if (!response.ok) {
@@ -125,44 +135,126 @@ export default function EditableDataTable({
               return rowData;
             });
             
-            setColumns(columnDefs);
-            setData(rowsWithIds);
+            console.log('🔍 ROW ID DEBUG:', {
+              totalRows: rowsWithIds.length,
+              sampleRowIds: rowsWithIds.slice(0, 5).map(row => row.id),
+              highlightedRowIds: highlightedCells.map(cell => cell.row).slice(0, 10)
+            });
+            
+            // Update local state with fetched data
+            setTableData(rowsWithIds);
             setOriginalData(JSON.parse(JSON.stringify(rowsWithIds)));
-            setTitle(tableData.name || 'Tablo');
           } else {
             throw new Error('Tablo yapısı geçersiz');
           }
         } catch (err) {
           console.error('Error fetching table data:', err);
           setError((err as Error).message);
-        } finally {
-          setLoading(false);
         }
       };
       
       fetchTableData();
     } else if (!tableId && workspaceId) {
       setError('Lütfen bir tablo seçin');
-      setLoading(false);
     }
-  }, [tableId, workspaceId, initialData]);
+  }, [tableId, workspaceId, data.length, highlightedCells]);
   
-  // Update data when initialData changes
+  // Update data when data prop changes
   useEffect(() => {
-    if (initialData) {
-      setData(initialData);
-      setOriginalData(JSON.parse(JSON.stringify(initialData)));
+    if (data && data.length > 0) {
+      setTableData(data);
+      setOriginalData(JSON.parse(JSON.stringify(data)));
       setHasChanges(false);
     }
-  }, [initialData]);
+  }, [data]);
 
-  // Update columns when initialColumns changes
+  // NEW: Fetch formulas for auto-recalculation
   useEffect(() => {
-    if (initialColumns) {
-      setColumns(initialColumns);
+    const fetchFormulas = async () => {
+      if (!workspaceId || !autoRecalculateFormulas) return;
+      
+      try {
+        const response = await fetch(`/api/workspaces/${workspaceId}/formulas`);
+        if (response.ok) {
+          const formulasData = await response.json();
+          const activeFormulas = formulasData.filter((f: any) => f.active === true);
+          setFormulas(activeFormulas);
+          console.log(`📊 EditableDataTable: Loaded ${activeFormulas.length} active formulas for auto-recalculation`);
+        }
+      } catch (error) {
+        console.error('Error fetching formulas for auto-recalculation:', error);
+      }
+    };
+
+    fetchFormulas();
+  }, [workspaceId, autoRecalculateFormulas]);
+
+  // NEW: Auto-recalculate formulas when data changes
+  const recalculateFormulas = useCallback(async (updatedData: DataRow[]) => {
+    if (!autoRecalculateFormulas || formulas.length === 0 || !workspaceId) {
+      return;
     }
-  }, [initialColumns]);
-  
+
+    setIsRecalculating(true);
+    try {
+      console.log('🔄 Auto-recalculating formulas after data change...');
+      
+      // Import the formula evaluator
+      const { evaluateFormulasWithDataRows } = await import('@/lib/enhancedFormulaEvaluator');
+      
+      // Recalculate highlights
+      const newHighlights = evaluateFormulasWithDataRows(
+        formulas,
+        updatedData,
+        columns.map(col => col.id)
+      );
+      
+      console.log(`✨ Auto-recalculation complete: ${newHighlights.length} highlighted cells`);
+      
+      // Notify parent component about new highlights
+      if (onFormulasRecalculated) {
+        onFormulasRecalculated(newHighlights);
+      }
+      
+      // Show brief feedback to user
+      if (newHighlights.length !== highlightedCells.length) {
+        setError(`🔄 Formüller otomatik güncellendi: ${newHighlights.length} hücre vurgulandı`);
+        setTimeout(() => setError(null), 3000);
+      }
+      
+    } catch (error) {
+      console.error('Error in auto-recalculation:', error);
+      setError('Formül otomatik hesaplamasında hata oluştu');
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setIsRecalculating(false);
+    }
+  }, [formulas, highlightedCells.length, columns, workspaceId, autoRecalculateFormulas, onFormulasRecalculated]);
+
+  // Handle cell value changes with auto-recalculation
+  const handleCellChange = useCallback(async (rowId: string, colId: string, newValue: string | number | null) => {
+    const updatedData = tableData.map(row => 
+      row.id === rowId 
+        ? { ...row, [colId]: newValue }
+        : row
+    );
+    
+    setTableData(updatedData);
+    setEditingCell(null);
+    
+    // Notify parent component
+    if (onDataChange) {
+      onDataChange(updatedData);
+    }
+    
+    // AUTO-RECALCULATE formulas
+    if (autoRecalculateFormulas) {
+      await recalculateFormulas(updatedData);
+    }
+    
+    console.log(`📝 Cell updated: ${rowId}.${colId} = ${newValue}${autoRecalculateFormulas ? ' (formulas auto-recalculated)' : ''}`);
+  }, [tableData, onDataChange, autoRecalculateFormulas, recalculateFormulas]);
+
   const handleSort = (columnId: string) => {
     if (sortColumn === columnId) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -172,8 +264,8 @@ export default function EditableDataTable({
     }
   };
   
-  const sortedData = Array.isArray(data) 
-    ? [...data].sort((a, b) => {
+  const sortedData = Array.isArray(tableData) 
+    ? [...tableData].sort((a, b) => {
         if (!sortColumn) return 0;
         
         const aValue = a[sortColumn];
@@ -215,7 +307,7 @@ export default function EditableDataTable({
   const handleCellDoubleClick = (rowId: string, colId: string, value: string | number | null, isEditable: boolean) => {
     if (!isEditable) return;
     
-    setEditingCell({ row: rowId, col: colId });
+    setEditingCell({ rowId, colId });
     setEditValue(value !== null ? String(value) : '');
   };
   
@@ -226,7 +318,7 @@ export default function EditableDataTable({
   
   const handleEditSave = (rowId: string, colId: string) => {
     // Find the row in the data array
-    const updatedData = data.map(row => {
+    const updatedData = tableData.map(row => {
       if (row.id === rowId) {
         // Parse number if the original value was a number
         const originalValue = row[colId];
@@ -241,7 +333,7 @@ export default function EditableDataTable({
       return row;
     });
     
-    setData(updatedData);
+    setTableData(updatedData);
     setEditingCell(null);
     setEditValue('');
     setHasChanges(true);
@@ -266,20 +358,6 @@ export default function EditableDataTable({
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
   };
-  // Create a lookup map for O(1) highlight access - performance optimization
-  const highlightLookup = useMemo(() => {
-    const lookup = new Map<string, HighlightedCell>();
-    highlightedCells.forEach(cell => {
-      const key = `${cell.row}-${cell.col}`;
-      lookup.set(key, cell);
-    });
-    return lookup;
-  }, [highlightedCells]);
-
-  // Check if a cell has a highlight - now O(1) instead of O(n)
-  const getCellHighlight = (rowId: string, colId: string) => {
-    return highlightLookup.get(`${rowId}-${colId}`);
-  };
   
   // Save all changes back to the server
   const saveChanges = async () => {
@@ -296,7 +374,7 @@ export default function EditableDataTable({
       const apiData = {
         name: title,
         columns: columns.filter(col => col.id !== 'id').map(col => col.id),
-        data: data.map(row => {
+        data: tableData.map(row => {
           return columns.filter(col => col.id !== 'id').map(col => row[col.id]);
         })
       };
@@ -314,7 +392,7 @@ export default function EditableDataTable({
       }
       
       // Update original data to match current data
-      setOriginalData(JSON.parse(JSON.stringify(data)));
+      setOriginalData(JSON.parse(JSON.stringify(tableData)));
       setHasChanges(false);
       
     } catch (err) {
@@ -327,11 +405,66 @@ export default function EditableDataTable({
   
   // Discard all changes and revert to original data
   const discardChanges = () => {
-    setData(JSON.parse(JSON.stringify(originalData)));
+    setTableData(JSON.parse(JSON.stringify(originalData)));
     setHasChanges(false);
   };
 
-    // Add resize observer to adjust the table container size  useEffect(() => {    if (!tableContainerRef.current) return;    const resizeObserver = new ResizeObserver(() => {      // Observer is kept for potential future use    });    resizeObserver.observe(tableContainerRef.current);    return () => resizeObserver.disconnect();  }, []);
+  // Keep only the regular PDF export function
+  const exportToPdf = async () => {
+    if (!Array.isArray(filteredData) || filteredData.length === 0) {
+      alert('PDF oluşturmak için tablo verisi gereklidir.');
+      return;
+    }
+    
+    try {
+      console.log('🚀 Starting PDF export from EditableDataTable...');
+      
+      const response = await fetch(`/api/workspaces/${workspaceId}/tables/${tableId}/pdf`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          includeDate: true,
+          highlightedCells: highlightedCells,
+          title: `${title} - Tablo Raporu`,
+          subtitle: 'Çınar Çevre Laboratuvarı Veri Görüntüleme ve Analiz Portalı',
+          orientation: 'landscape',
+          includeFormulas: false,
+          userName: 'Portal Kullanıcısı'
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ PDF API error:', errorText);
+        throw new Error(`PDF oluşturulamadı (${response.status}): ${errorText}`);
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Create proper Turkish filename
+      const currentDate = new Date();
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const timeStr = currentDate.toTimeString().split(' ')[0].replace(/:/g, '-');
+      const cleanTableName = title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+      a.download = `Cinar_Tablo_${cleanTableName}_${dateStr}_${timeStr}.pdf`;
+      
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      console.log('✅ PDF export completed from EditableDataTable');
+      
+    } catch (error) {
+      console.error('❌ PDF export error:', error);
+      alert(`PDF oluşturulurken hata: ${(error as Error).message}`);
+    }
+  };
 
   if (error) {
     return (
@@ -342,77 +475,115 @@ export default function EditableDataTable({
   }
   
   return (
-    <div className={`bg-white rounded-lg shadow overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50' : ''}`}>
-      <div className="p-4 flex justify-between items-center border-b bg-gray-50">
-        <h2 className="text-xl font-bold text-black">{title}</h2>
-        
-        <div className="flex items-center space-x-2">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Ara..."
-              className="pl-9 pr-4 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <AiOutlineSearch className="absolute left-3 top-1/2 transform -translate-y-1/2" />
+    <div className={`bg-white shadow-md rounded-lg overflow-hidden ${isFullscreen ? 'fixed inset-0 z-50 m-4' : ''}`}>
+      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold">{title}</h2>
+            <p className="text-blue-100 text-sm">
+              {filteredData.length} satır, {columns.length} sütun
+              {autoRecalculateFormulas && formulas.length > 0 && (
+                <span className="ml-2 px-2 py-0.5 bg-green-500 rounded-full text-xs">
+                  🔄 Otomatik formül hesaplama aktif ({formulas.length} formül)
+                </span>
+              )}
+              {isRecalculating && (
+                <span className="ml-2 px-2 py-0.5 bg-yellow-500 rounded-full text-xs animate-pulse">
+                  ⚡ Hesaplanıyor...
+                </span>
+              )}
+            </p>
           </div>
           
-          {hasChanges && (
-            <div className="flex space-x-2">
-              <button
-                onClick={saveChanges}
-                disabled={isSaving}
-                className={`px-4 py-2 rounded-md flex items-center ${
-                  isSaving ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 text-white'
-                }`}
-              >
-                <AiOutlineSave className="mr-1" />
-                {isSaving ? 'Kaydediliyor...' : 'Kaydet'}
-              </button>
-              
-              <button
-                onClick={discardChanges}
-                disabled={isSaving}
-                className="px-4 py-2 bg-red-100 text-red-800 hover:bg-red-200 rounded-md flex items-center"
-              >
-                <FcCancel className="mr-1" />
-                İptal
-              </button>
+          <div className="flex items-center space-x-2">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Ara..."
+                className="pl-9 pr-4 py-2 border rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <AiOutlineSearch className="absolute left-3 top-1/2 transform -translate-y-1/2" />
             </div>
-          )}
-          
-          <button
-            onClick={toggleFullscreen}
-            className="bg-purple-100 text-purple-800 hover:bg-purple-200 px-4 py-2 rounded-md flex items-center transition"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isFullscreen ? "M9 9V4H4v5M20 4v5h-5V4M4 15h5v5H4v-5M15 15h5v5h-5v-5" : "M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"} />
-            </svg>
-            {isFullscreen ? 'Küçült' : 'Tam Ekran'}
-          </button>
-          
-          {downloadUrl && (
-            <a
-              href={downloadUrl}
-              download
-              className="bg-green-100 text-green-800 hover:bg-green-200 px-4 py-2 rounded-md flex items-center transition"
+            
+            {hasChanges && (
+              <div className="flex space-x-2">
+                <button
+                  onClick={saveChanges}
+                  disabled={isSaving}
+                  className={`px-4 py-2 rounded-md flex items-center ${
+                    isSaving ? 'bg-gray-300 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 text-white'
+                  }`}
+                >
+                  <AiOutlineSave className="mr-1" />
+                  {isSaving ? 'Kaydediliyor...' : 'Kaydet'}
+                </button>
+                
+                <button
+                  onClick={discardChanges}
+                  disabled={isSaving}
+                  className="px-4 py-2 bg-red-100 text-red-800 hover:bg-red-200 rounded-md flex items-center"
+                >
+                  <FcCancel className="mr-1" />
+                  İptal
+                </button>
+              </div>
+            )}
+            
+            <button
+              onClick={toggleFullscreen}
+              className="bg-purple-100 text-purple-800 hover:bg-purple-200 px-4 py-2 rounded-md flex items-center transition"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isFullscreen ? "M9 9V4H4v5M20 4v5h-5V4M4 15h5v5H4v-5M15 15h5v5h-5v-5" : "M4 8V4m0 0h4M4 4l5 5m11-5h-4m4 0v4m0 0l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"} />
               </svg>
-              Excel
-            </a>
-          )}
-          
-          {printable && (
-            <button
-              onClick={handlePrint}
-              className="bg-blue-100 text-blue-800 hover:bg-blue-200 px-4 py-2 rounded-md flex items-center transition"
-            >
-              <FcPrint className="mr-1" />
-              Yazdır
+              {isFullscreen ? 'Küçült' : 'Tam Ekran'}
             </button>
+            
+            {downloadUrl && (
+              <a
+                href={downloadUrl}
+                download
+                className="bg-green-100 text-green-800 hover:bg-green-200 px-4 py-2 rounded-md flex items-center transition"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Excel
+              </a>
+            )}
+            
+            {printable && (
+              <button
+                onClick={handlePrint}
+                className="bg-blue-100 text-blue-800 hover:bg-blue-200 px-4 py-2 rounded-md flex items-center transition"
+              >
+                <FcPrint className="mr-1" />
+                Yazdır
+              </button>
+            )}
+            
+            <button
+              onClick={exportToPdf}
+              className="flex items-center px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition text-xs"
+              title="PDF olarak indir"
+            >
+              <FcDocument className="mr-1 h-3 w-3" />
+              PDF İndir
+            </button>
+          </div>
+        </div>
+        
+        <div className="mt-4 flex items-center space-x-4">
+          {error && (
+            <div className={`px-4 py-2 text-sm ${
+              error.includes('hata') || error.includes('Error') 
+                ? 'bg-red-100 text-red-800 border-l-4 border-red-500' 
+                : 'bg-blue-100 text-blue-800 border-l-4 border-blue-500'
+            }`}>
+              {error}
+            </div>
           )}
         </div>
       </div>
@@ -435,39 +606,36 @@ export default function EditableDataTable({
               : 'Gösterilecek veri bulunmuyor.'}
           </div>
         ) : (
-          <table className="w-full divide-y divide-gray-200 border-collapse table-fixed">
+          <table className="w-full divide-y divide-gray-200 border-collapse border-2 border-gray-400">
             <thead className="bg-gray-100 sticky top-0 z-10">
               <tr>
                 {columns.map((column) => {
-                  // Determine column width based on type
+                  // OPTIMIZED: More efficient column width calculation
                   let colWidth = "auto";
                   
-                  // ID columns should be narrow
                   if (column.id === 'id') {
-                    colWidth = "60px";
+                    colWidth = "50px"; // Narrower ID column
                   } 
-                  // Fixed columns get appropriate width
                   else if (['Data Source', 'Variable', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
-                    colWidth = "150px";
+                    colWidth = "120px"; // Reduced from 150px
                   } 
-                  // Date columns (all others) should be compact
                   else {
-                    colWidth = "120px";
+                    colWidth = "100px"; // Reduced from 120px for date columns
                   }
                   
                   return (
                     <th
                       key={column.id}
                       scope="col"
-                      style={{ width: colWidth }}
-                      className="px-4 py-3 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-200 border-b border-gray-300 sticky truncate"
+                      style={{ width: colWidth, minWidth: colWidth }}
+                      className="px-2 py-2 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider cursor-pointer hover:bg-gray-200 border-2 border-gray-400 sticky truncate"
                       onClick={() => handleSort(column.id)}
                       title={column.name}
                     >
                       <div className="flex items-center">
                         <span className="truncate">{column.name}</span>
                         {sortColumn === column.id && (
-                          <span className="ml-1 flex-shrink-0">
+                          <span className="ml-1 flex-shrink-0 text-xs">
                             {sortDirection === 'asc' ? '↑' : '↓'}
                           </span>
                         )}
@@ -478,102 +646,23 @@ export default function EditableDataTable({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredData.map((row) => (
-                <tr key={row.id} className="hover:bg-gray-50">
+              {/* OPTIMIZED: Limit visible rows for better performance */}
+              {filteredData.slice(0, 500).map((row) => (
+                <tr key={row.id} className="hover:bg-gray-50 transition-colors border-b-2 border-gray-300">
                   {columns.map((column) => {
                     const cellValue = row[column.id];
                     const isSelected = selectedCell?.row === row.id && selectedCell?.col === column.id;
-                    const isEditing = editingCell?.row === row.id && editingCell?.col === column.id;
-                    const highlight = getCellHighlight(row.id, column.id);
+                    const isEditing = editingCell?.rowId === row.id && editingCell?.colId === column.id;
                     const isEditable = column.editable !== false;
                     
-                    // Base styling
-                    let cellStyles = "px-4 py-2 text-sm border truncate transition-all duration-200 ";
-                    
-                    // Base text styling with better readability
-                    cellStyles += column.id === 'Variable' ? "text-blue-900 font-semibold " : "text-gray-900 ";
-                    
-                    // Only add non-conflicting classes when not highlighted
-                    if (!highlight) {
-                      // Handle selection styling
-                      if (isSelected) {
-                        cellStyles += "bg-blue-100 border-blue-300 ring-2 ring-blue-200 ";
-                      } else {
-                        cellStyles += "border-gray-200 ";
-                      }
-                      
-                      // Special column background colors
-                      if (column.id === 'id') {
-                        cellStyles += "bg-gray-50 text-gray-600 ";
-                      } else if (['Data Source', 'Method', 'Unit', 'LOQ'].includes(column.id)) {
-                        cellStyles += "bg-gray-50 ";
-                      }
-                    } else {
-                      // If highlighted, only add border class
-                      cellStyles += "border-2 ";
-                    }
-                    
-                    // Editable styling
-                    if (isEditable && !isEditing) {
-                      cellStyles += "cursor-pointer ";
-                      if (!highlight) {
-                        cellStyles += "hover:bg-yellow-50 ";
-                      }
-                    }
-
-                    // Enhanced inline style for highlights with better visibility
-                    const inlineStyle: React.CSSProperties = {};
-                    if (highlight) {
-                      // Use the color directly from highlight
-                      const color = highlight.color;
-                      
-                      // Apply background color with appropriate opacity
-                      const rgb = hexToRgb(color);
-                      if (rgb) {
-                        // Use slightly transparent background for better visibility
-                        inlineStyle.backgroundColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.3)`;
-                        inlineStyle.borderColor = color;
-                        inlineStyle.borderWidth = '2px';
-                        inlineStyle.borderStyle = 'solid';
-                        inlineStyle.position = 'relative';
-                        
-                        // Add a subtle glow effect
-                        inlineStyle.boxShadow = `0 0 4px ${color}40`;
-                        
-                        // Ensure text is readable on colored background
-                        const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-                        // For light backgrounds, use dark text; for dark backgrounds, use original color
-                        if (brightness > 200) {
-                          inlineStyle.color = '#1a1a1a';
-                        } else {
-                          inlineStyle.color = color;
-                        }
-                        inlineStyle.fontWeight = '600'; // Make text bolder on highlighted cells
-                      } else {
-                        // Fallback if RGB conversion fails
-                        inlineStyle.backgroundColor = `${color}30`; // 30 = ~0.3 opacity in hex
-                        inlineStyle.borderColor = color;
-                        inlineStyle.borderWidth = '2px';
-                        inlineStyle.borderStyle = 'solid';
-                      }
-                      
-                      // Override any conflicting styles when highlighted
-                      if (isSelected) {
-                        // Show selection with different visual cue when highlighted
-                        inlineStyle.boxShadow = `0 0 4px ${color}40, 0 0 0 3px #3b82f640`;
-                      }
-                    }
-                    
-                    return (
-                      <td
-                        key={`${row.id}-${column.id}`}
-                        className={cellStyles}
-                        style={inlineStyle}
-                        onClick={() => handleCellClick(row.id, column.id, cellValue)}
-                        onDoubleClick={() => handleCellDoubleClick(row.id, column.id, cellValue, isEditable)}
-                        title={highlight?.message || (isEditable ? 'Düzenlemek için çift tıklayın' : '')}
-                      >
-                        {isEditing ? (
+                    // OPTIMIZED: Use TableCell component with better performance
+                    if (isEditing) {
+                      return (
+                        <td
+                          key={`${row.id}-${column.id}`}
+                          className="px-2 py-1 text-xs border border-gray-200"
+                          style={{ maxWidth: column.id === 'id' ? '50px' : column.id.includes('Data Source') || column.id.includes('Variable') ? '120px' : '100px' }}
+                        >
                           <div className="flex items-center">
                             <input
                               ref={editInputRef}
@@ -581,44 +670,85 @@ export default function EditableDataTable({
                               value={editValue}
                               onChange={(e) => setEditValue(e.target.value)}
                               onKeyDown={(e) => handleKeyDown(e, row.id, column.id)}
-                              className="w-full px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full px-1 py-0.5 border border-blue-500 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                             />
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleEditSave(row.id, column.id);
                               }}
-                              className="ml-1 p-1 text-green-600"
+                              className="ml-1 p-0.5 text-green-600 hover:bg-green-50 rounded"
                             >
-                              <FcCheckmark className="h-5 w-5" />
+                              <FcCheckmark className="h-3 w-3" />
                             </button>
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleEditCancel();
                               }}
-                              className="ml-1 p-1 text-red-600"
+                              className="ml-1 p-0.5 text-red-600 hover:bg-red-50 rounded"
                             >
-                              <FcCancel className="h-5 w-5" />
+                              <FcCancel className="h-3 w-3" />
                             </button>
                           </div>
-                        ) : (
-                          <>
-                            {cellValue === null ? (
-                              <span className="text-gray-400">-</span>
-                            ) : (
-                              <span>{String(cellValue)}</span>
-                            )}
-                            {isEditable && (
-                              <AiOutlineEdit className="ml-2 h-4 w-4 text-gray-400 opacity-0 group-hover:opacity-100 inline-block" />
-                            )}
-                          </>
-                        )}
-                      </td>
+                        </td>
+                      );
+                    }
+                    
+                    // OPTIMIZED: Use TableCell component for all non-editing cells
+                    return (
+                      <TableCell
+                        key={`${row.id}-${column.id}`}
+                        rowId={row.id}
+                        colId={column.id}
+                        value={cellValue}
+                        highlights={highlightedCells}
+                        isSelected={isSelected}
+                        onClick={(rowId, colId, value) => {
+                          handleCellClick(rowId, colId, value);
+                          if (isEditable) {
+                            const currentTime = Date.now();
+                            const lastClickTime = (window as Window & { lastClickTime?: number }).lastClickTime || 0;
+                            if (currentTime - lastClickTime < 300) {
+                              handleCellDoubleClick(rowId, colId, value, isEditable);
+                            }
+                            (window as Window & { lastClickTime?: number }).lastClickTime = currentTime;
+                          }
+                        }}
+                      />
                     );
                   })}
                 </tr>
               ))}
+              
+              {/* OPTIMIZED: Show message if data is truncated */}
+              {filteredData.length > 500 && (
+                <tr>
+                  <td 
+                    colSpan={columns.length} 
+                    className="px-4 py-6 text-center text-gray-500 bg-yellow-50 border border-yellow-200"
+                  >
+                    <div className="flex flex-col items-center space-y-2">
+                      <span className="text-sm font-medium">
+                        Performans için ilk 500 satır gösteriliyor
+                      </span>
+                      <span className="text-xs">
+                        Toplam {filteredData.length} satırdan 500 tanesi görüntülendi. 
+                        Daha fazla sonuç için arama filtresini kullanın.
+                      </span>
+                      <button
+                        onClick={() => {
+                          // Option to load more data
+                          console.log('Load more data functionality can be implemented here');
+                        }}
+                        className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200 transition-colors"
+                      >
+                        Daha Fazla Göster
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         )}
@@ -628,8 +758,15 @@ export default function EditableDataTable({
         <div>
           {Array.isArray(filteredData) ? (
             <>
-              <span className="font-medium">{filteredData.length}</span> satır gösteriliyor
+              <span className="font-medium">
+                {Math.min(filteredData.length, 500)}
+              </span> satır gösteriliyor
               {searchTerm && Array.isArray(data) && ` (toplam ${data.length} satırdan)`}
+              {filteredData.length > 500 && (
+                <span className="text-yellow-600 ml-2">
+                  • Performans için {filteredData.length - 500} satır gizlendi
+                </span>
+              )}
             </>
           ) : (
             'Veri yok'
@@ -638,9 +775,9 @@ export default function EditableDataTable({
         {isFullscreen && (
           <button 
             onClick={toggleFullscreen}
-            className="text-red-600 hover:text-red-800 flex items-center"
+            className="text-red-600 hover:text-red-800 flex items-center text-xs"
           >
-            <FcFullTrash className="mr-1" />
+            <FcFullTrash className="mr-1 h-4 w-4" />
             Tam Ekrandan Çık
           </button>
         )}

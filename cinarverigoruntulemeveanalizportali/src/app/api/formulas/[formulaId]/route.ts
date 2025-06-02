@@ -17,10 +17,10 @@ const FormulaUpdateSchema = z.object({
 // GET: Get a specific formula
 export async function GET(
   request: NextRequest,
-  { params }: { params: { formulaId: string } }
+  context: { params: Promise<{ formulaId: string }> }
 ) {
   try {
-    const { formulaId } = params;
+    const { formulaId } = await context.params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -80,10 +80,10 @@ export async function GET(
 // PATCH: Update a formula
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { formulaId: string } }
+  context: { params: Promise<{ formulaId: string }> }
 ) {
   try {
-    const { formulaId } = params;
+    const { formulaId } = await context.params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {
@@ -163,10 +163,10 @@ export async function PATCH(
 // DELETE: Delete a formula
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { formulaId: string } }
+  context: { params: Promise<{ formulaId: string }> }
 ) {
   try {
-    const { formulaId } = params;
+    const { formulaId } = await context.params;
     
     const currentUser = await getCurrentUser();
     if (!currentUser) {

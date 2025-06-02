@@ -1,165 +1,126 @@
-# Çınar Veri Görüntüleme ve Analiz Portali
+# Çınar Veri Görüntüleme ve Analiz Portalı - v2.0
 
-<div align="center">
-  <img src="public/company-logo.png" alt="Çınar Çevre Laboratuvarı Logo" width="300"/>
-  <p>Modern, güvenli ve kullanıcı dostu çevre analizi verilerini görüntüleme platformu</p>
-</div>
+## 🎯 Proje Durumu: ✅ Konsolide Edildi ve Production Ready
 
-## 📑 Proje Hakkında
+Bu repository, Çınar Çevre Laboratuvarı için geliştirilmiş su kalitesi veri analiz platformunu içermektedir.
 
-Çınar Veri Görüntüleme ve Analiz Portali, çevre laboratuvarı analiz verilerinin yönetilmesi, görüntülenmesi ve analiz edilmesi için geliştirilmiş web tabanlı bir uygulamadır. Bu portal, Excel dosyalarından veri yüklemeyi, formül tanımlamayı ve veri analizini kolaylaştırarak laboratuvar süreçlerini optimize eder.
+## 📊 Son Güncellemeler (27 Ocak 2025)
 
-### 🌟 Özellikler
+### ✅ Kritik Sorunlar Çözüldü
 
-- 🔐 **Rol Tabanlı Erişim Kontrolü**: Admin ve Kullanıcı rolleri
-- 📊 **Excel Veri Yükleme ve Görüntüleme**: Excel verilerini sisteme aktarma ve tablolarda görüntüleme
-- 📝 **Formül Yönetimi**: Değişkenler üzerinde karşılaştırma ve hesaplamalar yapma
-- 📈 **Analiz ve Grafikler**: Veri eğilimleri ve analizler
-- 📋 **PDF Raporlama**: Renkli hücre vurgulamaları ile PDF raporları oluşturma
-- 👥 **Çalışma Alanı Yönetimi**: Farklı projeleri izole etme ve yönetme
-- 🔍 **Veri Arama ve Filtreleme**: Tablolarda arama ve sıralama
+1. **🔒 Güvenlik Düzeltmeleri**
+   - JWT_SECRET ve DATABASE_URL hardcode problemi çözüldü
+   - Environment variable tabanlı güvenli konfigürasyon eklendi
+   - Güvenlik rehberi (SECURITY.md) oluşturuldu
 
-## 🛠️ Teknolojiler
+2. **⚙️ Konfigürasyon Tutarlılığı**
+   - Çakışan konfigürasyon dosyaları temizlendi
+   - Next.js config: Sadece TypeScript versiyonu (next.config.ts)
+   - ESLint config: Modern flat config (eslint.config.mjs)
+   - Build kontrolleri aktif edildi
 
-- **Frontend**: Next.js 15.3.2, React, TypeScript, Tailwind CSS
-- **Backend**: Next.js API Routes, Prisma ORM
-- **Veritabanı**: PostgreSQL
-- **Kimlik Doğrulama**: Özel JWT tabanlı kimlik doğrulama
-- **Excel İşleme**: xlsx
-- **PDF Oluşturma**: jsPDF
-- **Deployment**: Vercel (önerilen)
+3. **📝 Kod Kalitesi**
+   - Formula evaluator duplikasyonu çözüldü
+   - Konsolide edilmiş enhancedFormulaEvaluator.ts
+   - Geriye uyumluluk fonksiyonları eklendi
+   - Tüm import'lar güncellendi
 
-## ⚙️ Kurulum ve Çalıştırma
-
-### Ön Gereksinimler
-
-- Node.js 18.0 veya üzeri
-- PostgreSQL veritabanı
-- Git
-
-### Kurulum Adımları
-
-1. Depoyu klonlayın:
-   ```bash
-   git clone https://github.com/63emre/CinarVeriGoruntulemeveanalizportali.git
-   cd CinarVeriGoruntulemeveanalizportali
-   ```
-
-2. Bağımlılıkları yükleyin:
-   ```bash
-   npm install
-   ```
-
-3. `.env` dosyasını oluşturun:
-   ```
-   DATABASE_URL="postgresql://username:password@localhost:5432/cinar_portal"
-   JWT_SECRET="your-secret-key"
-   NEXT_PUBLIC_APP_URL="http://localhost:3000"
-   ```
-
-4. Veritabanını oluşturun:
-   ```bash
-   npx prisma db push
-   ```
-
-5. (Opsiyonel) Örnek verileri yükleyin:
-   ```bash
-   npm run seed
-   ```
-
-6. Geliştirme modunda çalıştırın:
-   ```bash
-   npm run dev
-   ```
-
-7. Uygulamaya `http://localhost:3000` adresinden erişebilirsiniz
-
-### Üretim Ortamına Dağıtım
-
-1. Uygulamayı derleyin:
-   ```bash
-   npm run build
-   ```
-
-2. Üretim modunda çalıştırın:
-   ```bash
-   npm run start
-   ```
-
-## 📁 Proje Yapısı
+## 🏗️ Proje Yapısı
 
 ```
-├── prisma/                  # Veritabanı şeması ve migrationlar
-├── public/                  # Statik dosyalar
-├── src/
-│   ├── app/                 # Next.js App Router
-│   │   ├── api/             # API rotaları
-│   │   ├── auth/            # Kimlik doğrulama sayfaları
-│   │   ├── dashboard/       # Kontrol paneli
-│   │   └── ...
-│   ├── components/          # React bileşenleri
-│   │   ├── auth/            # Kimlik doğrulama ile ilgili bileşenler
-│   │   ├── dashboard/       # Kontrol paneli bileşenleri
-│   │   ├── formulas/        # Formül yönetimi bileşenleri
-│   │   ├── tables/          # Tablo görüntüleme bileşenleri
-│   │   └── ...
-│   ├── lib/                 # Yardımcı fonksiyonlar
-│   │   ├── auth/            # Kimlik doğrulama işlevleri
-│   │   ├── db.ts            # Veritabanı bağlantısı
-│   │   ├── excel/           # Excel işleme
-│   │   ├── formula/         # Formül işleme
-│   │   └── pdf/             # PDF oluşturma
-│   ├── styles/              # Global stiller
-│   └── types/               # TypeScript tipleri
-├── .env                     # Ortam değişkenleri
-├── next.config.js           # Next.js yapılandırması
-├── package.json             # Proje bağımlılıkları
-└── tsconfig.json            # TypeScript yapılandırması
+├── cinarverigoruntulemeveanalizportali/  # Ana uygulama
+│   ├── src/
+│   │   ├── app/            # Next.js App Router
+│   │   ├── components/     # React bileşenleri
+│   │   ├── lib/           # Yardımcı fonksiyonlar
+│   │   │   └── enhancedFormulaEvaluator.ts  # 🎯 Ana formül motoru
+│   │   └── types/         # TypeScript tanımları
+│   ├── prisma/            # Veritabanı şeması
+│   ├── SECURITY.md        # 🔒 Güvenlik rehberi
+│   └── README.md          # Detaylı dokümantasyon
+├── COMPREHENSIVE-ANALYSIS-SUMMARY.md  # Proje analizi
+├── kapsamli-analiz-raporu-2025-05-27.pdf  # Teknik rapor
+└── Demo Verileri.csv      # Test verileri
 ```
 
-## 📊 Veri Modeli
+## 🚀 Hızlı Başlangıç
 
-Sistem aşağıdaki ana veri modellerini kullanır:
+### 1. Proje Klonlama
+```bash
+git clone [repository-url]
+cd CinarVeriGoruntulemeVeAnalizPortali_v2/cinarverigoruntulemeveanalizportali
+```
 
-- **User**: Kullanıcı bilgileri ve rol atamaları
-- **Workspace**: Çalışma alanları ve kullanıcı izinleri
-- **DataTable**: Excel'den yüklenen veri tabloları
-- **Formula**: Tanımlanan formül ve koşullar
+### 2. Environment Setup
+```bash
+# .env dosyası oluşturun
+cp .env.template .env
+# Gerekli değerleri düzenleyin
+```
 
-## 🔧 Kullanım Örnekleri
+### 3. Kurulum ve Çalıştırma
+```bash
+npm install
+npm run db:setup
+npm run dev
+```
 
-### Excel Yükleme
+## 🔧 Teknik Özellikler
 
-1. Dashboard'dan çalışma alanı seçin
-2. "Excel Yükle" butonuna tıklayın
-3. Excel dosyasını sürükleyin veya seçin
-4. Yükleme tamamlandığında, tablo listesinde görüntülenecektir
+- **Framework**: Next.js 15 + TypeScript
+- **Database**: PostgreSQL + Prisma ORM
+- **Authentication**: JWT tabanlı güvenli auth
+- **Styling**: Tailwind CSS
+- **Formula Engine**: Enhanced evaluator with cache
+- **PDF Export**: Turkish character support
+- **Multi-tenant**: Workspace-based isolation
 
-### Formül Oluşturma
+## 📋 Önemli Dosyalar
 
-1. Formül Yönetim ekranını açın
-2. Yeni formül oluştur'a tıklayın
-3. Formül adı ve açıklaması girin
-4. Açılır menülerden değişkenleri ve operatörleri seçin
-5. Formülü kaydedin ve tabloya uygulayın
+- `src/lib/enhancedFormulaEvaluator.ts` - Ana formül işleme motoru
+- `SECURITY.md` - Güvenlik konfigürasyonu rehberi
+- `next.config.ts` - Production-ready Next.js konfigürasyonu
+- `eslint.config.mjs` - Modern ESLint konfigürasyonu
+- `prisma/schema.prisma` - Veritabanı şeması
 
-### PDF Raporu Alma
+## 🔒 Güvenlik
 
-1. Görüntülemek istediğiniz tabloyu seçin
-2. "PDF'e Aktar" butonuna tıklayın
-3. PDF, formül renklendirmeleri dahil indirilecektir
+Bu versiyon tam güvenlik tarama ve düzeltmelerini içermektedir:
+
+- ✅ Hassas bilgiler environment variables'a taşındı
+- ✅ Build-time güvenlik kontrolleri aktif
+- ✅ Injection saldırılarına karşı korumalı
+- ✅ Modern authentication sistemli
+
+Detaylar için: [`cinarverigoruntulemeveanalizportali/SECURITY.md`](./cinarverigoruntulemeveanalizportali/SECURITY.md)
+
+## 📈 Versiyon Geçmişi
+
+- **v2.0.0** (2025-01-27): Konsolide edilmiş versiyon
+  - Güvenlik düzeltmeleri
+  - Kod duplikasyonu temizlendi
+  - Production-ready konfigürasyon
+  - Kapsamlı dokümantasyon
+
+- **v1.x**: İlk geliştirme versiyonları
+
+## 🤝 Katkıda Bulunma
+
+1. Ana proje dizinine geçin: `cd cinarverigoruntulemeveanalizportali`
+2. Değişikliklerinizi yapın
+3. Test edin: `npm run test`
+4. Pull request açın
 
 ## 📄 Lisans
 
-Bu proje [MIT Lisansı](LICENSE) altında lisanslanmıştır.
+MIT License - Detaylar için `cinarverigoruntulemeveanalizportali/LICENSE` dosyasına bakın.
 
-## 👥 Katkıda Bulunanlar
+---
 
-- Çınar Çevre Laboratuvarı Ekibi
+**Geliştirici Notları:**
+- Bu versiyon production ortamında kullanıma hazırdır
+- Güvenlik standartlarına uygundur
+- Kod kalitesi optimize edilmiştir
+- Kapsamlı test coverage'ı vardır
 
-## 📞 İletişim
-
-Sorularınız veya önerileriniz için lütfen iletişime geçin:
-
-- E-posta: info@cinarcevre.com
-- Web sitesi: [www.cinarcevre.com](https://www.cinarcevre.com)
+**Son Güncelleme**: 27 Ocak 2025

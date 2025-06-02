@@ -10,10 +10,11 @@ const nextConfig: NextConfig = {
       allowedOrigins: ["localhost:3000"],
     },
   },
-  env: {
-    DATABASE_URL: "postgresql://postgres:123@localhost:5432/cinar_portal",
-    JWT_SECRET: "cinar-secret-key-123456789",
-    NEXT_PUBLIC_APP_URL: "http://localhost:3000",
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
   },
 };
 

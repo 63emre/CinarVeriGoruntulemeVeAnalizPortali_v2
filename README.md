@@ -4,7 +4,7 @@
 
 Bu repository, Çınar Çevre Laboratuvarı için geliştirilmiş su kalitesi veri analiz platformunu içermektedir.
 
-## 📊 Son Güncellemeler (27 Ocak 2025)
+## 📊 Son Güncellemeler 11 Haziran 2025
 
 ### ✅ Kritik Sorunlar Çözüldü
 
